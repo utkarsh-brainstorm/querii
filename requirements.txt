@@ -1,0 +1,13 @@
+# Querii — Python dependencies
+# Install: pip install -r requirements.txt
+
+# Sheet reading
+xlrd>=2.0.1        # Read .xls files (legacy Excel)
+openpyxl>=3.1.0    # Read .xlsx / .xlsm files
+# csv is in Python stdlib — no extra package needed
+
+# PDF export
+reportlab>=4.0.0
+
+# Native webview (uses OS WebKit/WebView2, no Chromium)
+pywebview>=5.0.0
