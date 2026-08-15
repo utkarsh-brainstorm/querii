@@ -48,23 +48,23 @@ jobs:
           main.py
         
         cd dist
-        tar -czf payload.tar.gz querii-linux
+        mv querii-linux querii-linux-dir
+        tar -czf payload.tar.gz querii-linux-dir
         
-        cat << 'EOF' > querii-linux-executable
+        cat << 'EOF' > querii-linux
         #!/bin/bash
         TARGET_DIR="$HOME/.local/share/querii/bin"
         mkdir -p "$TARGET_DIR"
         echo "Unpacking Querii to $TARGET_DIR..."
         MATCH=$(grep -a -n '^__ARCHIVE_BELOW__$' "$0" | cut -d: -f1)
         tail -n +$((MATCH + 1)) "$0" | tar -xz -C "$TARGET_DIR" --overwrite
-        exec "$TARGET_DIR/querii-linux/querii-linux" "$@"
+        exec "$TARGET_DIR/querii-linux-dir/querii-linux" "$@"
         exit $?
         __ARCHIVE_BELOW__
         EOF
         
-        cat payload.tar.gz >> querii-linux-executable
-        chmod +x querii-linux-executable
-        mv querii-linux-executable querii-linux
+        cat payload.tar.gz >> querii-linux
+        chmod +x querii-linux
 
     # ── macOS: single-file executable ──────────────────────────────────
     - name: Build Executable (macOS)
