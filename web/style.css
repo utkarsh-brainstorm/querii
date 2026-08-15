@@ -550,11 +550,15 @@ input[type=number]::-webkit-outer-spin-button { appearance: none; }
   border-bottom: 1px solid var(--border-light);
   white-space: nowrap; max-width: 200px;
   overflow: hidden; text-overflow: ellipsis;
+  user-select: text; -webkit-user-select: text;
+  cursor: text;
 }
 .tbl-row:hover .tbl-cell { background: var(--bg-muted); }
 
 /* Schema tree blocks in right panel */
 .schema-table { margin-bottom: 8px; }
+/* Make schema content selectable for copy-paste */
+#schema-tree, #schema-tree * { user-select: text; -webkit-user-select: text; }
 
 /* Schema panel (SQL panel side panel) */
 .schema-table-block { padding: 4px 0; }

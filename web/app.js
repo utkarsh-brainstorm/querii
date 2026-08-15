@@ -60,6 +60,8 @@ var _csCurrentCol    = '';
 var PAGE_SIZE        = 200;     // rows per page
 var _currentPage     = 0;       // 0-indexed
 var _colSearch       = '';      // current column search term in results
+var _sortCol         = '';      // column currently sorted by (click-sort)
+var _sortDir         = 'ASC';   // 'ASC' or 'DESC'
 
 /* ── Utilities ──────────────────────────────────────────────────────── */
 function esc(s) {
@@ -1406,9 +1408,15 @@ function renderResults(columns, firstPageRows, totalCount) {
         '<input id="col-search-input" type="text" class="input-sm" style="width:220px;font-size:10px" ' +
         'placeholder="🔍 Filter columns by name…" oninput="filterResultColumns(this.value)"></td></tr>';
     }
+    // Build sortable header
     head.innerHTML = searchHtml +
       '<tr id="results-header-row">' + columns.map(function(c) {
-        return '<th class="tbl-head" data-col="' + esc(c) + '">' + esc(c) + '</th>';
+        var sortIndicator = (_sortCol === c) ? (_sortDir === 'ASC' ? ' ▲' : ' ▼') : '';
+        return '<th class="tbl-head" data-col="' + esc(c) + '" ' +
+          'style="cursor:pointer;user-select:none" ' +
+          'onclick="toggleColumnSort(\'' + esc(c).replace(/'/g, "\\'") + '\')" ' +
+          'title="Click to sort by ' + esc(c) + '">' +
+          esc(c) + sortIndicator + '</th>';
       }).join('') + '</tr>';
   }
 
@@ -1417,6 +1425,22 @@ function renderResults(columns, firstPageRows, totalCount) {
   var total = _lastResults.total;
   if (count) count.textContent = total.toLocaleString() + ' rows · ' + columns.length + ' cols';
   renderPaginationBar(0, total);
+}
+
+/* Click a column header to sort */
+function toggleColumnSort(col) {
+  if (_sortCol === col) {
+    _sortDir = _sortDir === 'ASC' ? 'DESC' : 'ASC';
+  } else {
+    _sortCol = col;
+    _sortDir = 'ASC';
+  }
+  // Re-run the current query with the new sort
+  var sortSel = document.getElementById('sort-col');
+  var sortDirSel = document.getElementById('sort-dir');
+  if (sortSel) sortSel.value = _sortCol;
+  if (sortDirSel) sortDirSel.value = _sortDir;
+  run_filter();
 }
 
 /* Render a single page of rows using DocumentFragment (fast) */
@@ -1576,6 +1600,13 @@ function choosePdfFolder() {
   }).catch(function(e) { toast('Could not open folder dialog: ' + e.message, 'error'); });
 }
 
+function toggleContinuousMode(checked) {
+  var sizeEl   = document.getElementById('pdf-page-size');
+  var orientEl = document.getElementById('pdf-orientation');
+  if (sizeEl)   { sizeEl.disabled   = checked; sizeEl.style.opacity   = checked ? '0.4' : '1'; }
+  if (orientEl) { orientEl.disabled = checked; orientEl.style.opacity = checked ? '0.4' : '1'; }
+}
+
 function confirmExportPdf() {
   var titleEl   = document.getElementById('pdf-title');
   var pathEl    = document.getElementById('pdf-save-path');
@@ -1599,7 +1630,9 @@ function confirmExportPdf() {
 
   // Sanitize file name from title
   var safeName = title.replace(/[^a-zA-Z0-9 _\-().]/g, '_').trim() || 'querii_export';
-  var filepath  = saveDir.replace(/[\/\\]$/, '') + '/' + safeName + '.pdf';
+  // Build path safely: strip trailing sep, then re-join with OS separator detected from the path
+  var sep = (saveDir.indexOf('\\') !== -1) ? '\\' : '/';
+  var filepath  = saveDir.replace(/[\/\\]$/, '') + sep + safeName + '.pdf';
 
   // Save folder as default
   _pdfDefaultDir = saveDir;
@@ -1992,7 +2025,7 @@ function showProgress(show) {
   if (el) el.classList.toggle('hidden', !show);
 }
 
-/* ── Resize handles — SMOOTH (requestAnimationFrame) ────────────────── */
+/* ── Resize handles ────────────────────────────────────────────────────── */
 function initResizableHandles() {
   setupHandleH('rh-left',  'panel-filter', 'left');
   setupHandleH('rh-right', 'panel-quick',  'right');
@@ -2000,36 +2033,29 @@ function initResizableHandles() {
 }
 
 function setupHandleH(hId, pId, side) {
-  var handle  = document.getElementById(hId);
-  var panel   = document.getElementById(pId);
+  var handle = document.getElementById(hId);
+  var panel  = document.getElementById(pId);
   if (!handle || !panel) return;
-  var dragging = false, startX = 0, startW = 0, pendingW = null;
-
   handle.addEventListener('mousedown', function(e) {
-    dragging = true; startX = e.clientX; startW = panel.offsetWidth;
-    handle.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
     e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', function(e) {
-    if (!dragging) return;
-    var delta = side === 'left' ? e.clientX - startX : startX - e.clientX;
-    pendingW = Math.max(220, Math.min(600, startW + delta));
-    if (pendingW !== null) {
-      requestAnimationFrame(function() {
-        if (pendingW !== null && panel) { panel.style.width = pendingW + 'px'; pendingW = null; }
-      });
+    var sx = e.clientX, sw = panel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    function onMove(ev) {
+      var delta = side === 'left' ? ev.clientX - sx : sx - ev.clientX;
+      var nw = Math.max(220, Math.min(600, sw + delta));
+      panel.style.width = nw + 'px';
     }
-  });
-
-  document.addEventListener('mouseup', function() {
-    if (!dragging) return;
-    dragging = false; pendingW = null;
-    handle.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
   });
 }
 
@@ -2037,30 +2063,25 @@ function setupHandleV(hId, pId) {
   var handle = document.getElementById(hId);
   var panel  = document.getElementById(pId);
   if (!handle || !panel) return;
-  var dragging = false, startY = 0, startH = 0, pendingH = null;
-
   handle.addEventListener('mousedown', function(e) {
-    dragging = true; startY = e.clientY; startH = panel.offsetHeight;
-    handle.classList.add('dragging');
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
     e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', function(e) {
-    if (!dragging) return;
-    pendingH = Math.max(60, Math.min(window.innerHeight - 150, startH + e.clientY - startY));
-    requestAnimationFrame(function() {
-      if (pendingH !== null && panel) { panel.style.height = pendingH + 'px'; pendingH = null; }
-    });
-  });
-
-  document.addEventListener('mouseup', function() {
-    if (!dragging) return;
-    dragging = false; pendingH = null;
-    handle.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    var sy = e.clientY, sh = panel.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+    function onMove(ev) {
+      var nh = Math.max(60, Math.min(window.innerHeight - 150, sh + ev.clientY - sy));
+      panel.style.height = nh + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
   });
 }
 
@@ -2086,22 +2107,52 @@ document.addEventListener('DOMContentLoaded', function() {
   on('btn-export-csv',    'click', exportCsv);
   on('btn-export-pdf',    'click', exportPdf);
 
-  // SQL editor
+  // SQL editor — with manual undo/redo stack for Ctrl+Z / Ctrl+Y
   var sqlEd = document.getElementById('sql-editor');
   if (sqlEd) {
-    sqlEd.addEventListener('input', syncSqlLines);
+    var _sqlHistory = [sqlEd.value], _sqlHistIdx = 0;
+    function _sqlPush() {
+      var cur = sqlEd.value;
+      if (cur === _sqlHistory[_sqlHistIdx]) return;
+      _sqlHistory = _sqlHistory.slice(0, _sqlHistIdx + 1);
+      _sqlHistory.push(cur);
+      if (_sqlHistory.length > 200) _sqlHistory.shift();
+      _sqlHistIdx = _sqlHistory.length - 1;
+    }
+    sqlEd.addEventListener('input', function() { syncSqlLines(); _sqlPush(); });
     sqlEd.addEventListener('scroll', function() {
       var ln = document.getElementById('sql-lines');
       if (ln) ln.scrollTop = sqlEd.scrollTop;
     });
     sqlEd.addEventListener('keydown', function(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSql(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSql(); return; }
+      // Undo
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        if (_sqlHistIdx > 0) {
+          _sqlHistIdx--;
+          sqlEd.value = _sqlHistory[_sqlHistIdx];
+          syncSqlLines();
+        }
+        return;
+      }
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        e.preventDefault();
+        if (_sqlHistIdx < _sqlHistory.length - 1) {
+          _sqlHistIdx++;
+          sqlEd.value = _sqlHistory[_sqlHistIdx];
+          syncSqlLines();
+        }
+        return;
+      }
       if (e.key === 'Tab') {
         e.preventDefault();
         var s = sqlEd.selectionStart;
         sqlEd.value = sqlEd.value.slice(0, s) + '  ' + sqlEd.value.slice(sqlEd.selectionEnd);
         sqlEd.selectionStart = sqlEd.selectionEnd = s + 2;
         syncSqlLines();
+        _sqlPush();
       }
     });
   }
