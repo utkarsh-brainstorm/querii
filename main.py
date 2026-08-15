@@ -6,6 +6,12 @@ Launches Querii in a native OS WebView window.
   • Linux   → GTK3 + WebKit2GTK
   • macOS   → WKWebView
   • Windows → Edge WebView2
+
+Data is stored in the OS user-data directory so it persists
+across app updates and works correctly in packaged executables:
+  • Linux   → ~/.local/share/querii/
+  • macOS   → ~/Library/Application Support/Querii/
+  • Windows → %APPDATA%\\Querii\\
 """
 
 from __future__ import annotations
@@ -25,6 +31,24 @@ os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     "--proxy-server='direct://' --proxy-bypass-list=*"
 )
+
+
+def _get_user_data_dir() -> str:
+    """
+    Return a persistent, writable directory for Querii's data.
+    This works both in development and in packaged executables.
+    """
+    if sys.platform == "win32":
+        # %APPDATA%\Querii
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "Querii")
+    elif sys.platform == "darwin":
+        # ~/Library/Application Support/Querii
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Querii")
+    else:
+        # Linux / other: follow XDG spec → ~/.local/share/querii
+        xdg = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        return os.path.join(xdg, "querii")
 
 
 def _check_linux_backend() -> None:
@@ -57,6 +81,12 @@ from api import Api     # noqa: E402
 
 
 def main() -> None:
+    # ── Set persistent user-data directory before init_db ──────────────
+    data_dir = _get_user_data_dir()
+    os.makedirs(data_dir, exist_ok=True)
+    db_path = os.path.join(data_dir, "querii.db")
+    db.set_db_path(db_path)
+
     db.init_db()
     api = Api()
 

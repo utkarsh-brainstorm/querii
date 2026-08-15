@@ -1734,6 +1734,11 @@ function openFileList() {
     }
     if (emptyEl) emptyEl.classList.add('hidden');
 
+    // Always keep global schema cache in sync — this is what makes
+    // schema panel work when selecting tables after a fresh app launch
+    _allSchemaData = schema;
+    renderSchemaTree(schema);
+
     // Build map: table → history row
     var histMap = {};
     history.forEach(function(h) { histMap[h.table_name] = h; });
@@ -1767,6 +1772,16 @@ function toggleCheckAll(cb) {
 function fileListSelect(name) {
   closeModal();
   _selectedTables = [name];
+  _activeTable = name;
+  // Make sure schema is up to date before switching
+  if (!_allSchemaData.length) {
+    apiCall('get_schema').then(function(schema) {
+      _allSchemaData = schema || [];
+      renderSchemaTree(_allSchemaData);
+    });
+  } else {
+    renderSchemaTree(_allSchemaData);
+  }
   var sel = document.getElementById('table-select');
   if (sel) { sel.value = name; onTableChange(); }
   updateTableBadge();
