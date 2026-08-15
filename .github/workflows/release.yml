@@ -81,16 +81,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V1.0.0
-          name: Querii V1.0.0
+          tag_name: V3-beta
+          name: Querii V3 Beta
           fail_on_unmatched_files: false
           body: |
-            **Querii Release V1.0.0**
-            
-            - Fast, localized SQL analytics interface for static sheets (Excel/CSV).
-            - Real-time data pivoting, aggregations, and visual query building.
-            - Advanced nested filtering.
-            - PDF and CSV custom reporting.
+            ## Querii V3 Beta
+
+            A powerful local sheet-to-SQL analytics desktop app — no server, no cloud, just your data.
+
+            ### What's new in V3 Beta
+            - 📄 **PDF Export Dialog** — Custom title, page size (A4/A3/Letter), portrait/landscape, scale, continuous single-page mode, optional SQL query & source label in footer
+            - 🔧 **Filter Group Buttons Fixed** — AND/OR toggles and ✕ close buttons in nested condition groups now work correctly
+            - 🗂 **Schema auto-refreshes** — Selecting a table after relaunch now correctly shows the schema panel
+            - 📝 **Dynamic SQL Templates** — Auto-fill table names, column names, and numeric columns from your active selection
+            - 🚀 **Auto-trigger** — Selecting any table immediately loads its data without needing to click Run
+
+            ### Downloads
+            Pick the binary for your OS — no installation needed, just run it.
+            | Platform | File |
+            |---|---|
+            | 🐧 Linux | `querii-linux` |
+            | 🍎 macOS | `querii-macos` |
+            | 🪟 Windows | `querii-windows.exe` |
           files: |
             binaries/querii-linux
             binaries/querii-macos
