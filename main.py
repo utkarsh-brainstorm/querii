@@ -48,38 +48,6 @@ def _get_user_data_dir() -> str:
         return os.path.join(xdg, "querii")
 
 
-def _check_linux_backend() -> None:
-    if sys.platform != "linux":
-        return
-    try:
-        # PyInstaller isolates GI_TYPELIB_PATH. We must restore system paths so the 
-        # bundled `gi` module can find the OS-installed WebKit2 typelibs natively.
-        system_paths = ["/usr/lib/girepository-1.0", "/usr/lib/x86_64-linux-gnu/girepository-1.0", "/usr/local/lib/girepository-1.0"]
-        current = os.environ.get("GI_TYPELIB_PATH", "")
-        new_path = ":".join(filter(None, [current] + [p for p in system_paths if os.path.exists(p)]))
-        if new_path:
-            os.environ["GI_TYPELIB_PATH"] = new_path
-
-        import gi
-        gi.require_version("WebKit2", "4.1")
-        from gi.repository import WebKit2  # noqa: F401
-    except Exception:
-        try:
-            import gi
-            gi.require_version("WebKit2", "4.0")
-            from gi.repository import WebKit2  # noqa: F401
-        except Exception:
-            print(
-                "\n[ERROR] WebKit2GTK not found.\n"
-                "Install it with:\n"
-                "  sudo apt install python3-gi python3-gi-cairo gir1.2-webkit2-4.1\n"
-                "Then re-run the app.\n"
-            )
-            sys.exit(1)
-
-
-_check_linux_backend()
-
 import webview          # noqa: E402
 import core.db as db   # noqa: E402
 from api import Api     # noqa: E402
@@ -95,6 +63,7 @@ def main() -> None:
     db.init_db()
     api = Api()
 
+    # ── Resolve frontend HTML path ──────────────────────────────────────────
     html_path = os.path.join(ROOT, "web", "index.html")
     if not os.path.isfile(html_path):
         raise FileNotFoundError(
@@ -116,7 +85,12 @@ def main() -> None:
     api.set_window(window)
     window.events.closed += lambda: os._exit(0)
 
-    webview.start(debug="--debug" in sys.argv)
+    # ── Start the event loop (picks best available native renderer) ─────────
+    # Force 'qt' (PyQt5 Chromium) on Linux to avoid WebKit2GTK sandbox/glib conflicts.
+    # macOS will auto-select 'cocoa', Windows will auto-select 'edgechromium'.
+    backend = "qt" if sys.platform == "linux" else None
+    
+    webview.start(debug="--debug" in sys.argv, gui=backend)
 
 
 if __name__ == "__main__":
