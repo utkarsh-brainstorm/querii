@@ -452,33 +452,48 @@ class Api:
         except Exception as e:
             return _err(e)
 
-    def export_pdf(
+    def export_pdf_auto(
         self,
-        columns: list,
-        rows: list,
-        filepath: str,
-        title: str = "Query Results",
-        org_name: str = "",
-        logo_b64: str = "",
-        sql_display: str = "",
-        theme_colors: dict = None,
+        title: str,
+        include_meta: bool,
+        orientation: str,
+        page_format: str,
+        org_name: str,
+        logo_b64: str,
+        sql_display: str
     ) -> dict:
         try:
+            import os
+            from pathlib import Path
+            downloads_dir = str(Path.home() / "Downloads")
+            # Create valid filename
+            safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+            if not safe_title:
+                safe_title = "Query Results"
+            filepath = os.path.join(downloads_dir, f"{safe_title}.pdf")
+            
+            # Run in thread so UI doesn't freeze
             def _do():
                 try:
-                    # Ignore frontend rows, use backend memory
                     exporter.export_pdf(
                         self._last_result_cols, self._last_result_rows, filepath,
                         title=title,
                         subtitle="",
                         org_name=org_name,
                         logo_b64=logo_b64,
-                        sql_display=sql_display,
-                        theme_colors=theme_colors,
+                        sql_display=sql_display if include_meta else "",
+                        theme_colors=self._settings.get("ap_theme_colors"),
+                        orientation=orientation,
+                        page_format=page_format,
+                        include_meta=include_meta
                     )
                 except Exception as ex:
                     print(f"[PDF export error] {ex}")
+
+            import threading
             threading.Thread(target=_do, daemon=True).start()
             return _ok(filepath)
         except Exception as e:
             return _err(e)
+
+

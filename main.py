@@ -19,6 +19,9 @@ else:
     ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
+os.environ["GDK_BACKEND"] = "x11"
+os.environ["WEBKIT2_DISABLE_HW_ACCELERATION"] = "1"
+os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     "--proxy-server='direct://' --proxy-bypass-list=*"
 )

@@ -362,6 +362,42 @@
     </div>
   </div>
 
+  <!-- PDF Export Modal -->
+  <div id="modal-pdf-export" class="modal hidden" style="width:420px">
+    <div class="modal-header">
+      <h2>Export to PDF</h2>
+      <button class="nav-btn" style="padding:4px" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Report Title</label>
+        <input type="text" id="pdf-export-title" class="input-base" style="width:100%" placeholder="e.g. Query Results">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Orientation</label>
+        <select id="pdf-export-orientation" class="select-base" style="width:100%">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Page Format</label>
+        <select id="pdf-export-format" class="select-base" style="width:100%">
+          <option value="a4">A4 Pages</option>
+          <option value="continuous">Continuous Single Page (Screen Reading)</option>
+        </select>
+      </div>
+      <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="pdf-export-meta" checked>
+        <label for="pdf-export-meta" style="font-size:11px;color:var(--text-mid)">Include query and source file at the end</label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="confirmPdfExport()">Save to Downloads</button>
+      </div>
+    </div>
+  </div>
+
   <!-- FILE LIST MODAL -->
   <div id="modal-filelist" class="modal hidden" style="width:860px;max-width:96vw">
     <div class="modal-header">
