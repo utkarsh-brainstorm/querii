@@ -52,6 +52,14 @@ def _check_linux_backend() -> None:
     if sys.platform != "linux":
         return
     try:
+        # PyInstaller isolates GI_TYPELIB_PATH. We must restore system paths so the 
+        # bundled `gi` module can find the OS-installed WebKit2 typelibs natively.
+        system_paths = ["/usr/lib/girepository-1.0", "/usr/lib/x86_64-linux-gnu/girepository-1.0", "/usr/local/lib/girepository-1.0"]
+        current = os.environ.get("GI_TYPELIB_PATH", "")
+        new_path = ":".join(filter(None, [current] + [p for p in system_paths if os.path.exists(p)]))
+        if new_path:
+            os.environ["GI_TYPELIB_PATH"] = new_path
+
         import gi
         gi.require_version("WebKit2", "4.1")
         from gi.repository import WebKit2  # noqa: F401
