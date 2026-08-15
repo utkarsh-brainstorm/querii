@@ -39,42 +39,78 @@ jobs:
         python -m pip install --upgrade pip
         pip install pywebview reportlab openpyxl xlrd pyinstaller
 
+    # ── Linux: single-file executable ──────────────────────────────────
     - name: Build Executable (Linux)
       if: runner.os == 'Linux'
       run: |
-        pyinstaller --noconfirm --onefile --windowed --add-data "web:web" --name querii-linux main.py
+        pyinstaller --noconfirm --onefile --windowed \
+          --add-data "web:web" \
+          --name querii-linux \
+          main.py
 
+    # ── macOS: single-file executable ──────────────────────────────────
     - name: Build Executable (macOS)
       if: runner.os == 'macOS'
       run: |
-        pyinstaller --noconfirm --onefile --add-data "web:web" --name querii-macos main.py
+        pyinstaller --noconfirm --onefile \
+          --add-data "web:web" \
+          --name querii-macos \
+          main.py
 
+    # ── Windows: onedir bundle (required by Inno Setup) ────────────────
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --noconfirm --onefile --windowed --add-data "web;web" --name querii-windows main.py
+        pyinstaller --noconfirm --onedir --windowed `
+          --add-data "web;web" `
+          --name querii-windows `
+          main.py
 
-    - name: Upload Artifacts
+    # ── Windows: build installer with Inno Setup ───────────────────────
+    - name: Build Windows Installer
+      if: runner.os == 'Windows'
+      run: |
+        choco install innosetup --no-progress -y
+        iscc installer.iss
+
+    - name: Upload Artifacts (Linux)
+      if: runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
-        name: binaries-${{ runner.os }}
-        path: |
-          dist/querii-linux
-          dist/querii-macos
-          dist/querii-windows.exe
+        name: binaries-Linux
+        path: dist/querii-linux
+        retention-days: 1
+
+    - name: Upload Artifacts (macOS)
+      if: runner.os == 'macOS'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-macOS
+        path: dist/querii-macos
+        retention-days: 1
+
+    - name: Upload Artifacts (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-Windows
+        path: dist/querii-windows-setup.exe
         retention-days: 1
 
   release:
-    name: Create Release
+    name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download all workflow run artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: binaries
           pattern: binaries-*
           merge-multiple: true
+
+      - name: List downloaded files
+        run: find binaries -type f
 
       - name: Create or Update Release
         uses: softprops/action-gh-release@v1
@@ -89,21 +125,32 @@ jobs:
 
             A powerful local sheet-to-SQL analytics desktop app — no server, no cloud, just your data.
 
-            ### What's new in V3 Beta
-            - 📄 **PDF Export Dialog** — Custom title, page size (A4/A3/Letter), portrait/landscape, scale, continuous single-page mode, optional SQL query & source label in footer
-            - 🔧 **Filter Group Buttons Fixed** — AND/OR toggles and ✕ close buttons in nested condition groups now work correctly
-            - 🗂 **Schema auto-refreshes** — Selecting a table after relaunch now correctly shows the schema panel
-            - 📝 **Dynamic SQL Templates** — Auto-fill table names, column names, and numeric columns from your active selection
-            - 🚀 **Auto-trigger** — Selecting any table immediately loads its data without needing to click Run
+            ### 🆕 What's new in V3 Beta
+            - 📄 **PDF Export Dialog** — Custom title, save folder (remembered!), A4/A3/Letter, portrait/landscape, scale, continuous mode
+            - 💾 **Persistent Data** — Your imported tables and settings survive app updates and restarts
+            - 🪟 **Windows Installer** — Proper `querii-windows-setup.exe` with Start Menu and Desktop shortcuts
+            - 🔧 **Filter buttons fixed** — AND/OR and ✕ close buttons in nested conditions work correctly
+            - 🗂 **Schema always visible** — Schema panel updates instantly when selecting any table from the File List
+            - 📝 **Dynamic SQL Templates** — Auto-fills table and column names from your active selection
+            - ↩️ **Ctrl+Z / Ctrl+Y** — Full undo/redo in the SQL editor
+            - 🖱 **Click column headers to sort** — Click any result column to sort ascending/descending
+            - ✍️ **Selectable text** — Table cell and schema content can be selected and copied
+            - ⚡ **Linux lag fixed** — Mousemove listener scoping matches the parent project for zero idle overhead
 
-            ### Downloads
-            Pick the binary for your OS — no installation needed, just run it.
-            | Platform | File |
-            |---|---|
-            | 🐧 Linux | `querii-linux` |
-            | 🍎 macOS | `querii-macos` |
-            | 🪟 Windows | `querii-windows.exe` |
+            ### 📥 Downloads
+            Pick the file for your OS — no Python or dependencies needed.
+
+            | Platform | File | Notes |
+            |---|---|---|
+            | 🐧 Linux | `querii-linux` | Single binary. `chmod +x querii-linux && ./querii-linux` |
+            | 🍎 macOS | `querii-macos` | Single binary. `chmod +x querii-macos && ./querii-macos` |
+            | 🪟 Windows | `querii-windows-setup.exe` | Run the installer — adds to Start Menu & optional Desktop icon |
+
+            > **Data location:** Your database and settings are stored in your user profile, never inside the app folder.
+            > - Windows: `%APPDATA%\Querii\`
+            > - Linux: `~/.local/share/querii/`
+            > - macOS: `~/Library/Application Support/Querii/`
           files: |
             binaries/querii-linux
             binaries/querii-macos
-            binaries/querii-windows.exe
+            binaries/querii-windows-setup.exe
