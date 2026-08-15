@@ -45,7 +45,7 @@ jobs:
       run: |
         # On Linux, we MUST use a system-site-packages venv so PyInstaller can see python3-gi
         if [ "$RUNNER_OS" == "Linux" ]; then
-          python3 -m venv --system-site-packages venv
+          /usr/bin/python3 -m venv --system-site-packages venv
           source venv/bin/activate
           pip install pywebview reportlab openpyxl xlrd pyinstaller
         fi
