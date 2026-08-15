@@ -44,6 +44,8 @@ jobs:
       run: |
         pyinstaller --noconfirm --onedir --windowed \
           --add-data "web:web" \
+          --collect-all gi \
+          --hidden-import gi.repository.WebKit2 \
           --name querii-linux \
           main.py
         
