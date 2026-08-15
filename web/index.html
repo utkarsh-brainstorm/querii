@@ -362,42 +362,6 @@
     </div>
   </div>
 
-  <!-- PDF Export Modal -->
-  <div id="modal-pdf-export" class="modal hidden" style="width:420px">
-    <div class="modal-header">
-      <h2>Export to PDF</h2>
-      <button class="nav-btn" style="padding:4px" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Report Title</label>
-        <input type="text" id="pdf-export-title" class="input-base" style="width:100%" placeholder="e.g. Query Results">
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Orientation</label>
-        <select id="pdf-export-orientation" class="select-base" style="width:100%">
-          <option value="portrait">Portrait</option>
-          <option value="landscape">Landscape</option>
-        </select>
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">Page Format</label>
-        <select id="pdf-export-format" class="select-base" style="width:100%">
-          <option value="a4">A4 Pages</option>
-          <option value="continuous">Continuous Single Page (Screen Reading)</option>
-        </select>
-      </div>
-      <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="pdf-export-meta" checked>
-        <label for="pdf-export-meta" style="font-size:11px;color:var(--text-mid)">Include query and source file at the end</label>
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px">
-        <button class="btn-ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn-primary" onclick="confirmPdfExport()">Save to Downloads</button>
-      </div>
-    </div>
-  </div>
-
   <!-- FILE LIST MODAL -->
   <div id="modal-filelist" class="modal hidden" style="width:860px;max-width:96vw">
     <div class="modal-header">
@@ -625,6 +589,78 @@
     <div class="modal-footer">
       <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
       <button class="btn-primary text-[12px]" onclick="saveCustomReport()">Save Report</button>
+    </div>
+  </div>
+
+  <!-- PDF EXPORT DIALOG -->
+  <div id="modal-pdf-export" class="modal hidden" style="width:520px;max-width:96vw">
+    <div class="modal-header">📄 Export PDF<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-5 py-4 space-y-4 text-[12px]">
+      <!-- Title -->
+      <div>
+        <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Report Title</label>
+        <input id="pdf-title" class="input-sm w-full" placeholder="e.g. Monthly Sales Report" style="font-size:12px;height:32px">
+      </div>
+      <!-- Save Path -->
+      <div>
+        <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Save Location</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="pdf-save-path" class="input-sm" placeholder="Select folder…" readonly style="flex:1;font-size:11px;height:30px;cursor:default;color:var(--text-dim)">
+          <button class="btn-ghost" style="height:30px;padding:0 10px;font-size:11px;white-space:nowrap" onclick="choosePdfFolder()">📁 Browse</button>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:3px">This folder will be remembered for future exports.</div>
+      </div>
+      <!-- Options Row 1 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Page Size</label>
+          <select id="pdf-page-size" class="select-sm w-full" style="height:30px">
+            <option value="A4" selected>A4 (default)</option>
+            <option value="A3">A3</option>
+            <option value="Letter">US Letter</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Orientation</label>
+          <select id="pdf-orientation" class="select-sm w-full" style="height:30px">
+            <option value="portrait" selected>Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        </div>
+      </div>
+      <!-- Options Row 2 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Content Scale</label>
+          <select id="pdf-scale" class="select-sm w-full" style="height:30px">
+            <option value="1.0">100% (normal)</option>
+            <option value="0.8">80% (compact)</option>
+            <option value="0.6">60% (tiny)</option>
+            <option value="1.2">120% (large)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-head)">
+            <input type="checkbox" id="pdf-continuous" style="width:13px;height:13px">
+            Continuous (no page breaks)
+          </label>
+        </div>
+      </div>
+      <!-- Checkboxes -->
+      <div style="border-top:1px solid var(--border-light);padding-top:10px;display:flex;flex-direction:column;gap:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-query" checked style="width:13px;height:13px">
+          <span>Include SQL query at the bottom</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-source" checked style="width:13px;height:13px">
+          <span>Include source table name at the bottom</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer gap-2">
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary text-[12px]" onclick="confirmExportPdf()">Export PDF</button>
     </div>
   </div>
 
