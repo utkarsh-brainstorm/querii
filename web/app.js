@@ -457,6 +457,18 @@ function onTableChange() {
   if (btd) btd.classList.remove('hidden');
   if (feh) feh.classList.add('hidden');
 
+  // Always re-render schema tree so it shows up even after relaunch
+  var tableSchema = _allSchemaData.find(function(t) { return t.table === _activeTable; });
+  if (tableSchema) {
+    renderSchemaTree(_allSchemaData);
+  } else {
+    // Schema might not be loaded yet — refresh from backend
+    apiCall('get_schema').then(function(schema) {
+      _allSchemaData = schema || [];
+      renderSchemaTree(_allSchemaData);
+    }).catch(function(e) { console.error('schema refresh error', e); });
+  }
+
   apiCall('get_table_columns', _activeTable)
     .then(function(cols) {
       _tableColumns = cols;
@@ -1313,12 +1325,34 @@ var SQL_TEMPLATES = [
     sql: 'SELECT *\nFROM "your_table"\nWHERE\n  ("status" = \'active\' AND "amount" > 100)\n  OR ("status" = \'pending\' AND "date" > \'2024-01-01\')\nLIMIT 500' },
 ];
 
+function _applyTemplateTableNames(sql) {
+  // Replace generic placeholders with actual table names from the active session
+  var tbl1 = _selectedTables[0] ? '"' + _selectedTables[0] + '"' : '"your_table"';
+  var tbl2 = _selectedTables[1] ? '"' + _selectedTables[1] + '"' : '"table_two"';
+  var tbl  = _activeTable ? '"' + _activeTable + '"' : '"your_table"';
+
+  // Replace the JOIN placeholders specifically
+  sql = sql.replace(/"table_one"/g, tbl1);
+  sql = sql.replace(/"table_two"/g, tbl2);
+  // Replace general fallback
+  sql = sql.replace(/"your_table"/g, tbl);
+
+  // Auto-fill first column name if we have schema info
+  var firstCol = _tableColumns.length > 0 ? _tableColumns[0].name : 'column_name';
+  var numCol   = _tableColumns.find(function(c) { return c.category === 'numeric'; });
+  var numColName = numCol ? numCol.name : 'amount_column';
+  sql = sql.replace(/"column_name"/g, '"' + firstCol + '"');
+  sql = sql.replace(/"amount_column"/g, '"' + numColName + '"');
+  sql = sql.replace(/"group_column"/g, '"' + firstCol + '"');
+  sql = sql.replace(/"value_column"/g, '"' + numColName + '"');
+  return sql;
+}
+
 function openTemplates() {
   var grid = document.getElementById('templates-grid');
   if (!grid) return;
-  var tbl = _activeTable ? '"' + _activeTable + '"' : '"your_table"';
   grid.innerHTML = SQL_TEMPLATES.map(function(t, i) {
-    var sql = t.sql.replace(/"your_table"/g, tbl);
+    var sql = _applyTemplateTableNames(t.sql);
     return '<div class="template-card" onclick="useTemplate(' + i + ')">' +
       '<div style="font-size:18px;margin-bottom:4px">' + t.icon + '</div>' +
       '<div style="font-size:11px;font-weight:600;color:var(--text-head)">' + esc(t.title) + '</div>' +
@@ -1330,12 +1364,11 @@ function openTemplates() {
 function useTemplate(i) {
   var t = SQL_TEMPLATES[i];
   if (!t) return;
-  var tbl = _activeTable ? '"' + _activeTable + '"' : '"your_table"';
-  var sql = t.sql.replace(/"your_table"/g, tbl);
+  var sql = _applyTemplateTableNames(t.sql);
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
   closeModal();
-  toast('Template inserted! Edit column names as needed.');
+  toast('Template inserted! Table names auto-filled from your active selection.');
 }
 
 /* ── Results table ──────────────────────────────────────────────────── */
@@ -1502,43 +1535,94 @@ function exportCsv() {
     .then(function(r) { if (r) toast('CSV exported.'); })
     .catch(function(e) { toast('Export failed: ' + e.message, 'error'); });
 }
+/* ── PDF Export ─────────────────────────────────────────────────────── */
+var _pdfDefaultDir = '';
+
 function exportPdf() {
-  if (!_lastResults) return;
-  var title = 'Query Results';
-  if (_activeTable) {
-    if (_selectedTables.length > 1) {
-      title = 'Report: ' + _selectedTables.join(' ⋈ ');
+  if (!_lastResults || !_lastResults.total) { toast('Run a query first to have data to export.', 'warn'); return; }
+
+  // Pre-fill the title with the active table name
+  var titleEl = document.getElementById('pdf-title');
+  if (titleEl) {
+    var autoTitle = _activeTable
+      ? (_selectedTables.length > 1 ? _selectedTables.join(' \u22c8 ') : _activeTable)
+      : 'Query Results';
+    titleEl.value = autoTitle;
+  }
+
+  // Fill the save path with stored default or request one from backend
+  var pathEl = document.getElementById('pdf-save-path');
+  if (pathEl) {
+    if (_pdfDefaultDir) {
+      pathEl.value = _pdfDefaultDir;
     } else {
-      title = 'Report: ' + _activeTable;
+      apiCall('get_default_downloads_dir').then(function(dir) {
+        if (dir) { _pdfDefaultDir = dir; pathEl.value = dir; }
+      }).catch(function() {});
     }
   }
-  var input = document.getElementById('pdf-export-title');
-  if (input) input.value = title;
+
   openModal('modal-pdf-export');
 }
 
-function confirmPdfExport() {
-  if (!_lastResults) return;
-  var title = (document.getElementById('pdf-export-title') || {}).value || 'Query Results';
-  var orientation = (document.getElementById('pdf-export-orientation') || {}).value || 'portrait';
-  var format = (document.getElementById('pdf-export-format') || {}).value || 'a4';
-  var metaEl = document.getElementById('pdf-export-meta');
-  var includeMeta = metaEl ? metaEl.checked : true;
+function choosePdfFolder() {
+  apiCall('choose_folder_dialog').then(function(dir) {
+    if (!dir) return;
+    _pdfDefaultDir = dir;
+    var pathEl = document.getElementById('pdf-save-path');
+    if (pathEl) pathEl.value = dir;
+    // Persist as setting
+    apiCall('save_settings', { ap_pdf_dir: dir }).catch(function() {});
+  }).catch(function(e) { toast('Could not open folder dialog: ' + e.message, 'error'); });
+}
 
-  var org  = (document.getElementById('s-org-name') || {}).value || '';
+function confirmExportPdf() {
+  var titleEl   = document.getElementById('pdf-title');
+  var pathEl    = document.getElementById('pdf-save-path');
+  var sizeEl    = document.getElementById('pdf-page-size');
+  var orientEl  = document.getElementById('pdf-orientation');
+  var scaleEl   = document.getElementById('pdf-scale');
+  var contEl    = document.getElementById('pdf-continuous');
+  var inclQEl   = document.getElementById('pdf-include-query');
+  var inclSEl   = document.getElementById('pdf-include-source');
+
+  var title     = (titleEl ? titleEl.value.trim() : '') || 'Query Results';
+  var saveDir   = pathEl ? pathEl.value.trim() : '';
+  var pageSize  = sizeEl ? sizeEl.value : 'A4';
+  var orient    = orientEl ? orientEl.value : 'portrait';
+  var scale     = parseFloat(scaleEl ? scaleEl.value : '1.0') || 1.0;
+  var continuous = contEl ? contEl.checked : false;
+  var inclQuery = inclQEl ? inclQEl.checked : true;
+  var inclSource = inclSEl ? inclSEl.checked : true;
+
+  if (!saveDir) { toast('Please choose a save location first.', 'warn'); return; }
+
+  // Sanitize file name from title
+  var safeName = title.replace(/[^a-zA-Z0-9 _\-().]/g, '_').trim() || 'querii_export';
+  var filepath  = saveDir.replace(/[\/\\]$/, '') + '/' + safeName + '.pdf';
+
+  // Save folder as default
+  _pdfDefaultDir = saveDir;
+  apiCall('save_settings', { ap_pdf_dir: saveDir }).catch(function() {});
+
+  var org   = (document.getElementById('s-org-name') || {}).value || '';
   var imgEl = document.getElementById('logo-img');
-  var logo = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
-  var sql  = (document.getElementById('sql-editor') || {}).value || '';
+  var logo  = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
+  var sql   = inclQuery ? ((document.getElementById('sql-editor') || {}).value || '') : '';
+  var sourceLabel = inclSource ? (_selectedTables.length > 1 ? _selectedTables.join(', ') : _activeTable) : '';
 
   closeModal();
-  toast('Generating PDF... This may take a moment.', 'info');
-  
-  apiCall('export_pdf_auto', title, includeMeta, orientation, format, org, logo, sql)
-    .then(function(r) { 
-      if (r && r.ok) toast('PDF saved to Downloads/' + title + '.pdf'); 
-      else if (r && r.error) toast('Export failed: ' + r.error, 'error');
+  showProgress(true);
+
+  apiCall('export_pdf', [], [], filepath, title, org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
+    .then(function(r) {
+      showProgress(false);
+      if (r) toast('✓ PDF saved: ' + safeName + '.pdf');
     })
-    .catch(function(e) { toast('Export failed: ' + e.message, 'error'); });
+    .catch(function(e) {
+      showProgress(false);
+      toast('Export failed: ' + e.message, 'error');
+    });
 }
 
 /* ── Schema toggle panel ────────────────────────────────────────────── */
@@ -2071,6 +2155,9 @@ document.addEventListener('DOMContentLoaded', function() {
       try { _customReports = JSON.parse(s.ap_custom_reports) || []; } catch(e) { _customReports = []; }
     }
     loadCustomReports();
+
+    // Restore saved PDF default directory
+    if (s.ap_pdf_dir) { _pdfDefaultDir = s.ap_pdf_dir; }
 
     return window.pywebview.api.get_schema();
   }).then(function(res) {

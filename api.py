@@ -86,7 +86,7 @@ class Api:
         try:
             keys = [
                 "org_name", "org_logo_b64",
-                "ap_theme", "ap_zoom", "ap_custom_reports",
+                "ap_theme", "ap_zoom", "ap_custom_reports", "ap_pdf_dir",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -153,6 +153,41 @@ class Api:
                 default = default_name + ".csv"
             result = self._window.create_file_dialog(
                 webview.SAVE_DIALOG, save_filename=default, file_types=types
+            )
+            if result:
+                path = result if isinstance(result, str) else result[0]
+                return _ok(path)
+            return _ok(None)
+        except Exception as e:
+            return _err(e)
+
+    def get_default_downloads_dir(self) -> dict:
+        """Return the platform-default Downloads folder."""
+        try:
+            home = os.path.expanduser("~")
+            # Try XDG user dirs on Linux first
+            downloads = os.path.join(home, "Downloads")
+            xdg_dirs = os.path.join(home, ".config", "user-dirs.dirs")
+            if os.path.isfile(xdg_dirs):
+                with open(xdg_dirs) as f:
+                    for line in f:
+                        if line.startswith("XDG_DOWNLOAD_DIR"):
+                            val = line.split("=", 1)[1].strip().strip('"').replace("$HOME", home)
+                            if os.path.isdir(val):
+                                downloads = val
+            if not os.path.isdir(downloads):
+                downloads = home
+            return _ok(downloads)
+        except Exception as e:
+            return _err(e)
+
+    def choose_folder_dialog(self) -> dict:
+        """Open a native folder picker and return selected path."""
+        try:
+            if self._window is None:
+                return _err("Window not ready.")
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
             )
             if result:
                 path = result if isinstance(result, str) else result[0]
@@ -452,27 +487,23 @@ class Api:
         except Exception as e:
             return _err(e)
 
-    def export_pdf_auto(
+    def export_pdf(
         self,
-        title: str,
-        include_meta: bool,
-        orientation: str,
-        page_format: str,
-        org_name: str,
-        logo_b64: str,
-        sql_display: str
+        columns: list,
+        rows: list,
+        filepath: str,
+        title: str = "Query Results",
+        org_name: str = "",
+        logo_b64: str = "",
+        sql_display: str = "",
+        theme_colors: dict = None,
+        page_size: str = "A4",
+        orientation: str = "portrait",
+        scale: float = 1.0,
+        continuous: bool = False,
+        source_label: str = "",
     ) -> dict:
         try:
-            import os
-            from pathlib import Path
-            downloads_dir = str(Path.home() / "Downloads")
-            # Create valid filename
-            safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-            if not safe_title:
-                safe_title = "Query Results"
-            filepath = os.path.join(downloads_dir, f"{safe_title}.pdf")
-            
-            # Run in thread so UI doesn't freeze
             def _do():
                 try:
                     exporter.export_pdf(
@@ -481,19 +512,17 @@ class Api:
                         subtitle="",
                         org_name=org_name,
                         logo_b64=logo_b64,
-                        sql_display=sql_display if include_meta else "",
-                        theme_colors=self._settings.get("ap_theme_colors"),
+                        sql_display=sql_display,
+                        theme_colors=theme_colors,
+                        page_size=page_size,
                         orientation=orientation,
-                        page_format=page_format,
-                        include_meta=include_meta
+                        scale=scale,
+                        continuous=continuous,
+                        source_label=source_label,
                     )
                 except Exception as ex:
                     print(f"[PDF export error] {ex}")
-
-            import threading
             threading.Thread(target=_do, daemon=True).start()
             return _ok(filepath)
         except Exception as e:
             return _err(e)
-
-
