@@ -32,7 +32,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libgirepository1.0-dev gcc libcairo2-dev pkg-config python3-dev gir1.2-gtk-3.0
-        sudo apt-get install -y gir1.2-webkit2-4.1 || sudo apt-get install -y gir1.2-webkit2-4.0
 
     - name: Install Python Dependencies
       run: |
@@ -43,10 +42,15 @@ jobs:
     - name: Build Executable (Linux)
       if: runner.os == 'Linux'
       run: |
-        pyinstaller --noconfirm --onefile --windowed \
+        pyinstaller --noconfirm --onedir --windowed \
           --add-data "web:web" \
           --name querii-linux \
           main.py
+        
+        # Package into a single executable that extracts to temp (avoids Pyinstaller WebKit2 bugs)
+        sudo apt-get install -y makeself
+        mv dist/querii-linux dist/querii-bundle
+        makeself --quiet dist/querii-bundle dist/querii-linux "Querii" ./querii-linux
 
     # ── macOS: single-file executable ──────────────────────────────────
     - name: Build Executable (macOS)
