@@ -464,6 +464,7 @@ function onTableChange() {
       rebuildSortDropdown();
       buildAggDropdowns();
       clearFilterGroups();
+      run_filter();
     })
     .catch(function(e) { console.error('get_table_columns error:', e); });
 }
@@ -669,6 +670,7 @@ function clearFilterGroups() {
 
 /* Add a TOP-LEVEL group */
 function addFilterGroup() {
+  syncFilterState();
   if (_tableColumns.length === 0) { toast('Select a table first.', 'warn'); return; }
   _groupCounter++;
   var gid = 'g' + _groupCounter;
@@ -681,6 +683,7 @@ function addFilterGroup() {
 
 /* Add a FLAT CONDITION to the top (no group) — shortcut */
 function addTopLevelCondition() {
+  syncFilterState();
   if (_tableColumns.length === 0) { toast('Select a table first.', 'warn'); return; }
   // If no groups exist, create one to hold it
   if (_filterGroups.length === 0) {
@@ -693,6 +696,7 @@ function addTopLevelCondition() {
 
 /* Add a CONDITION to an existing group */
 function addConditionToGroup(gid) {
+  syncFilterState();
   var group = findGroup(_filterGroups, gid);
   if (!group) return;
   _itemCounter++;
@@ -714,6 +718,7 @@ function addConditionToGroup(gid) {
 
 /* Add a NESTED GROUP inside an existing group */
 function addNestedGroup(gid) {
+  syncFilterState();
   var parentGroup = findGroup(_filterGroups, gid);
   if (!parentGroup) return;
   _groupCounter++;
@@ -748,12 +753,14 @@ function findGroupInItems(items, gid) {
 
 /* Remove a top-level group */
 function removeTopGroup(gid) {
+  syncFilterState();
   _filterGroups = _filterGroups.filter(function(g) { return g.id !== gid; });
   renderFilterGroups();
 }
 
 /* Remove any item (condition or nested group) from its parent group */
 function removeGroupItem(gid, iid) {
+  syncFilterState();
   var group = findGroup(_filterGroups, gid);
   if (!group) return;
   group.items = group.items.filter(function(it) { return it.id !== iid; });
@@ -768,6 +775,7 @@ function removeGroupItem(gid, iid) {
 
 /* Toggle joiner of top-level group */
 function toggleGroupJoiner(gid) {
+  syncFilterState();
   var group = findGroup(_filterGroups, gid);
   if (!group) return;
   group.joiner = group.joiner === 'AND' ? 'OR' : 'AND';
@@ -775,6 +783,7 @@ function toggleGroupJoiner(gid) {
 }
 /* Toggle joiner of any item */
 function toggleItemJoiner(parentGid, iid) {
+  syncFilterState();
   var group = findGroup(_filterGroups, parentGid);
   if (!group) return;
   var item = group.items.find(function(it) { return it.id === iid; });
@@ -887,7 +896,7 @@ function buildConditionEl(cond, ci, gid) {
   // Joiner pill (AND/OR) — only for non-first items
   if (ci > 0) {
     html += '<button class="joiner-pill' + (cond.joiner === 'AND' ? ' active' : '') + '" ' +
-      'onclick="toggleItemJoiner(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ')" ' +
+      'onclick=\'toggleItemJoiner(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ')\' ' +
       'title="Toggle AND / OR" style="align-self:flex-start;margin-top:2px">' + (cond.joiner || 'AND') + '</button>';
   }
 
@@ -900,18 +909,18 @@ function buildConditionEl(cond, ci, gid) {
 
   html += '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">';
   html += '<select class="select-sm" style="font-family:monospace;font-size:11px" id="ff-' + cond.id + '" ' +
-    'onchange="onCondFieldChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)">' + fieldOpts + '</select>';
+    'onchange=\'onCondFieldChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)\'>' + fieldOpts + '</select>';
 
   // Op select (populated by updateFilterOps)
   html += '<div style="display:flex;gap:3px">';
   html += '<select class="select-sm" style="flex:1" id="fo-' + cond.id + '" ' +
-    'onchange="onCondOpChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)"></select>';
+    'onchange=\'onCondOpChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)\'></select>';
   html += '</div>';
   html += '<div id="fv-' + cond.id + '" style="margin-top:2px"></div>';
   html += '</div>';
 
   // Remove
-  html += '<button onclick="removeGroupItem(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ')" ' +
+  html += '<button onclick=\'removeGroupItem(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ')\' ' +
     'style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer;padding:0 2px;align-self:flex-start;margin-top:2px">✕</button>';
 
   row.innerHTML = html;
@@ -942,9 +951,9 @@ function renderCondValue(cond, gid) {
   var cat = cond.category;
 
   if (op === 'is empty' || op === 'is not empty') { vDiv.innerHTML = ''; return; }
-  var changeAttr = 'onchange="onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',\'val1\',this.value)" ' +
-                   'oninput="onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',\'val1\',this.value)"';
-  var changeAttr2 = 'onchange="onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',\'val2\',this.value)"';
+  var changeAttr = 'onchange=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val1",this.value)\' ' +
+                   'oninput=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val1",this.value)\'';
+  var changeAttr2 = 'onchange=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val2",this.value)\'';
 
   if (op === 'between') {
     vDiv.innerHTML = '<input id="fv1-' + cond.id + '" class="input-sm" style="width:100%;margin-bottom:2px" placeholder="From…" value="' + esc(cond.value) + '" ' + changeAttr + '>' +
@@ -1495,13 +1504,40 @@ function exportCsv() {
 }
 function exportPdf() {
   if (!_lastResults) return;
+  var title = 'Query Results';
+  if (_activeTable) {
+    if (_selectedTables.length > 1) {
+      title = 'Report: ' + _selectedTables.join(' ⋈ ');
+    } else {
+      title = 'Report: ' + _activeTable;
+    }
+  }
+  var input = document.getElementById('pdf-export-title');
+  if (input) input.value = title;
+  openModal('modal-pdf-export');
+}
+
+function confirmPdfExport() {
+  if (!_lastResults) return;
+  var title = (document.getElementById('pdf-export-title') || {}).value || 'Query Results';
+  var orientation = (document.getElementById('pdf-export-orientation') || {}).value || 'portrait';
+  var format = (document.getElementById('pdf-export-format') || {}).value || 'a4';
+  var metaEl = document.getElementById('pdf-export-meta');
+  var includeMeta = metaEl ? metaEl.checked : true;
+
   var org  = (document.getElementById('s-org-name') || {}).value || '';
   var imgEl = document.getElementById('logo-img');
   var logo = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
   var sql  = (document.getElementById('sql-editor') || {}).value || '';
-  apiCall('save_file_dialog', 'querii_export', 'pdf')
-    .then(function(path) { if (!path) return null; return apiCall('export_pdf', [], [], path, 'Query Results', org, logo, sql, null); })
-    .then(function(r) { if (r) toast('PDF export started.'); })
+
+  closeModal();
+  toast('Generating PDF... This may take a moment.', 'info');
+  
+  apiCall('export_pdf_auto', title, includeMeta, orientation, format, org, logo, sql)
+    .then(function(r) { 
+      if (r && r.ok) toast('PDF saved to Downloads/' + title + '.pdf'); 
+      else if (r && r.error) toast('Export failed: ' + r.error, 'error');
+    })
     .catch(function(e) { toast('Export failed: ' + e.message, 'error'); });
 }
 
@@ -1727,6 +1763,7 @@ function enterJoinMode(tables) {
   rebuildSortDropdown();
   buildAggDropdowns();
   clearFilterGroups();
+  run_filter();
 }
 
 function sql_type_to_category_js(t) {

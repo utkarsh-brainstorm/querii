@@ -39,11 +39,14 @@ def export_pdf(
     logo_b64: str = "",
     sql_display: str = "",
     theme_colors: dict = None,
+    orientation: str = "portrait",
+    page_format: str = "a4",
+    include_meta: bool = True
 ) -> None:
     """Render a table to PDF using ReportLab with dynamic theming."""
     try:
         from reportlab.lib import colors
-        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.pagesizes import A4, landscape, portrait
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import mm
         from reportlab.platypus import (
@@ -62,8 +65,17 @@ def export_pdf(
     c_border = colors.HexColor(tc.get("border", "#d2d2d7"))
     c_alt_bg = colors.HexColor(tc.get("bg", "#f5f5f7")) # Fallback alternate row
     
-    pagesize = A4
-    top_margin = 32 * mm if logo_b64 else 20 * mm
+    if orientation == "landscape":
+        pagesize = landscape(A4)
+    else:
+        pagesize = portrait(A4)
+        
+    if page_format == "continuous":
+        # A row is ~12 points, cap at PDF max limit of 14400 points
+        est_pts = min((len(rows) * 14) + 400, 14400)
+        pagesize = (pagesize[0], max(pagesize[1], est_pts))
+        
+    top_margin = 15 * mm if logo_b64 else 10 * mm
     
     # Custom DocTemplate to draw background
     class ThemeDocTemplate(SimpleDocTemplate):
@@ -154,8 +166,7 @@ def export_pdf(
     # Removed per user request since name is embedded in logo banner
 
     story.append(Paragraph(title, title_style))
-    story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", sub_style))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 2 * mm))
     story.append(HRFlowable(width="100%", thickness=1, color=c_border))
     story.append(Spacer(1, 4 * mm))
 
@@ -207,33 +218,38 @@ def export_pdf(
         sub_style
     ))
 
-    # ── SQL query at bottom (if provided) ──
-    if sql_display:
-        sql_style = ParagraphStyle(
-            "SqlBlock",
-            parent=styles["Normal"],
-            fontSize=7,
-            fontName="Courier",
-            textColor=colors.HexColor("#555555"),
-            spaceAfter=2,
-            leftIndent=4,
-            leading=9,
-        )
-        sql_label_style = ParagraphStyle(
-            "SqlLabel",
-            parent=styles["Normal"],
-            fontSize=7,
-            fontName="Courier-Bold",
-            textColor=colors.HexColor("#333333"),
-            spaceAfter=1,
-        )
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#d2d2d7")))
-        story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph("Query:", sql_label_style))
-        # Split SQL into lines to preserve formatting
-        for line in sql_display.split('\n')[:20]:  # Max 20 lines
-            if line.strip():
-                story.append(Paragraph(line.replace(' ', '&nbsp;'), sql_style))
+    if include_meta:
+        from datetime import datetime
+        story.append(Paragraph(
+            f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}",
+            sub_style
+        ))
+        if sql_display:
+            sql_style = ParagraphStyle(
+                "SqlBlock",
+                parent=styles["Normal"],
+                fontSize=7,
+                fontName="Courier",
+                textColor=colors.HexColor("#555555"),
+                spaceAfter=2,
+                leftIndent=4,
+                leading=9,
+            )
+            sql_label_style = ParagraphStyle(
+                "SqlLabel",
+                parent=styles["Normal"],
+                fontSize=7,
+                fontName="Courier-Bold",
+                textColor=colors.HexColor("#333333"),
+                spaceAfter=1,
+            )
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#d2d2d7")))
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph("Query:", sql_label_style))
+            # Split SQL into lines to preserve formatting
+            for line in sql_display.split('\n')[:20]:  # Max 20 lines
+                if line.strip():
+                    story.append(Paragraph(line.replace(' ', '&nbsp;'), sql_style))
 
     doc.build(story)
 
