@@ -43,10 +43,13 @@ jobs:
     - name: Build Executable (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        # On Linux, we MUST use a system-site-packages venv so PyInstaller can see python3-gi
+        # Use pywebview[qt] to bundle a standalone Chromium renderer on Linux.
+        # This bypasses all WebKit2GTK system library conflicts entirely.
         if [ "$RUNNER_OS" == "Linux" ]; then
-          /usr/bin/python3 -m venv --system-site-packages venv
+          python3 -m venv venv
           source venv/bin/activate
+          pip install pywebview[qt] PyQtWebEngine reportlab openpyxl xlrd pyinstaller
+        else
           pip install pywebview reportlab openpyxl xlrd pyinstaller
         fi
         
