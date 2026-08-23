@@ -86,11 +86,7 @@ def main() -> None:
     window.events.closed += lambda: os._exit(0)
 
     # ── Start the event loop (picks best available native renderer) ─────────
-    # Force 'qt' (PyQt5 Chromium) on Linux to avoid WebKit2GTK sandbox/glib conflicts.
-    # macOS will auto-select 'cocoa', Windows will auto-select 'edgechromium'.
-    backend = "qt" if sys.platform == "linux" else None
-    
-    webview.start(debug="--debug" in sys.argv, gui=backend)
+    webview.start(debug="--debug" in sys.argv)
 
 
 if __name__ == "__main__":
