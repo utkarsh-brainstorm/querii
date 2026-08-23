@@ -86,6 +86,11 @@ def main() -> None:
     window.events.closed += lambda: os._exit(0)
 
     # ── Start the event loop (picks best available native renderer) ─────────
+    # Fix for patchy/laggy UI on Linux: Disable WebKit2GTK hardware compositing
+    # which is notoriously broken on many Linux setups and causes severe rendering lag.
+    if sys.platform == "linux":
+        os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
+        
     webview.start(debug="--debug" in sys.argv)
 
 
