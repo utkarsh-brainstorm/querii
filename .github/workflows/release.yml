@@ -48,7 +48,7 @@ jobs:
           # Bypasses all PyInstaller GTK library stripping/sandbox crashes.
           python3 -m pip install shiv pywebview reportlab openpyxl xlrd
           mkdir dist
-          shiv -c querii -o dist/querii-linux pywebview reportlab openpyxl xlrd --site-packages . -e main:main
+          shiv -o dist/querii-linux pywebview reportlab openpyxl xlrd --site-packages . -e main:main
           cd dist
           tar -czf ../querii-Linux.tar.gz querii-linux
         else
