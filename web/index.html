@@ -462,22 +462,36 @@
 
     <!-- Organisation -->
     <div id="tab-organisation" class="settings-tab-body">
-      <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears in the top bar. Logo appears at top of exported PDFs.</p>
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears in the top bar. Logos appear at top of exported PDFs.</p>
       <div class="space-y-3">
         <div class="settings-row"><label>Organisation name</label>
           <input type="text" id="s-org-name" placeholder="e.g. Acme Corp" class="input-sm w-52" />
         </div>
-        <div class="settings-row"><label>Logo (PNG)</label>
+
+        <!-- Wide Banner Logo -->
+        <div class="settings-row"><label style="flex-shrink:0">Banner logo <span style="font-size:9px;color:var(--text-dim);display:block;font-weight:400">Wide/rectangular (header)</span></label>
           <div class="flex items-center gap-2">
-            <div id="logo-preview" class="hidden w-16 h-10 border border-[var(--border)] rounded overflow-hidden bg-[var(--bg-muted)]">
+            <div id="logo-preview" class="hidden border border-[var(--border)] rounded overflow-hidden bg-[var(--bg-muted)]" style="width:80px;height:36px">
               <img id="logo-img" class="w-full h-full object-contain" />
             </div>
             <button class="btn-ghost text-[11px]" onclick="pickLogo()">Upload PNG…</button>
             <button class="btn-ghost text-[11px] text-[var(--danger)]" onclick="clearLogo()">Remove</button>
           </div>
         </div>
+
+        <!-- Square Logo -->
+        <div class="settings-row"><label style="flex-shrink:0">Square logo <span style="font-size:9px;color:var(--text-dim);display:block;font-weight:400">1:1 ratio (PDF circle)</span></label>
+          <div class="flex items-center gap-2">
+            <div id="logo-sq-preview" class="hidden border border-[var(--border)] rounded-full overflow-hidden bg-[var(--bg-muted)]" style="width:36px;height:36px">
+              <img id="logo-sq-img" class="w-full h-full object-cover" />
+            </div>
+            <button class="btn-ghost text-[11px]" onclick="pickLogoSq()">Upload PNG…</button>
+            <button class="btn-ghost text-[11px] text-[var(--danger)]" onclick="clearLogoSq()">Remove</button>
+          </div>
+        </div>
       </div>
     </div>
+
 
     <!-- PDF Style -->
     <div id="tab-pdfstyle" class="settings-tab-body hidden">

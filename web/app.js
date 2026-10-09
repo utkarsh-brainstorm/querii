@@ -182,9 +182,15 @@ function saveSettings() {
   };
   _pdfCustomCss = pdfCss;
   _pdfDevMode   = !!pdfDev;
+  // Wide banner logo
   var imgEl = document.getElementById('logo-img');
   if (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) {
     payload.org_logo_b64 = imgEl.src.replace(/^data:[^;]+;base64,/, '');
+  }
+  // Square logo
+  var sqEl = document.getElementById('logo-sq-img');
+  if (sqEl && sqEl.src && sqEl.src.indexOf('base64,') !== -1) {
+    payload.org_logo_sq_b64 = sqEl.src.replace(/^data:[^;]+;base64,/, '');
   }
   apiCall('save_settings', payload)
     .then(function() {
@@ -197,9 +203,12 @@ function saveSettings() {
 }
 
 /* ── Query Log ──────────────────────────────────────────────────────── */
+var _qlogSqls = [];   // stores SQL strings for query log Use buttons (avoids onclick quoting issues)
+
 function loadQueryLog() {
   var c = document.getElementById('query-log-list');
   if (!c) return;
+  _qlogSqls = [];
   c.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:var(--text-dim)">Loading…</div>';
   apiCall('get_query_log')
     .then(function(logs) {
@@ -208,38 +217,55 @@ function loadQueryLog() {
         return;
       }
       c.innerHTML = '';
-      logs.forEach(function(q) {
+      _qlogSqls = [];
+      logs.forEach(function(q, i) {
+        _qlogSqls.push(q.sql_text);   // safe storage — no inline quoting
         var d = document.createElement('div');
         d.className = 'qlog-row';
-        var srcTag = q.source === 'filter' ? '<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-bg);color:var(--accent);margin-right:4px">filter</span>' :
-                     '<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--bg-muted);color:var(--text-dim);margin-right:4px">sql</span>';
+        var srcTag = q.source === 'filter'
+          ? '<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-bg);color:var(--accent);margin-right:4px">filter</span>'
+          : '<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--bg-muted);color:var(--text-dim);margin-right:4px">sql</span>';
         d.innerHTML = '<div class="qlog-sql">' + srcTag + esc(q.sql_text) + '</div>' +
           '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">' +
           '<span class="qlog-meta">' + esc((q.ran_at || '').slice(0, 16)) + '<br>' + (q.row_count || 0) + ' rows</span>' +
-          '<button class="qlog-copy" onclick="useQueryLog(' + JSON.stringify(q.sql_text) + ')">Use</button></div>';
+          '<button class="qlog-copy" onclick="useQueryLog(' + i + ')">Use</button></div>';
         c.appendChild(d);
       });
     }).catch(function(e) {
       c.innerHTML = '<div style="padding:20px;text-align:center;font-size:11px;color:var(--danger)">Error loading log: ' + esc(e.message) + '</div>';
     });
 }
-function useQueryLog(sql) {
+function useQueryLog(idx) {
+  var sql = _qlogSqls[idx];
+  if (!sql) return;
   // 1) Paste into SQL editor
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
   // 2) Copy to clipboard
   try {
-    var ta = document.createElement('textarea');
-    ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    navigator.clipboard.writeText(sql).catch(function() {
+      var ta = document.createElement('textarea');
+      ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    });
   } catch(e) { /* clipboard not critical */ }
   // 3) Close modal
   closeModal();
-  // 4) Scroll to SQL panel and focus
-  var sqlPanel = document.getElementById('sql-panel');
-  if (sqlPanel) sqlPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  if (ed) ed.focus();
-  toast('Query pasted to editor and copied to clipboard!');
+  // 4) Switch to SQL tab if there's a tab switch mechanism
+  var sqlTab = document.querySelector('.tab-btn[data-tab="sql"]') ||
+               document.querySelector('[onclick*="switchTab"][onclick*="sql"]') ||
+               document.querySelector('[onclick*="tab-sql"]');
+  if (sqlTab) sqlTab.click();
+  // 5) Scroll into view and focus
+  setTimeout(function() {
+    var sqlPanel = document.getElementById('sql-panel') ||
+                   document.getElementById('tab-sql') ||
+                   document.querySelector('.sql-editor-wrap');
+    if (sqlPanel) sqlPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    var ed2 = document.getElementById('sql-editor');
+    if (ed2) ed2.focus();
+  }, 150);
+  toast('✓ Query pasted to editor!');
 }
 function clearQueryLog() {
   apiCall('clear_query_log')
@@ -264,6 +290,27 @@ function clearLogo() {
   if (img)  img.src = '';
   if (prev) prev.classList.add('hidden');
   apiCall('save_settings', { org_logo_b64: '' }).catch(function() {});
+}
+
+/* Square logo (1:1, used as circular PDF header logo) */
+function pickLogoSq() {
+  apiCall('open_file_dialog_type', 'image')
+    .then(function(path) { if (!path) return null; return apiCall('read_file_as_b64', path); })
+    .then(function(b64) { if (!b64) return; setLogoSqPreview(b64); })
+    .catch(function(e) { toast('Could not load logo: ' + e.message, 'error'); });
+}
+function setLogoSqPreview(b64) {
+  var img  = document.getElementById('logo-sq-img');
+  var prev = document.getElementById('logo-sq-preview');
+  if (img)  img.src = 'data:image/png;base64,' + b64;
+  if (prev) prev.classList.remove('hidden');
+}
+function clearLogoSq() {
+  var img  = document.getElementById('logo-sq-img');
+  var prev = document.getElementById('logo-sq-preview');
+  if (img)  img.src = '';
+  if (prev) prev.classList.add('hidden');
+  apiCall('save_settings', { org_logo_sq_b64: '' }).catch(function() {});
 }
 
 /* ── File import ────────────────────────────────────────────────────── */
@@ -1930,10 +1977,14 @@ function confirmExportPdf() {
   apiCall('save_settings', { ap_pdf_dir: saveDir }).catch(function() {});
 
   var org   = (document.getElementById('s-org-name') || {}).value || '';
+  // Prefer square logo for PDF (it's used as the circular header logo)
+  var sqEl  = document.getElementById('logo-sq-img');
   var imgEl = document.getElementById('logo-img');
-  var logo  = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
+  var logo  = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
+              (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
   var sql   = inclQuery ? ((document.getElementById('sql-editor') || {}).value || '') : '';
   var sourceLabel = inclSource ? (_selectedTables.length > 1 ? _selectedTables.join(', ') : _activeTable) : '';
+
 
   closeModal();
   showProgress(true);
@@ -2508,6 +2559,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (inp) inp.value = s.org_name;
     }
     if (s.org_logo_b64) setLogoPreview(s.org_logo_b64);
+    if (s.org_logo_sq_b64) setLogoSqPreview(s.org_logo_sq_b64);
+
 
     if (s.pdf_custom_css) {
       _pdfCustomCss = s.pdf_custom_css;

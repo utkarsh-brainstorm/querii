@@ -86,7 +86,7 @@ class Api:
     def get_settings(self) -> dict:
         try:
             keys = [
-                "org_name", "org_logo_b64",
+                "org_name", "org_logo_b64", "org_logo_sq_b64",
                 "ap_theme", "ap_zoom", "ap_custom_reports", "ap_pdf_dir",
                 "pdf_custom_css", "pdf_dev_mode",
             ]
