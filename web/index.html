@@ -246,6 +246,7 @@
           </div>
           <div class="flex items-center gap-1">
             <button id="btn-export-csv" class="btn-ghost text-[10px] h-6 px-2" disabled>⬇ CSV</button>
+            <button id="btn-copy-csv"   class="btn-ghost text-[10px] h-6 px-2" disabled onclick="copyCsv()">📋 Copy</button>
             <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
           </div>
         </div>
@@ -453,6 +454,7 @@
     </div>
     <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)]">
       <button class="settings-tab active" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
+      <button class="settings-tab"        onclick="switchSettingsTab(this,'pdfstyle')">PDF Style</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'theme')">Theme</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'querylog')">Query Log</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'about')">About</button>
@@ -473,6 +475,36 @@
             <button class="btn-ghost text-[11px]" onclick="pickLogo()">Upload PNG…</button>
             <button class="btn-ghost text-[11px] text-[var(--danger)]" onclick="clearLogo()">Remove</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PDF Style -->
+    <div id="tab-pdfstyle" class="settings-tab-body hidden">
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Set a default CSS template for PDF exports. The logo and org name here are used as placeholders in your template.</p>
+      <div class="space-y-4">
+        <!-- Developer toggle -->
+        <div class="settings-row">
+          <label>Developer mode</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+            <input type="checkbox" id="s-pdf-dev-mode" style="width:13px;height:13px" onchange="togglePdfDevMode(this.checked)">
+            <span>Show CSS editor in PDF export dialog</span>
+          </label>
+        </div>
+        <!-- Custom CSS -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-[11px] font-semibold text-[var(--text-dim)]">Default Custom CSS</label>
+            <button class="text-[10px] text-[var(--accent)] hover:underline" onclick="copyPdfRequirement()">📋 Copy AI Requirement</button>
+          </div>
+          <textarea id="s-pdf-custom-css"
+            class="input-sm w-full font-mono text-[10px]"
+            style="height:200px;resize:vertical;line-height:1.5"
+            placeholder="/* Paste your custom CSS here. It will be injected into all PDF exports by default. */
+/* Variables: --navy, --gold, --text, --muted, --border, --border-light, --paper */
+/* Classes: .page, .school-header, .school-logo, .document-heading, .title */
+/* .data-table, .data-table thead th, .data-table tbody td, .report-footer */"></textarea>
+          <div class="text-[10px] text-[var(--text-dim)] mt-1">This CSS is pre-filled in the PDF export dialog. Users can modify it per-export.</div>
         </div>
       </div>
     </div>
@@ -579,8 +611,9 @@
           </div>
         </div>
         <div class="w-60 flex flex-col border border-[var(--border)] rounded overflow-hidden flex-none">
-          <div class="px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)]">
+          <div class="px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)] flex items-center justify-between">
             <span class="text-[11px] font-medium text-[var(--text-head)]">Quick Reference</span>
+            <button onclick="copySchemaText()" class="text-[10px] text-[var(--accent)] hover:underline font-medium" title="Copy full schema for AI">📋 Copy All</button>
           </div>
           <div id="cr-schema-ref" class="flex-1 overflow-y-auto schema-ref"></div>
         </div>
@@ -593,7 +626,7 @@
   </div>
 
   <!-- PDF EXPORT DIALOG -->
-  <div id="modal-pdf-export" class="modal hidden" style="width:520px;max-width:96vw">
+  <div id="modal-pdf-export" class="modal hidden" style="width:620px;max-width:96vw">
     <div class="modal-header">📄 Export PDF<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-5 py-4 space-y-4 text-[12px]">
       <!-- Title -->
@@ -656,6 +689,22 @@
           <input type="checkbox" id="pdf-include-source" checked style="width:13px;height:13px">
           <span>Include source table name at the bottom</span>
         </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-use-html" style="width:13px;height:13px" onchange="togglePdfHtmlMode(this.checked)">
+          <span>🎨 Use custom HTML/CSS template (styled output)</span>
+        </label>
+      </div>
+      <!-- Custom CSS section (shown when html mode or dev mode active) -->
+      <div id="pdf-css-section" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-muted)">
+        <div class="flex items-center justify-between mb-2">
+          <span style="font-size:11px;font-weight:700;color:var(--text-head)">📝 Custom CSS</span>
+          <button onclick="copyPdfRequirement()" class="btn-ghost text-[10px] h-6 px-2">📋 Copy AI Requirement</button>
+        </div>
+        <textarea id="pdf-custom-css"
+          class="input-sm w-full font-mono text-[10px]"
+          style="height:140px;resize:vertical;line-height:1.5"
+          placeholder="/* Override any styles here. Will be injected into the HTML before printing. */"></textarea>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Pre-filled from Settings → PDF Style. Changes here apply to this export only.</div>
       </div>
     </div>
     <div class="modal-footer gap-2">

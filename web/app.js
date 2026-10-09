@@ -56,11 +56,15 @@ var _customReports   = [];
 var _allSchemaData   = [];
 var _csCurrentTable  = '';
 var _csCurrentCol    = '';
+var _pdfCustomCss    = '';    // default CSS from settings
+var _pdfDevMode      = false; // developer toggle
 /* Pagination */
 var PAGE_SIZE        = 200;     // rows per page
 var _currentPage     = 0;       // 0-indexed
 var _colSearch       = '';      // current column search term in results
-var _sortCol         = '';      // column currently sorted by (click-sort)
+var _clientSortCol   = '';      // column sorted client-side
+var _clientSortDir   = 'ASC';   // client-side sort direction
+var _sortCol         = '';      // column currently sorted by (click-sort) — kept for header display
 var _sortDir         = 'ASC';   // 'ASC' or 'DESC'
 
 /* ── Utilities ──────────────────────────────────────────────────────── */
@@ -166,12 +170,18 @@ function switchSettingsTab(btn, tab) {
 }
 function saveSettings() {
   var orgName = (document.getElementById('s-org-name') || {}).value || '';
+  var pdfCss  = (document.getElementById('s-pdf-custom-css') || {}).value || '';
+  var pdfDev  = (document.getElementById('s-pdf-dev-mode') || {}).checked ? '1' : '';
   var payload = {
     org_name:  orgName,
     ap_theme:  currentTheme(),
     ap_zoom:   String(_zoom),
     ap_custom_reports: JSON.stringify(_customReports),
+    pdf_custom_css: pdfCss,
+    pdf_dev_mode:   pdfDev,
   };
+  _pdfCustomCss = pdfCss;
+  _pdfDevMode   = !!pdfDev;
   var imgEl = document.getElementById('logo-img');
   if (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) {
     payload.org_logo_b64 = imgEl.src.replace(/^data:[^;]+;base64,/, '');
@@ -214,9 +224,22 @@ function loadQueryLog() {
     });
 }
 function useQueryLog(sql) {
+  // 1) Paste into SQL editor
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
+  // 2) Copy to clipboard
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+  } catch(e) { /* clipboard not critical */ }
+  // 3) Close modal
   closeModal();
+  // 4) Scroll to SQL panel and focus
+  var sqlPanel = document.getElementById('sql-panel');
+  if (sqlPanel) sqlPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (ed) ed.focus();
+  toast('Query pasted to editor and copied to clipboard!');
 }
 function clearQueryLog() {
   apiCall('clear_query_log')
@@ -533,16 +556,32 @@ function filterColumnDropdowns(term) {
 
 
 /* ── Schema tree render ─────────────────────────────────────────────── */
-function renderSchemaTree(schema) {
+// showAll: if false, only show tables in _selectedTables
+function renderSchemaTree(schema, showAll) {
   var el = document.getElementById('schema-tree');
   var cr = document.getElementById('cr-schema-ref');
   if (!el) return;
+
+  // Sidebar: filter to selected tables only (showAll === false or undefined)
+  var sidebarSchema = schema;
+  if (!showAll && _selectedTables.length > 0) {
+    sidebarSchema = schema.filter(function(t) { return _selectedTables.indexOf(t.table) !== -1; });
+  }
+
   if (!schema || schema.length === 0) {
     var empty = '<div style="color:var(--text-dim);text-align:center;padding:32px 8px;font-size:11px">Import a file to see schema</div>';
     el.innerHTML = empty;
     if (cr) cr.innerHTML = empty;
     return;
   }
+
+  // Render sidebar with filtered tables
+  el.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema);
+  // Render SQL reference panel with ALL tables
+  if (cr) cr.innerHTML = _buildSchemaHtml(schema);
+}
+
+function _buildSchemaHtml(schema) {
   var html = '';
   schema.forEach(function(t) {
     var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
@@ -565,8 +604,7 @@ function renderSchemaTree(schema) {
     html += '</div>';
     html += '<div style="margin-top:2px;padding:0 2px"><button style="width:100%;text-align:left;font-size:9px;font-family:monospace;color:var(--text-dim);background:var(--bg-muted);border:1px solid var(--border);border-radius:3px;padding:3px 6px;cursor:pointer;line-height:1.4;transition:background 100ms" onclick="copySql(' + JSON.stringify(sampleSql) + ')" title="Click to copy SELECT template">' + esc(sampleSql.replace(/\n/g, ' ')) + '</button></div></div>';
   });
-  el.innerHTML = html;
-  if (cr) cr.innerHTML = html;
+  return html;
 }
 
 function copySql(sql) {
@@ -1384,10 +1422,12 @@ function renderResults(columns, firstPageRows, totalCount) {
   var count   = document.getElementById('results-count');
   var hasData = _lastResults.total > 0;
   if (empty) empty.classList.toggle('hidden', hasData);
-  var csvBtn = document.getElementById('btn-export-csv');
-  var pdfBtn = document.getElementById('btn-export-pdf');
-  if (csvBtn) csvBtn.disabled = !hasData;
-  if (pdfBtn) pdfBtn.disabled = !hasData;
+  var csvBtn  = document.getElementById('btn-export-csv');
+  var cpyCsvBtn = document.getElementById('btn-copy-csv');
+  var pdfBtn  = document.getElementById('btn-export-pdf');
+  if (csvBtn)    csvBtn.disabled = !hasData;
+  if (cpyCsvBtn) cpyCsvBtn.disabled = !hasData;
+  if (pdfBtn)    pdfBtn.disabled = !hasData;
 
   var head = document.getElementById('results-head');
   var body = document.getElementById('results-body');
@@ -1427,20 +1467,75 @@ function renderResults(columns, firstPageRows, totalCount) {
   renderPaginationBar(0, total);
 }
 
-/* Click a column header to sort */
+/* Click a column header to sort — IN-MEMORY, no re-query */
 function toggleColumnSort(col) {
-  if (_sortCol === col) {
-    _sortDir = _sortDir === 'ASC' ? 'DESC' : 'ASC';
+  if (_clientSortCol === col) {
+    _clientSortDir = _clientSortDir === 'ASC' ? 'DESC' : 'ASC';
   } else {
-    _sortCol = col;
-    _sortDir = 'ASC';
+    _clientSortCol = col;
+    _clientSortDir = 'ASC';
   }
-  // Re-run the current query with the new sort
-  var sortSel = document.getElementById('sort-col');
-  var sortDirSel = document.getElementById('sort-dir');
-  if (sortSel) sortSel.value = _sortCol;
-  if (sortDirSel) sortDirSel.value = _sortDir;
-  run_filter();
+  _sortCol = _clientSortCol;
+  _sortDir = _clientSortDir;
+
+  if (!_lastResults) return;
+
+  // Collect ALL cached rows and sort them in memory
+  var allRows = [];
+  var pageKeys = Object.keys(_lastResults.cachedPages);
+  pageKeys.sort(function(a, b) { return Number(a) - Number(b); });
+  pageKeys.forEach(function(k) {
+    var pg = _lastResults.cachedPages[k];
+    if (pg) allRows = allRows.concat(pg);
+  });
+
+  var sortCol = _clientSortCol;
+  var sortDir = _clientSortDir;
+  allRows.sort(function(a, b) {
+    var va = a[sortCol]; var vb = b[sortCol];
+    if (va == null) va = ''; if (vb == null) vb = '';
+    // Try numeric sort first
+    var na = Number(va), nb = Number(vb);
+    if (!isNaN(na) && !isNaN(nb)) {
+      return sortDir === 'ASC' ? na - nb : nb - na;
+    }
+    var sa = String(va).toLowerCase(), sb = String(vb).toLowerCase();
+    if (sa < sb) return sortDir === 'ASC' ? -1 :  1;
+    if (sa > sb) return sortDir === 'ASC' ?  1 : -1;
+    return 0;
+  });
+
+  // Rebuild cached pages from sorted array
+  _lastResults.cachedPages = {};
+  var ps = PAGE_SIZE;
+  for (var i = 0; i < allRows.length; i += ps) {
+    _lastResults.cachedPages[Math.floor(i / ps)] = allRows.slice(i, i + ps);
+  }
+
+  // Re-render header (update sort indicators)
+  var head = document.getElementById('results-head');
+  if (head) {
+    var cols = _lastResults.columns;
+    var searchHtml = '';
+    if (cols.length > 12) {
+      searchHtml = '<tr><td colspan="' + cols.length + '" style="padding:3px 6px;background:var(--bg-muted);border-bottom:1px solid var(--border)">' +
+        '<input id="col-search-input" type="text" class="input-sm" style="width:220px;font-size:10px" ' +
+        'placeholder="🔍 Filter columns by name…" oninput="filterResultColumns(this.value)"></td></tr>';
+    }
+    head.innerHTML = searchHtml +
+      '<tr id="results-header-row">' + cols.map(function(c) {
+        var indicator = (_sortCol === c) ? (_sortDir === 'ASC' ? ' ▲' : ' ▼') : '';
+        return '<th class="tbl-head" data-col="' + esc(c) + '" ' +
+          'style="cursor:pointer;user-select:none" ' +
+          'onclick="toggleColumnSort(\'' + esc(c).replace(/'/g, "\\'") + '\')" ' +
+          'title="Click to sort by ' + esc(c) + '">' +
+          esc(c) + indicator + '</th>';
+      }).join('') + '</tr>';
+  }
+
+  renderPage(0);
+  renderPaginationBar(0, _lastResults.total);
+  toast('Sorted by ' + col + ' (' + _clientSortDir + ')');
 }
 
 /* Render a single page of rows using DocumentFragment (fast) */
@@ -1559,6 +1654,54 @@ function exportCsv() {
     .then(function(r) { if (r) toast('CSV exported.'); })
     .catch(function(e) { toast('Export failed: ' + e.message, 'error'); });
 }
+
+/* ── Copy CSV to clipboard ───────────────────────────────────────────── */
+function copyCsv() {
+  if (!_lastResults || !_lastResults.total) { toast('No results to copy.', 'warn'); return; }
+  var cols = _lastResults.columns;
+  // Collect all cached pages
+  var allRows = [];
+  var pageKeys = Object.keys(_lastResults.cachedPages);
+  pageKeys.sort(function(a, b) { return Number(a) - Number(b); });
+  pageKeys.forEach(function(k) {
+    var pg = _lastResults.cachedPages[k];
+    if (pg) allRows = allRows.concat(pg);
+  });
+  // If we don't have all rows cached yet, fetch from backend then copy
+  var totalPages = Math.ceil(_lastResults.total / PAGE_SIZE);
+  if (allRows.length < _lastResults.total) {
+    toast('Fetching all rows for copy…', 'warn');
+    var fetches = [];
+    for (var p = 0; p < totalPages; p++) {
+      if (!_lastResults.cachedPages[p]) {
+        fetches.push(apiCall('get_result_page', p, PAGE_SIZE).then((function(pg) {
+          return function(rows) { _lastResults.cachedPages[pg] = rows || []; };
+        })(p)));
+      }
+    }
+    Promise.all(fetches).then(function() { copyCsv(); }); // retry after fetching
+    return;
+  }
+  // Build CSV string
+  function csvEsc(v) {
+    var s = String(v == null ? '' : v);
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+  var lines = [cols.map(csvEsc).join(',')];
+  allRows.forEach(function(row) {
+    lines.push(cols.map(function(c) { return csvEsc(row[c]); }).join(','));
+  });
+  var csv = lines.join('\n');
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = csv; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    toast('✓ ' + allRows.length.toLocaleString() + ' rows copied as CSV!');
+  } catch(e) { toast('Copy failed: ' + e.message, 'error'); }
+}
 /* ── PDF Export ─────────────────────────────────────────────────────── */
 var _pdfDefaultDir = '';
 
@@ -1586,9 +1729,153 @@ function exportPdf() {
     }
   }
 
+  // Pre-fill CSS editor with saved default CSS
+  var cssEl = document.getElementById('pdf-custom-css');
+  if (cssEl) cssEl.value = _pdfCustomCss;
+
+  // Show/hide CSS section based on dev mode
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection) cssSection.classList.toggle('hidden', !_pdfDevMode);
+
+  // Restore html mode checkbox
+  var useHtmlEl = document.getElementById('pdf-use-html');
+  if (useHtmlEl) useHtmlEl.checked = false;
+
   openModal('modal-pdf-export');
 }
 
+/* ── PDF Dev mode / HTML mode toggles ───────────────────────────────── */
+function togglePdfDevMode(checked) {
+  _pdfDevMode = checked;
+  // If dev mode is on, always show CSS section in PDF export dialog
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection && checked) cssSection.classList.remove('hidden');
+}
+function togglePdfHtmlMode(checked) {
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection) cssSection.classList.toggle('hidden', !checked && !_pdfDevMode);
+}
+
+/* ── Copy PDF Requirement (AI template) ─────────────────────────────── */
+function copyPdfRequirement() {
+  var schemaLines = ['## Current Database Schema\n'];
+  _allSchemaData.forEach(function(t) {
+    var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
+    schemaLines.push('### Table: ' + t.table);
+    userCols.forEach(function(c) { schemaLines.push('  - ' + c.name + '  (' + c.type + ')'); });
+    schemaLines.push('');
+  });
+  var requirement = [
+'# Querii PDF Custom CSS — AI Generation Requirement',
+'',
+'You are helping generate custom CSS for a PDF export system. The PDF is rendered as',
+'a full standalone HTML document and printed via headless Chromium. Your CSS will be',
+'injected into a <style> block AFTER the base styles, so you can override anything.',
+'',
+'## Document Structure (HTML classes available to style)',
+'',
+'```',
+'<main class="page">',
+'  <div class="document-frame"></div>          <!-- decorative border inside page -->',
+'  <div class="watermark-area">               <!-- watermark overlay (low z-index) -->',
+'    <div class="watermark-text"></div>',
+'    <div class="logo-watermark-zone">',
+'      <img class="logo-watermark">           <!-- faded logo watermark in center -->',
+'    </div>',
+'  </div>',
+'  <header class="school-header">            <!-- org/school header card -->',
+'    <img class="school-logo">              <!-- circular logo, 78x78px -->',
+'    <div class="school-info">',
+'      <h2>Org Name</h2>',
+'      <div class="address">Address</div>',
+'      <div class="school-meta">Meta info</div>',
+'    </div>',
+'  </header>',
+'  <section class="document-heading">       <!-- title section -->',
+'    <div class="heading-accent"></div>     <!-- gold accent bar (52px wide, 3px tall) -->',
+'    <h1 class="title">Report Title</h1>',
+'    <div class="gen-date">Generated: date</div>',
+'  </section>',
+'  <div class="data-table-wrap">            <!-- scrollable table wrapper -->',
+'    <table class="data-table">',
+'      <thead><tr><th>Column Header</th>...</tr></thead>',
+'      <tbody><tr><td>Cell Value</td>...</tr></tbody>',
+'    </table>',
+'  </div>',
+'  <div class="report-footer">             <!-- record count + source + Querii -->',
+'  </div>',
+'  <section class="sql-block">             <!-- optional SQL query at bottom -->',
+'    <div class="sql-label">SQL Query</div>',
+'    <pre class="sql-pre">SELECT ...</pre>',
+'  </section>',
+'</main>',
+'```',
+'',
+'## CSS Custom Properties (variables you can reference or override)',
+'',
+'```css',
+':root {',
+'  --paper:        #fff;       /* page background */',
+'  --screen-bg:    #e7ebf0;   /* browser background */',
+'  --navy:         #0f172a;   /* primary dark color — used in header, title, table head */',
+'  --gold:         #b7791f;   /* accent bar and decorative elements */',
+'  --text:         #111827;   /* body text color */',
+'  --muted:        #64748b;   /* secondary/dim text */',
+'  --border:       #cbd5e1;   /* table borders */',
+'  --border-light: #e2e8f0;   /* subtle row separators */',
+'}',
+'```',
+'',
+'## Key Design Rules',
+'- Page size: A4 (210mm × 297mm) with `padding: 12mm 14mm`',
+'- The `.data-table` uses `border-collapse: separate; border-spacing: 0` with `border-radius: 12px` for Apple-style rounded corners',
+'- Table header: `background: var(--navy); color: #fff; border-bottom: 2px solid var(--gold)`',
+'- First/last header cells get `border-radius` on the top corners',
+'- Alternating rows: `.data-table tbody tr:nth-child(even) { background: #f8fafc }`',
+'- Watermark: `.watermark-text` is absolutely positioned, rotated -28deg, opacity 0.06',
+'- Logo watermark: `.logo-watermark` opacity 0.045, grayscale, centered circle',
+'- The `.document-frame` div creates a double-border decorative frame inside the page edges',
+'',
+'## Print Rules',
+'- `@page { size: A4 portrait; margin: 0; }` — the page size is injected based on user selection',
+'- The page orientation (portrait/landscape) and size (A4/A3/Letter) is controlled by the @page rule',
+'- In `@media print`: `.page` has `box-shadow: none` and fills the full page',
+'',
+'## Data Placeholders Available at Runtime',
+'The following are generated dynamically and placed inside the HTML elements above:',
+'  - `{{title}}` → inside `.title` h1',
+'  - `{{org_name}}` → inside `.school-info h2`',
+'  - `{{gen_date}}` → inside `.gen-date`',
+'  - `{{logo_src}}` → src attribute of `.school-logo` and `.logo-watermark` img',
+'  - `{{columns}}` → table column headers as `<th>` elements inside `.data-table thead`',
+'  - `{{rows}}` → table data as `<tr><td>` elements inside `.data-table tbody`',
+'  - `{{record_count}}` → inside `.report-footer`',
+'  - `{{sql_query}}` → inside `.sql-pre` (only if SQL display is enabled)',
+'',
+'## Instructions for AI',
+'Generate ONLY valid CSS that can be injected as-is into the PDF template.',
+'Do NOT include <style> tags — just the raw CSS rules.',
+'You may:',
+'  - Change colors, fonts, border-radius, padding, spacing',
+'  - Restyle the `.school-header`, `.document-heading`, `.data-table`',
+'  - Add custom `@media print` overrides',
+'  - Change the `.heading-accent` to any color',
+'  - Add box-shadows, gradients (note: gradients may not print in all browsers)',
+'Do NOT:',
+'  - Change `position: absolute` of `.watermark-area` or `.document-frame` (they will break layout)',
+'  - Remove the `.page` width (210mm) in non-print mode',
+'',
+].concat(schemaLines).join('\n');
+
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = requirement; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    toast('✓ AI requirement copied! Paste it into any AI to generate custom PDF CSS.');
+  } catch(e) { toast('Copy failed: ' + e.message, 'error'); }
+}
+
+/* ── PDF folder chooser ────────────────────────────────────────────── */
 function choosePdfFolder() {
   apiCall('choose_folder_dialog').then(function(dir) {
     if (!dir) return;
@@ -1616,6 +1903,8 @@ function confirmExportPdf() {
   var contEl    = document.getElementById('pdf-continuous');
   var inclQEl   = document.getElementById('pdf-include-query');
   var inclSEl   = document.getElementById('pdf-include-source');
+  var useHtmlEl = document.getElementById('pdf-use-html');
+  var cssEl     = document.getElementById('pdf-custom-css');
 
   var title     = (titleEl ? titleEl.value.trim() : '') || 'Query Results';
   var saveDir   = pathEl ? pathEl.value.trim() : '';
@@ -1625,6 +1914,8 @@ function confirmExportPdf() {
   var continuous = contEl ? contEl.checked : false;
   var inclQuery = inclQEl ? inclQEl.checked : true;
   var inclSource = inclSEl ? inclSEl.checked : true;
+  var useHtml   = useHtmlEl ? useHtmlEl.checked : false;
+  var customCss = cssEl ? cssEl.value.trim() : '';
 
   if (!saveDir) { toast('Please choose a save location first.', 'warn'); return; }
 
@@ -1647,15 +1938,16 @@ function confirmExportPdf() {
   closeModal();
   showProgress(true);
 
-  apiCall('export_pdf', [], [], filepath, title, org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
-    .then(function(r) {
-      showProgress(false);
-      if (r) toast('✓ PDF saved: ' + safeName + '.pdf');
-    })
-    .catch(function(e) {
-      showProgress(false);
-      toast('Export failed: ' + e.message, 'error');
-    });
+  var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
+  if (useHtml) {
+    apiCall('export_pdf_html', [], [], filepath, title, org, logo, sql, customCss, pageSize, orient, sourceLabel)
+      .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
+      .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
+  } else {
+    apiCall('export_pdf', [], [], filepath, title, org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
+      .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
+      .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
+  }
 }
 
 /* ── Schema toggle panel ────────────────────────────────────────────── */
@@ -2216,6 +2508,17 @@ document.addEventListener('DOMContentLoaded', function() {
       if (inp) inp.value = s.org_name;
     }
     if (s.org_logo_b64) setLogoPreview(s.org_logo_b64);
+
+    if (s.pdf_custom_css) {
+      _pdfCustomCss = s.pdf_custom_css;
+      var cssInp = document.getElementById('s-pdf-custom-css');
+      if (cssInp) cssInp.value = s.pdf_custom_css;
+    }
+    if (s.pdf_dev_mode) {
+      _pdfDevMode = s.pdf_dev_mode === '1';
+      var devInp = document.getElementById('s-pdf-dev-mode');
+      if (devInp) devInp.checked = _pdfDevMode;
+    }
 
     if (s.ap_custom_reports) {
       try { _customReports = JSON.parse(s.ap_custom_reports) || []; } catch(e) { _customReports = []; }

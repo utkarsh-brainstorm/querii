@@ -17,6 +17,7 @@ import webview
 
 import core.db as db
 from core import exporter
+from core.exporter import export_pdf_html, get_pdf_html_preview
 from core.importer import preview_file, ImportPreview
 from core.query_builder import (
     FilterRow, FilterGroup, QuerySpec,
@@ -87,6 +88,7 @@ class Api:
             keys = [
                 "org_name", "org_logo_b64",
                 "ap_theme", "ap_zoom", "ap_custom_reports", "ap_pdf_dir",
+                "pdf_custom_css", "pdf_dev_mode",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -524,5 +526,63 @@ class Api:
                     print(f"[PDF export error] {ex}")
             threading.Thread(target=_do, daemon=True).start()
             return _ok(filepath)
+        except Exception as e:
+            return _err(e)
+
+    def export_pdf_html(
+        self,
+        columns: list,
+        rows: list,
+        filepath: str,
+        title: str = "Query Results",
+        org_name: str = "",
+        logo_b64: str = "",
+        sql_display: str = "",
+        custom_css: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+        source_label: str = "",
+    ) -> dict:
+        """Render PDF using custom HTML/CSS template via headless Chromium."""
+        try:
+            def _do():
+                try:
+                    export_pdf_html(
+                        self._last_result_cols, self._last_result_rows, filepath,
+                        title=title,
+                        org_name=org_name,
+                        logo_b64=logo_b64,
+                        sql_display=sql_display,
+                        source_label=source_label,
+                        custom_css=custom_css,
+                        page_size=page_size,
+                        orientation=orientation,
+                    )
+                except Exception as ex:
+                    print(f"[PDF HTML export error] {ex}")
+            threading.Thread(target=_do, daemon=True).start()
+            return _ok(filepath)
+        except Exception as e:
+            return _err(e)
+
+    def get_pdf_html_preview(
+        self,
+        title: str = "Preview",
+        org_name: str = "",
+        logo_b64: str = "",
+        custom_css: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+    ) -> dict:
+        """Return the HTML string for live preview in the PDF export dialog."""
+        try:
+            cols = self._last_result_cols or []
+            rows = self._last_result_rows or []
+            html = get_pdf_html_preview(
+                columns=cols, rows=rows[:20],
+                title=title, org_name=org_name, logo_b64=logo_b64,
+                custom_css=custom_css, page_size=page_size, orientation=orientation,
+            )
+            return _ok(html)
         except Exception as e:
             return _err(e)

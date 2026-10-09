@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Title</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Devanagari:wght@500;600;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        :root {
+            --paper: #fff;
+            --screen-bg: #e7ebf0;
+            --navy: #0f172a;
+            --gold: #b7791f;
+            --text: #111827;
+            --muted: #64748b;
+            --border: #cbd5e1;
+            --border-light: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            background: var(--screen-bg);
+            color: var(--text);
+            font-family: "Plus Jakarta Sans", "Noto Sans Devanagari", "Segoe UI", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* =========================
+           A4 PAGE
+        ========================= */
+
+        .page {
+            position: relative;
+            width: 210mm;
+            height: 297mm;
+            margin: 28px auto;
+            padding: 12mm 14mm;
+            background: var(--paper);
+            box-shadow:
+                0 24px 60px rgba(15, 23, 42, .12),
+                0 4px 15px rgba(15, 23, 42, .05);
+            overflow: hidden;
+        }
+
+        /* =========================
+           DOCUMENT FRAME
+        ========================= */
+
+        .document-frame {
+            position: absolute;
+            top: 7mm;
+            right: 7mm;
+            bottom: 7mm;
+            left: 7mm;
+            border: 1.2px solid #9ca8b7;
+            pointer-events: none;
+            z-index: 30;
+        }
+
+        .document-frame::after {
+            content: "";
+            position: absolute;
+            top: 2mm;
+            right: 2mm;
+            bottom: 2mm;
+            left: 2mm;
+            border: .5px solid #e1e6eb;
+        }
+
+        /* =========================
+           WATERMARK
+        ========================= */
+
+        .watermark-area {
+            position: absolute;
+            top: 7mm;
+            right: 7mm;
+            bottom: 7mm;
+            left: 7mm;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .watermark-text {
+            position: absolute;
+            left: -30%;
+            top: -30%;
+            display: flex;
+            flex-direction: column;
+            transform: rotate(-28deg);
+            opacity: .060;
+            z-index: 1;
+        }
+
+        .watermark-row {
+            display: flex;
+            flex-shrink: 0;
+            align-items: center;
+            height: 26px;
+            white-space: nowrap;
+            font-family: "Plus Jakarta Sans", sans-serif;
+            font-size: 14px;
+            font-weight: 800;
+            line-height: 26px;
+            letter-spacing: .55px;
+            color: #475569;
+        }
+
+        .watermark-item {
+            flex-shrink: 0;
+        }
+
+        /* =========================
+           CENTER LOGO WATERMARK
+        ========================= */
+
+        .logo-watermark-zone {
+            position: absolute;
+            width: 150mm;
+            height: 150mm;
+            left: 50%;
+            top: 52%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border-radius: 50%;
+            z-index: 5;
+        }
+
+        .logo-watermark {
+            width: 150mm;
+            height: 150mm;
+            object-fit: contain;
+            opacity: .045;
+            filter: grayscale(100%);
+        }
+
+        /* Keep actual page content above watermark */
+
+        .page>*:not(.watermark-area):not(.document-frame) {
+            position: relative;
+            z-index: 10;
+        }
+
+        /* =========================
+           SCHOOL HEADER
+           ========================= */
+
+        .school-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 23px;
+            min-height: 108px;
+            padding: 17px 24px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 13px;
+            margin-bottom: 21px;
+            text-align: center;
+        }
+
+        .school-logo {
+            width: 78px;
+            height: 78px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .school-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .school-info h2 {
+            margin: 0 0 6px;
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 24px;
+            line-height: 1.18;
+            font-weight: 800;
+            color: var(--navy);
+        }
+
+        .address {
+            font-size: 12px;
+            line-height: 1.35;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .school-meta {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 22px;
+            margin-top: 7px;
+            font-size: 11px;
+            line-height: 1.3;
+            font-weight: 800;
+            color: var(--navy);
+        }
+
+        /* =========================
+           DOCUMENT HEADING
+        ========================= */
+
+        .document-heading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 3px 0 14px;
+            margin-bottom: 23px;
+            text-align: center;
+            border-bottom: 2px solid var(--navy);
+        }
+
+        .heading-accent {
+            width: 52px;
+            height: 3px;
+            margin-bottom: 8px;
+            background: var(--gold);
+            border-radius: 4px;
+        }
+
+        .title {
+            margin: 0;
+            width: 100%;
+            font-family: "Playfair Display", Georgia, serif;
+            font-size: 29px;
+            line-height: 1.2;
+            font-weight: 800;
+            color: var(--navy);
+        }
+
+        /* =========================
+           RESPONSIVE
+        ========================= */
+
+        @media screen and (max-width: 850px) {
+
+            .page {
+                width: calc(100% - 20px);
+                height: auto;
+                min-height: 297mm;
+                margin: 20px auto;
+                padding: 24px;
+            }
+
+            .school-header {
+                gap: 15px;
+            }
+
+            .school-logo {
+                width: 65px;
+                height: 65px;
+            }
+
+            .school-info h2 {
+                font-size: 20px;
+            }
+
+            .title {
+                font-size: 26px;
+            }
+        }
+
+        @media screen and (max-width: 560px) {
+
+            .page {
+                width: calc(100% - 10px);
+                min-height: 100vh;
+                margin-top: 10px;
+                padding: 17px;
+            }
+
+            .school-header {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .school-logo {
+                width: 66px;
+                height: 66px;
+            }
+
+            .title {
+                font-size: 22px;
+            }
+        }
+
+        /* =========================
+           PRINT
+        ========================= */
+
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        @media print {
+
+            html,
+            body {
+                width: 210mm;
+                height: 297mm;
+                margin: 0;
+                padding: 0;
+                background: #fff !important;
+            }
+
+            body {
+                overflow: hidden;
+            }
+
+            .page {
+                width: 210mm;
+                height: 297mm;
+                min-height: 297mm;
+                margin: 0;
+                padding: 12mm 14mm;
+                box-shadow: none;
+                overflow: hidden;
+            }
+
+            .watermark-text {
+                opacity: .060;
+            }
+
+            .logo-watermark-zone {
+                background: #fff;
+            }
+
+            .logo-watermark {
+                opacity: .045;
+            }
+
+            .school-header,
+            .document-heading {
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="page">
+
+        <!-- Document border -->
+        <div class="document-frame" aria-hidden="true"></div>
+
+        <!-- Watermark -->
+        <div class="watermark-area" id="watermarkArea" aria-hidden="true">
+
+            <div class="watermark-text" id="watermarkText"></div>
+
+            <div class="logo-watermark-zone">
+                <img src="logo.png" class="logo-watermark" alt="">
+            </div>
+
+        </div>
+
+        <!-- =========================
+             SCHOOL HEADER
+        ========================= -->
+
+        <header class="school-header">
+
+            <img
+                src="logo.png"
+                alt="School Logo"
+                class="school-logo"
+                onerror="this.style.visibility='hidden';"
+            >
+
+            <div class="school-info">
+
+                <h2>
+                    The Sanskar Valley Higher Secondary School
+                </h2>
+
+                <div class="address">
+                    Ward No. 10, Ashta Road, Kannod,
+                    Dist. Dewas - 455332
+                </div>
+
+                <div class="school-meta">
+
+                    <span>
+                        DISE Code: 23230521402
+                    </span>
+
+                    <span>
+                        Mobile: 9039109773
+                    </span>
+
+                </div>
+
+            </div>
+
+        </header>
+
+        <!-- =========================
+             TITLE
+        ========================= -->
+
+        <section class="document-heading">
+
+            <div class="heading-accent"></div>
+
+            <h1 class="title">
+                Title
+            </h1>
+
+        </section>
+
+        <!-- BLANK CONTENT AREA -->
+
+    </main>
+
+    <script>
+
+        /* =========================
+           WATERMARK GENERATION
+        ========================= */
+
+        const watermarkArea =
+            document.getElementById("watermarkArea");
+
+        const watermarkText =
+            document.getElementById("watermarkText");
+
+
+        function generateWatermark() {
+
+            watermarkText.replaceChildren();
+
+            const width =
+                watermarkArea.clientWidth;
+
+            const height =
+                watermarkArea.clientHeight;
+
+            const surfaceWidth =
+                width * 1.6;
+
+            const surfaceHeight =
+                height * 1.6;
+
+
+            watermarkText.style.width =
+                `${surfaceWidth}px`;
+
+            watermarkText.style.height =
+                `${surfaceHeight}px`;
+
+
+            const text =
+                "THE SANSKAR VALLEY HIGHER SECONDARY SCHOOL • ";
+
+
+            const probe =
+                document.createElement("span");
+
+            probe.style.cssText = `
+                position:absolute;
+                visibility:hidden;
+                white-space:nowrap;
+                font-family:"Plus Jakarta Sans",sans-serif;
+                font-size:14px;
+                font-weight:800;
+                letter-spacing:.55px;
+            `;
+
+            probe.textContent = text;
+
+            document.body.appendChild(probe);
+
+
+            const textWidth =
+                probe.getBoundingClientRect().width;
+
+            probe.remove();
+
+
+            const rowHeight = 26;
+
+            const rows =
+                Math.ceil(surfaceHeight / rowHeight) + 5;
+
+            const columns =
+                Math.ceil(surfaceWidth / textWidth) + 5;
+
+
+            for (let r = 0; r < rows; r++) {
+
+                const row =
+                    document.createElement("div");
+
+                row.className =
+                    "watermark-row";
+
+
+                if (r % 2) {
+                    row.style.transform =
+                        "translateX(-35px)";
+                }
+
+
+                for (let c = 0; c < columns; c++) {
+
+                    const item =
+                        document.createElement("span");
+
+                    item.className =
+                        "watermark-item";
+
+                    item.textContent =
+                        text;
+
+                    row.appendChild(item);
+                }
+
+
+                watermarkText.appendChild(row);
+            }
+        }
+
+
+        let watermarkTimer;
+
+
+        window.addEventListener("resize", () => {
+
+            clearTimeout(watermarkTimer);
+
+            watermarkTimer =
+                setTimeout(
+                    generateWatermark,
+                    120
+                );
+
+        });
+
+
+        generateWatermark();
+
+    </script>
+
+</body>
+
+</html>

@@ -114,25 +114,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V3-beta
-          name: Querii V3 Beta
+          tag_name: V3.1-beta
+          name: Querii V3.1 Beta
           fail_on_unmatched_files: false
           body: |
-            ## Querii V3 Beta
+            ## Querii V3.1 Beta
 
             A powerful local sheet-to-SQL analytics desktop app — no server, no cloud, just your data.
 
-            ### 🆕 What's new in V3 Beta
-            - 📄 **PDF Export Dialog** — Custom title, save folder (remembered!), A4/A3/Letter, portrait/landscape, scale, continuous mode
-            - 💾 **Persistent Data** — Your imported tables and settings survive app updates and restarts
-            - 🪟 **Windows Installer** — Proper `querii-windows-setup.exe` with Start Menu and Desktop shortcuts
-            - 🔧 **Filter buttons fixed** — AND/OR and ✕ close buttons in nested conditions work correctly
-            - 🗂 **Schema always visible** — Schema panel updates instantly when selecting any table from the File List
-            - 📝 **Dynamic SQL Templates** — Auto-fills table and column names from your active selection
-            - ↩️ **Ctrl+Z / Ctrl+Y** — Full undo/redo in the SQL editor
-            - 🖱 **Click column headers to sort** — Click any result column to sort ascending/descending
-            - ✍️ **Selectable text** — Table cell and schema content can be selected and copied
-            - ⚡ **Linux lag fixed** — Mousemove listener scoping matches the parent project for zero idle overhead
+            ### 🆕 What's new in V3.1 Beta
+            - 🎨 **Custom HTML/CSS PDF** — Styled PDF exports via headless Chromium. Toggle with "🎨 Use custom HTML/CSS template" in the PDF dialog. Falls back to ReportLab if Chromium isn't installed
+            - 📝 **PDF Style settings tab** — Save a default CSS template and enable Developer mode (always shows CSS editor in PDF dialog)
+            - 📋 **Copy AI Requirement** — One-click copy of a detailed prompt describing all CSS classes, HTML structure, and data placeholders — paste into any AI to generate custom styles
+            - 🔍 **Schema sidebar filtered** — The left Schema panel now shows only your currently selected tables, not every table in the DB
+            - 📋 **SQL Schema copy button** — "Copy All Schema" button in the Custom Report quick-reference panel
+            - ⚡ **Instant column sort** — Clicking a column header now sorts in-memory (no re-query) with ▲/▼ indicators
+            - 📋 **Copy CSV button** — New "📋 Copy" button next to CSV export — copies all results to clipboard as CSV text
+            - ✅ **Query Log fixed** — "Use" in Query Log now pastes the SQL into the editor AND copies to clipboard, then focuses the SQL panel
 
             ### 📥 Downloads
             Pick the file for your OS — no Python or dependencies needed.
@@ -150,3 +148,4 @@ jobs:
           files: |
             binaries/*.tar.gz
             binaries/querii-windows-setup.exe
+
