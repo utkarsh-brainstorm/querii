@@ -452,11 +452,12 @@
       <span>Settings</span>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)]">
+    <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)] overflow-x-auto" style="flex-shrink:0">
       <button class="settings-tab active" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'pdfstyle')">PDF Style</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'theme')">Theme</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'querylog')">Query Log</button>
+      <button class="settings-tab"        onclick="switchSettingsTab(this,'advanced')" style="color:var(--danger)">⚠️ Advanced</button>
       <button class="settings-tab"        onclick="switchSettingsTab(this,'about')">About</button>
     </div>
 
@@ -536,6 +537,35 @@
         <button class="text-[10px] text-[var(--danger)] hover:underline" onclick="clearQueryLog()">Clear Log</button>
       </div>
       <div id="query-log-list" class="flex-1 overflow-y-auto space-y-2 text-[10px] pr-2"></div>
+    </div>
+
+    <!-- Advanced / Database Admin -->
+    <div id="tab-advanced" class="settings-tab-body hidden" style="height:360px;overflow-y:auto">
+      <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--danger)">
+        ⚠️ <strong>Developer Database Access</strong> — All SQL runs directly on your live database. <strong>No undo.</strong>
+      </div>
+      <!-- SQL Console -->
+      <div style="margin-bottom:10px">
+        <label style="font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em">SQL Console</label>
+        <textarea id="db-raw-sql" style="width:100%;height:90px;margin-top:5px;font-family:monospace;font-size:11px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-muted);color:var(--text-main);resize:vertical" placeholder="SELECT * FROM my_table LIMIT 10;
+DELETE FROM students WHERE id = 5;
+DROP TABLE old_data;"></textarea>
+        <div style="display:flex;gap:6px;margin-top:5px">
+          <button class="btn-primary" style="font-size:11px;padding:4px 12px" onclick="dbRunSql()">▶ Run SQL</button>
+          <button class="btn-ghost" style="font-size:11px" onclick="document.getElementById('db-raw-sql').value='';document.getElementById('db-result').innerHTML=''">🗑 Clear</button>
+        </div>
+      </div>
+      <!-- Result display -->
+      <div id="db-result" style="font-size:10px;font-family:monospace;max-height:110px;overflow:auto;background:var(--bg-muted);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text-main);white-space:pre-wrap"></div>
+      <!-- Danger zone -->
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Danger Zone</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <button class="btn-ghost" style="font-size:11px;color:var(--danger);border-color:var(--danger)" onclick="dbDropAllTables()">🗑 Drop All Imported Tables</button>
+          <button class="btn-ghost" style="font-size:11px;color:var(--danger);border-color:var(--danger)" onclick="dbVacuum()">🔧 VACUUM</button>
+          <button class="btn-danger" style="font-size:11px" onclick="dbDeleteDatabase()">💣 Delete Entire Database</button>
+        </div>
+      </div>
     </div>
 
     <!-- About -->
@@ -723,6 +753,7 @@
     </div>
     <div class="modal-footer gap-2">
       <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-ghost text-[12px]" onclick="closeModal();openUltraDevMode()" style="color:#a78bfa;border-color:rgba(139,92,246,.4)" title="Full-screen PDF editor with live preview">🎨 Ultra Dev Mode</button>
       <button class="btn-primary text-[12px]" onclick="confirmExportPdf()">Export PDF</button>
     </div>
   </div>
@@ -740,10 +771,76 @@
     </div>
   </div>
 
+  <!-- ════════════════════════════════════════════════════════════════════
+       ULTRA DEV MODE — Full-screen PDF Editor Overlay
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="ultra-dev-overlay" class="hidden" style="
+    position:fixed;inset:0;z-index:9000;
+    background:var(--bg-main,#0f172a);
+    display:flex;flex-direction:column;
+    font-family:'Inter',system-ui,sans-serif;
+  ">
+    <!-- Header bar -->
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--bg-panel,#1e293b);border-bottom:1px solid var(--border,#334155);flex-shrink:0">
+      <span style="font-size:15px;font-weight:800;color:#f1f5f9;letter-spacing:-.01em">🎨 Ultra Dev Mode <span style="font-size:10px;font-weight:500;color:#64748b">PDF Editor</span></span>
+      <div style="flex:1"></div>
+      <button onclick="_devCopyAiRequirement()" style="font-size:11px;padding:4px 10px;border-radius:6px;background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.3);cursor:pointer" title="Copy AI prompt for custom CSS">🤖 Copy AI Req</button>
+      <button onclick="window._devExportPdf()" style="font-size:12px;padding:5px 14px;border-radius:7px;background:var(--accent,#3b82f6);color:#fff;border:none;cursor:pointer;font-weight:700">🖨 Export PDF</button>
+      <button onclick="closeUltraDevMode()" style="font-size:12px;padding:5px 10px;border-radius:7px;background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);cursor:pointer">✕ Close</button>
+    </div>
+
+    <!-- Body: left panel + right preview -->
+    <div style="display:flex;flex:1;min-height:0">
+
+      <!-- ── LEFT PANEL ──────────────────────────────────────────────── -->
+      <div style="width:370px;min-width:280px;flex-shrink:0;overflow-y:auto;background:var(--bg-panel,#1e293b);border-right:1px solid var(--border,#334155);display:flex;flex-direction:column">
+
+        <!-- Collapsible sections -->
+        <details open style="border-bottom:1px solid var(--border,#334155)">
+          <summary style="padding:8px 14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none">📄 Document</summary>
+          <div id="dev-doc-controls" style="padding:8px 14px 14px"></div>
+        </details>
+
+        <details open style="border-bottom:1px solid var(--border,#334155)">
+          <summary style="padding:8px 14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none">📐 Columns</summary>
+          <div id="dev-col-controls" style="padding:6px 10px 12px"></div>
+        </details>
+
+        <details open style="border-bottom:1px solid var(--border,#334155);flex-shrink:0">
+          <summary style="padding:8px 14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none">🎨 Custom CSS <span style="font-size:9px;color:#475569;font-weight:400">(Ctrl+S to refresh)</span></summary>
+          <div style="padding:6px 10px 8px">
+            <textarea id="dev-css-editor" spellcheck="false" oninput="window._devCssChanged(this.value)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();_dev.css=this.value;_devRefreshPreviewDebounced(100);_dToast('Preview refreshed')}" style="width:100%;height:180px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+        </details>
+
+        <details style="flex:1;display:flex;flex-direction:column">
+          <summary style="padding:8px 14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none">📁 Dev Files</summary>
+          <div id="dev-file-panel" style="padding:6px 10px 10px;flex:1"></div>
+        </details>
+      </div>
+
+      <!-- ── RIGHT PANEL: LIVE PREVIEW ──────────────────────────────── -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#dde3ec;position:relative">
+        <!-- Toolbar -->
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--bg-panel,#1e293b);border-bottom:1px solid var(--border,#334155);flex-shrink:0">
+          <span style="font-size:11px;color:#64748b">Live Preview</span>
+          <span id="dev-preview-spinner" class="hidden" style="font-size:10px;color:#3b82f6;animation:spin 1s linear infinite">⟳ Rendering…</span>
+          <div style="flex:1"></div>
+          <button onclick="_devRefreshPreview()" style="font-size:11px;padding:3px 10px;border-radius:5px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3);cursor:pointer">↺ Refresh</button>
+        </div>
+        <!-- iframe -->
+        <div style="flex:1;overflow:auto;padding:0">
+          <iframe id="dev-preview-frame" sandbox="allow-same-origin" style="width:100%;height:100%;border:none;background:#dde3ec" srcdoc="<p style='color:#94a3b8;font-family:system-ui;text-align:center;margin-top:40px'>Run a query, then open Ultra Dev Mode…</p>"></iframe>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ultra-dev-overlay -->
+
   <!-- TOAST -->
   <div id="toast" class="hidden fixed bottom-4 right-4 z-50 text-[12px] font-medium px-4 py-2.5 rounded shadow-xl max-w-xs"></div>
 
   <script src="themes.js"></script>
   <script src="app.js"></script>
+  <script src="pdf_dev_mode.js"></script>
 </body>
 </html>

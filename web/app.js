@@ -2606,3 +2606,118 @@ document.addEventListener('DOMContentLoaded', function() {
     loadCustomReports();
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DATABASE ADMIN PANEL (Settings → Advanced tab)
+   ══════════════════════════════════════════════════════════════════════════ */
+function dbRunSql() {
+  var sql = (document.getElementById('db-raw-sql') || {}).value || '';
+  if (!sql.trim()) return;
+  var resEl = document.getElementById('db-result');
+  if (resEl) resEl.textContent = 'Running…';
+  apiCall('execute_raw_sql', sql)
+    .then(function(r) {
+      if (!r || !r.result) { if (resEl) resEl.textContent = 'No response'; return; }
+      var d = r.result;
+      if (d.message) {
+        if (resEl) resEl.textContent = d.message;
+        toast('✓ ' + d.message);
+        return;
+      }
+      if (d.columns && d.columns.length) {
+        var lines = [d.columns.join('\t')];
+        (d.rows || []).forEach(function(row) {
+          lines.push(d.columns.map(function(c) { return String(row[c] != null ? row[c] : 'NULL'); }).join('\t'));
+        });
+        if (resEl) resEl.textContent = lines.join('\n') + '\n\n(' + d.rows.length + ' row' + (d.rows.length !== 1 ? 's' : '') + ')';
+      } else {
+        if (resEl) resEl.textContent = 'Query OK — ' + (d.affected || 0) + ' row(s) affected';
+      }
+    })
+    .catch(function(e) {
+      if (resEl) resEl.textContent = '❌ Error: ' + e.message;
+      toast('SQL error: ' + e.message, 'error');
+    });
+}
+
+function dbDropAllTables() {
+  if (!confirm('Drop ALL imported tables? This cannot be undone.')) return;
+  apiCall('drop_all_tables')
+    .then(function(r) {
+      var msg = (r && r.result) || 'Done';
+      var resEl = document.getElementById('db-result');
+      if (resEl) resEl.textContent = msg;
+      toast('✓ ' + msg);
+      setTimeout(function() { location.reload(); }, 1400);
+    })
+    .catch(function(e) { toast(e.message, 'error'); });
+}
+
+function dbVacuum() {
+  apiCall('vacuum_database')
+    .then(function(r) {
+      var resEl = document.getElementById('db-result');
+      if (resEl) resEl.textContent = (r && r.result) || 'VACUUM complete';
+      toast('✓ VACUUM complete');
+    })
+    .catch(function(e) { toast(e.message, 'error'); });
+}
+
+function dbDeleteDatabase() {
+  if (!confirm('DELETE the entire Querii database?\n\nThis removes ALL imported data, settings, and query history. This cannot be undone.')) return;
+  apiCall('delete_database')
+    .then(function() {
+      toast('Database deleted. Reloading…');
+      setTimeout(function() { location.reload(); }, 1500);
+    })
+    .catch(function(e) { toast(e.message, 'error'); });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ULTRA DEV MODE — Overlay CSS injected at runtime
+   ══════════════════════════════════════════════════════════════════════════ */
+(function injectDevModeStyles() {
+  var s = document.createElement('style');
+  s.id = 'dev-mode-styles';
+  s.textContent = [
+    '#ultra-dev-overlay.hidden { display:none!important; }',
+    '.dev-field-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
+    '.dev-lbl{font-size:10px;font-weight:700;color:#64748b;min-width:82px;flex-shrink:0}',
+    '.dev-input,.dev-select{flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:4px 7px;font-size:11px}',
+    '.dev-input:focus,.dev-select:focus{outline:none;border-color:#3b82f6}',
+    '.dev-radio-group{display:flex;gap:8px}',
+    '.dev-radio{display:flex;align-items:center;gap:4px;font-size:11px;color:#94a3b8;cursor:pointer;padding:3px 8px;border-radius:5px;border:1px solid #334155}',
+    '.dev-radio.active{color:#3b82f6;border-color:#3b82f6;background:rgba(59,130,246,.1)}',
+    '.dev-radio input[type=radio]{display:none}',
+    '.dev-cb{width:14px;height:14px;accent-color:#3b82f6;cursor:pointer}',
+    '.dev-col-list{display:flex;flex-direction:column;gap:5px}',
+    '.dev-col-row{background:#1e293b;border:1px solid #334155;border-radius:7px;padding:8px 10px;transition:opacity .15s}',
+    '.dev-col-row.dev-col-hidden{opacity:.4}',
+    '.dev-col-vis{display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:5px}',
+    '.dev-col-vis input[type=checkbox]{accent-color:#3b82f6;width:13px;height:13px;flex-shrink:0}',
+    '.dev-col-name{font-size:11px;font-weight:700;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}',
+    '.dev-col-hdr{width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 6px;font-size:10px;margin-bottom:5px;box-sizing:border-box}',
+    '.dev-col-hdr:focus{outline:none;border-color:#3b82f6}',
+    '.dev-col-width-wrap{display:flex;align-items:center;gap:6px}',
+    '.dev-slider{flex:1;accent-color:#3b82f6;cursor:pointer;height:4px}',
+    '.dev-width-lbl{font-size:10px;color:#64748b;min-width:34px;text-align:right;font-family:monospace}',
+    '.dev-empty{font-size:11px;color:#475569;padding:12px 4px;text-align:center}',
+    '.dev-btn{font-size:11px;padding:4px 10px;border-radius:5px;background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.3);cursor:pointer}',
+    '.dev-btn:hover{background:rgba(59,130,246,.2)}',
+    '.dev-btn-primary{background:#3b82f6;color:#fff;border-color:#3b82f6}',
+    '.dev-btn-primary:hover{background:#2563eb}',
+    '.dev-btn-sm{padding:3px 7px}',
+    '.dev-file-tabs{display:flex;gap:2px;margin-bottom:5px;border-bottom:1px solid #334155}',
+    '.dev-file-tab{font-size:10px;padding:4px 10px;background:transparent;color:#64748b;border:none;cursor:pointer;border-bottom:2px solid transparent;border-radius:4px 4px 0 0}',
+    '.dev-file-tab.active{color:#e2e8f0;border-bottom-color:#3b82f6;background:rgba(59,130,246,.1)}',
+    '.dev-file-area{width:100%;height:260px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:monospace;font-size:10px;resize:vertical;box-sizing:border-box}',
+    '.dev-file-area:focus{outline:none;border-color:#3b82f6}',
+    '.dev-file-actions{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}',
+    '.dev-dir-path{font-size:9px;color:#475569;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
+    '#dev-preview-spinner:not(.hidden){display:inline-block;animation:spin 1s linear infinite}',
+    'details summary::-webkit-details-marker{display:none}',
+    'details>summary{list-style:none}',
+  ].join('\n');
+  document.head.appendChild(s);
+})();

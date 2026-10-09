@@ -17,7 +17,10 @@ import webview
 
 import core.db as db
 from core import exporter
-from core.exporter import export_pdf_html, get_pdf_html_preview
+from core.exporter import (
+    export_pdf_html, get_pdf_html_preview,
+    write_dev_files, read_dev_file, write_dev_file_content,
+)
 from core.importer import preview_file, ImportPreview
 from core.query_builder import (
     FilterRow, FilterGroup, QuerySpec,
@@ -573,16 +576,129 @@ class Api:
         custom_css: str = "",
         page_size: str = "A4",
         orientation: str = "portrait",
+        col_widths: dict = None,
+        col_headers: dict = None,
+        col_visible: list = None,
     ) -> dict:
-        """Return the HTML string for live preview in the PDF export dialog."""
+        """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
             cols = self._last_result_cols or []
             rows = self._last_result_rows or []
             html = get_pdf_html_preview(
-                columns=cols, rows=rows[:20],
+                columns=cols, rows=rows[:100],
                 title=title, org_name=org_name, logo_b64=logo_b64,
                 custom_css=custom_css, page_size=page_size, orientation=orientation,
+                col_widths=col_widths or {}, col_headers=col_headers or {},
+                col_visible=col_visible,
             )
             return _ok(html)
+        except Exception as e:
+            return _err(e)
+
+    # ── Ultra Dev Mode ────────────────────────────────────────────────────────
+
+    def open_dev_files(
+        self,
+        custom_css: str = "",
+        title: str = "Query Results",
+        org_name: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+    ) -> dict:
+        """Write the three dev files and return their paths."""
+        try:
+            import os
+            cols = self._last_result_cols or []
+            rows = self._last_result_rows or []
+            paths = write_dev_files(
+                columns=cols, rows=rows,
+                custom_css=custom_css, title=title, org_name=org_name,
+                page_size=page_size, orientation=orientation,
+                querii_path=os.path.dirname(os.path.abspath(__file__)),
+            )
+            return _ok(paths)
+        except Exception as e:
+            return _err(e)
+
+    def read_dev_file(self, name: str) -> dict:
+        """Read a dev file by name (data.csv / style.css / render.py)."""
+        try:
+            return _ok(read_dev_file(name))
+        except Exception as e:
+            return _err(e)
+
+    def write_dev_file(self, name: str, content: str) -> dict:
+        """Save updated content to a dev file."""
+        try:
+            write_dev_file_content(name, content)
+            return _ok(True)
+        except Exception as e:
+            return _err(e)
+
+    def open_path(self, path: str) -> dict:
+        """Open a file or directory in the system default application."""
+        try:
+            import subprocess, sys as _sys, shlex
+            if _sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", path])
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["explorer", path])
+            return _ok(True)
+        except Exception as e:
+            return _err(e)
+
+    # ── Database Admin ────────────────────────────────────────────────────────
+
+    def execute_raw_sql(self, sql: str) -> dict:
+        """Execute arbitrary SQL against the app database. Returns rows or affected count."""
+        try:
+            conn = db._connect()
+            cur = conn.cursor()
+            cur.execute(sql)
+            if cur.description:
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchmany(500)]
+                conn.commit()
+                return _ok({"columns": cols, "rows": rows, "affected": cur.rowcount})
+            else:
+                conn.commit()
+                return _ok({"columns": [], "rows": [], "affected": cur.rowcount,
+                            "message": f"Query OK — {cur.rowcount} row(s) affected"})
+        except Exception as e:
+            return _err(e)
+
+    def drop_all_tables(self) -> dict:
+        """Drop all user-imported tables from the database."""
+        try:
+            conn = db._connect()
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_querii_%'")
+            tables = [r[0] for r in cur.fetchall()]
+            for t in tables:
+                cur.execute(f'DROP TABLE IF EXISTS "{t}"')
+            conn.commit()
+            return _ok(f"Dropped {len(tables)} table(s): {', '.join(tables) or 'none'}")
+        except Exception as e:
+            return _err(e)
+
+    def vacuum_database(self) -> dict:
+        """Run VACUUM to reclaim disk space."""
+        try:
+            conn = db._connect()
+            conn.execute("VACUUM")
+            return _ok("VACUUM complete")
+        except Exception as e:
+            return _err(e)
+
+    def delete_database(self) -> dict:
+        """Delete the entire SQLite database file (irreversible)."""
+        try:
+            import os
+            db_path = db.get_db_path()
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            return _ok("Database deleted. Restart Querii to create a fresh one.")
         except Exception as e:
             return _err(e)

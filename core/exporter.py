@@ -72,6 +72,9 @@ def _build_pdf_html(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    col_widths: Optional[Dict[str, float]] = None,   # col_name -> width%
+    col_headers: Optional[Dict[str, str]]  = None,   # col_name -> display label
+    col_visible: Optional[List[str]]       = None,   # list of visible col names (None = all)
 ) -> str:
     """
     Build a complete standalone HTML string optimised for WeasyPrint PDF output.
@@ -79,6 +82,13 @@ def _build_pdf_html(
     Custom CSS is injected AFTER the base styles so it overrides anything.
     """
     import base64
+
+    # ── column filtering & labelling ──────────────────────────────────────────
+    if col_visible is not None:
+        vis_set = set(col_visible)
+        columns = [c for c in columns if c in vis_set]
+    col_widths  = col_widths  or {}
+    col_headers = col_headers or {}
 
     # ── page size for @page rule ──────────────────────────────────────────────
     page_size_map = {"A4": "A4", "A3": "A3", "Letter": "letter"}
@@ -96,12 +106,28 @@ def _build_pdf_html(
         return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
     # ── table rows HTML ───────────────────────────────────────────────────────
-    thead_cells = "".join(f"<th>{he(c)}</th>" for c in columns)
+    def _th(c: str) -> str:
+        label = col_headers.get(c, c)
+        w = col_widths.get(c)
+        style = f' style="width:{w}%"' if w else ''
+        return f"<th{style}>{he(label)}</th>"
+
+    def _td(c: str, row: dict) -> str:
+        w = col_widths.get(c)
+        style = f' style="width:{w}%"' if w else ''
+        return f"<td{style}>{he(str(row.get(c, '') or ''))}</td>"
+
+    thead_cells    = "".join(_th(c) for c in columns)
+    col_group      = "".join(
+        f'<col style="width:{col_widths[c]}%">' if c in col_widths else "<col>"
+        for c in columns
+    )
     tbody_rows_html = ""
     for i, row in enumerate(rows):
         row_class = "even" if i % 2 == 0 else "odd"
-        cells = "".join(f"<td>{he(str(row.get(c, '') or ''))}</td>" for c in columns)
+        cells = "".join(_td(c, row) for c in columns)
         tbody_rows_html += f'<tr class="{row_class}">{cells}</tr>\n'
+
 
     # ── SQL block ─────────────────────────────────────────────────────────────
     sql_block = ""
@@ -299,8 +325,10 @@ def _build_pdf_html(
   <!-- Data Table -->
   <div class="data-table-wrap">
     <table class="data-table">
+      <colgroup>{col_group}</colgroup>
       <thead><tr>{thead_cells}</tr></thead>
       <tbody>{tbody_rows_html}</tbody>
+
     </table>
   </div>
 
@@ -387,13 +415,112 @@ def get_pdf_html_preview(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    col_widths: Optional[Dict[str, float]] = None,
+    col_headers: Optional[Dict[str, str]]  = None,
+    col_visible: Optional[List[str]]       = None,
 ) -> str:
-    """Return the HTML string for in-app preview."""
+    """Return the HTML string for in-app preview (iframe srcdoc)."""
     return _build_pdf_html(
-        columns=columns, rows=rows[:50], title=title, org_name=org_name,
+        columns=columns, rows=rows[:100], title=title, org_name=org_name,
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
+        col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
     )
+
+
+# ---------------------------------------------------------------------------
+# Dev-mode three-file workflow
+# ---------------------------------------------------------------------------
+
+_DEV_DIR = Path(tempfile.gettempdir()) / "querii_dev"
+
+
+def write_dev_files(
+    columns: List[str],
+    rows: List[Dict],
+    custom_css: str = "",
+    title: str = "Query Results",
+    org_name: str = "",
+    page_size: str = "A4",
+    orientation: str = "portrait",
+    querii_path: str = "",
+) -> dict:
+    """Write data.csv, style.css, render.py to /tmp/querii_dev/."""
+    import csv as csv_mod
+    _DEV_DIR.mkdir(parents=True, exist_ok=True)
+    qpath = querii_path or str(Path(__file__).parent.parent)
+    orient_suffix = " landscape" if orientation == "landscape" else ""
+
+    # 1) data.csv
+    csv_path = _DEV_DIR / "data.csv"
+    with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv_mod.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            w.writerow({c: row.get(c, "") for c in columns})
+
+    # 2) style.css
+    css_path = _DEV_DIR / "style.css"
+    header = f"""\
+/*
+ * Querii Dev Mode — Custom CSS
+ * Page: {page_size} {orientation}
+ *
+ * Styleable classes:
+ *   body, .school-header, .school-logo, .school-info h2
+ *   .document-heading, .heading-accent, .title, .gen-date
+ *   .data-table, .data-table thead th, .data-table tbody td
+ *   .data-table tbody tr.even, .data-table tbody tr.odd
+ *   .report-footer, .sql-block, .sql-pre
+ *
+ * Override @page for {page_size}{orient_suffix}:
+ *   @page {{ size: {page_size}{orient_suffix}; margin: 18mm 14mm; }}
+ */
+
+"""
+    css_path.write_text(header + (custom_css or ""), encoding="utf-8")
+
+    # 3) render.py
+    script_path = _DEV_DIR / "render.py"
+    script_path.write_text(f"""\
+#!/usr/bin/env python3
+\"\"\"Querii Dev Mode — Standalone PDF renderer. Edit data.csv + style.css then run this.\"\"\"
+import csv, sys, logging
+from pathlib import Path
+HERE = Path(__file__).parent
+sys.path.insert(0, {qpath!r})
+from core.exporter import _build_pdf_html
+rows, columns = [], []
+with open(HERE / 'data.csv', encoding='utf-8-sig') as f:
+    r = csv.DictReader(f); columns = list(r.fieldnames or []); rows = list(r)
+css = (HERE / 'style.css').read_text(encoding='utf-8')
+html = _build_pdf_html(columns=columns, rows=rows, title={title!r}, org_name={org_name!r},
+    custom_css=css, page_size={page_size!r}, orientation={orientation!r})
+logging.getLogger('weasyprint').setLevel(logging.ERROR)
+logging.getLogger('fontTools').setLevel(logging.ERROR)
+import weasyprint as wp
+out = HERE / 'output.pdf'
+wp.HTML(string=html, base_url=None).write_pdf(str(out))
+print(f'PDF saved: {{out}}')
+""", encoding="utf-8")
+    script_path.chmod(0o755)
+    return {"dir": str(_DEV_DIR), "csv": str(csv_path), "css": str(css_path), "script": str(script_path)}
+
+
+def read_dev_file(name: str) -> str:
+    allowed = {"data.csv", "style.css", "render.py"}
+    if name not in allowed:
+        raise ValueError(f"Unknown dev file: {name}")
+    p = _DEV_DIR / name
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
+
+def write_dev_file_content(name: str, content: str) -> None:
+    allowed = {"data.csv", "style.css", "render.py"}
+    if name not in allowed:
+        raise ValueError(f"Unknown dev file: {name}")
+    _DEV_DIR.mkdir(parents=True, exist_ok=True)
+    (_DEV_DIR / name).write_text(content, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
