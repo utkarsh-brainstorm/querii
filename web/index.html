@@ -739,8 +739,11 @@ DROP TABLE old_data;"></textarea>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
           <input type="checkbox" id="pdf-use-html" style="width:13px;height:13px" onchange="togglePdfHtmlMode(this.checked)">
-          <span>🎨 Use custom HTML/CSS template (styled output)</span>
+          <span>🎨 Use Custom HTML/CSS Template (Headless Chrome)</span>
         </label>
+        <div style="font-size:10px;color:var(--text-dim);margin-left:21px;margin-top:-2px">
+          Default (unchecked): ⚡ Ultra-Fast Native Engine (&lt;50ms, vector graphics)
+        </div>
       </div>
       <!-- Custom CSS section (shown when html mode or dev mode active) -->
       <div id="pdf-css-section" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-muted)">
@@ -821,6 +824,13 @@ DROP TABLE old_data;"></textarea>
             <span style="font-size:9px;color:#94a3b8;font-weight:500;text-transform:none;letter-spacing:normal">(Ctrl+S to refresh)</span>
           </summary>
           <div style="padding:0 16px 16px">
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+              <button type="button" onclick="window._devApplyPreset('executive')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Executive Slate preset">🏢 Slate</button>
+              <button type="button" onclick="window._devApplyPreset('minimal')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Financial Minimal preset">📰 Minimal</button>
+              <button type="button" onclick="window._devApplyPreset('emerald')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Emerald Corporate preset">🌲 Emerald</button>
+              <button type="button" onclick="window._devApplyPreset('tech')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Modern Tech preset">🟣 Tech</button>
+              <button type="button" onclick="window._devApplyPreset('compact')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Dense Compact preset">📏 Compact</button>
+            </div>
             <textarea id="dev-css-editor" spellcheck="false" oninput="window._devCssChanged(this.value)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();_dev.css=this.value;_devRefreshPreviewDebounced(100);_dToast('Preview refreshed')}" style="width:100%;height:220px;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)"></textarea>
           </div>
         </details>

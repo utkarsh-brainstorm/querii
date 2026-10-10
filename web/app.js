@@ -2045,6 +2045,7 @@ function confirmExportPdf() {
 
   closeModal();
   showProgress(true);
+  toast('⚡ Generating PDF…', 'info');
 
   var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
   if (useHtml) {

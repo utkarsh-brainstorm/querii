@@ -9,3 +9,5 @@ dist/
 build/
 *.spec
 querii-linux-shiv
+target/
+core/rust_engine/target/

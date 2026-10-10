@@ -494,23 +494,61 @@ class Api:
 
     def export_pdf(
         self,
-        columns: list,
-        rows: list,
-        filepath: str,
-        title: str = "Query Results",
-        org_name: str = "",
-        logo_b64: str = "",
-        sql_display: str = "",
-        theme_colors: dict = None,
-        page_size: str = "A4",
-        orientation: str = "portrait",
-        scale: float = 1.0,
-        continuous: bool = False,
-        source_label: str = "",
+        *args,
+        **kwargs,
     ) -> dict:
+        """
+        Export results to PDF using the high-speed native Rust engine with ReportLab fallback.
+        Accepts either (filepath, title, ...) or (columns, rows, filepath, title, ...).
+        """
         try:
+            # Parse arguments flexibly
+            cols = self._last_result_cols
+            rows = self._last_result_rows
+            filepath = ""
+            title = kwargs.get("title", "Query Results")
+            org_name = kwargs.get("org_name", "")
+            logo_b64 = kwargs.get("logo_b64", "")
+            sql_display = kwargs.get("sql_display", "")
+            theme_colors = kwargs.get("theme_colors", None)
+            page_size = kwargs.get("page_size", "A4")
+            orientation = kwargs.get("orientation", "portrait")
+            scale = kwargs.get("scale", 1.0)
+            continuous = kwargs.get("continuous", False)
+            source_label = kwargs.get("source_label", "")
+
+            if args:
+                if isinstance(args[0], str):
+                    # Signature: (filepath, title, subtitle, org, logo, sql, ...)
+                    filepath = args[0]
+                    if len(args) > 1 and args[1]: title = args[1]
+                    if len(args) > 3 and args[3]: org_name = args[3]
+                    if len(args) > 4 and args[4]: logo_b64 = args[4]
+                    if len(args) > 5 and args[5]: sql_display = args[5]
+                    if len(args) > 6 and args[6]: theme_colors = args[6]
+                    if len(args) > 7 and args[7]: page_size = args[7]
+                    if len(args) > 8 and args[8]: orientation = args[8]
+                    if len(args) > 9 and args[9]: scale = float(args[9])
+                    if len(args) > 10 and args[10] is not None: continuous = bool(args[10])
+                    if len(args) > 11 and args[11]: source_label = args[11]
+                elif isinstance(args[0], (list, tuple)) and len(args) >= 3:
+                    # Signature: (columns, rows, filepath, ...)
+                    cols = args[0] or cols
+                    rows = args[1] or rows
+                    filepath = args[2]
+                    if len(args) > 3 and args[3]: title = args[3]
+                    if len(args) > 4 and args[4]: org_name = args[4]
+
+            if not filepath:
+                filepath = kwargs.get("filepath", "")
+
+            if not filepath:
+                return _err("No output filepath provided")
+
             exporter.export_pdf(
-                self._last_result_cols, self._last_result_rows, filepath,
+                columns=cols,
+                rows=rows,
+                filepath=filepath,
                 title=title,
                 subtitle="",
                 org_name=org_name,

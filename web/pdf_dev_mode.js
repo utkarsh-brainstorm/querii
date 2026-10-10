@@ -38,10 +38,11 @@ function _dToast(msg, type) {
 }
 function _dApi(method) {
   var args = Array.prototype.slice.call(arguments, 1);
-  if (typeof apiCall === 'function') return apiCall(method, ...args);
-  // fallback for pywebview
+  if (typeof apiCall === 'function') return apiCall.apply(null, [method].concat(args));
   if (window.pywebview && window.pywebview.api && window.pywebview.api[method]) {
-    return Promise.resolve(window.pywebview.api[method](...args));
+    return Promise.resolve(window.pywebview.api[method].apply(window.pywebview.api, args)).then(function(r) {
+      return (r && r.ok !== undefined) ? (r.ok ? r.data : Promise.reject(new Error(r.error || 'API error'))) : r;
+    });
   }
   return Promise.reject(new Error('API not available'));
 }
@@ -171,10 +172,15 @@ function _devRenderColControls() {
     el.innerHTML = '<div class="dev-empty">Run a query first to see columns.</div>';
     return;
   }
-  var html = '<div class="dev-col-list">';
   var visColsCount = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); }).length;
   var avgWidth = visColsCount > 0 ? Math.floor(100 / visColsCount) : 20;
 
+  var toolbar = '<div style="display:flex;gap:6px;margin-bottom:10px">' +
+    '<button class="dev-btn dev-btn-sm" onclick="window._devDistributeEvenly()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#334155" title="Distribute widths equally across all visible columns">⚖ Equal Widths</button>' +
+    '<button class="dev-btn dev-btn-sm" onclick="window._devResetColumns()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#64748b" title="Reset all custom widths and headers">↺ Reset All</button>' +
+  '</div>';
+
+  var html = toolbar + '<div class="dev-col-list">';
   _dev.cols.forEach(function(c) {
     var vis    = _dev.colVisible === null || _dev.colVisible.has(c);
     var width  = _dev.colWidths[c] !== undefined ? _dev.colWidths[c] : avgWidth;
@@ -195,14 +201,52 @@ function _devRenderColControls() {
   el.innerHTML = html;
 }
 
+window._devDistributeEvenly = function() {
+  var visCols = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); });
+  if (!visCols.length) return;
+  var equalW = Math.floor(100 / visCols.length);
+  visCols.forEach(function(c) {
+    _dev.colWidths[c] = equalW;
+  });
+  _devRenderColControls();
+  _devRefreshPreviewDebounced(150);
+  _dToast('Columns distributed evenly (' + equalW + '%)');
+};
+
+window._devResetColumns = function() {
+  _dev.colWidths = {};
+  _dev.colHeaders = {};
+  _dev.colVisible = null;
+  _devRenderColControls();
+  _devRefreshPreviewDebounced(150);
+  _dToast('Column widths and headers reset');
+};
+
 function _devRenderCssEditor() {
   var el = document.getElementById('dev-css-editor');
   if (!el) return;
   if (el.value !== undefined) {
-    // Already a textarea, just update value
     if (document.activeElement !== el) el.value = _dev.css;
   }
 }
+
+window._devApplyPreset = function(presetName) {
+  var presets = {
+    'executive': '/* 🏢 Executive Slate */\n:root {\n  --table-head-bg: #0f172a;\n  --accent: #3b82f6;\n  --row-alt: #f8fafc;\n}\n.data-table thead th {\n  background: #0f172a !important;\n  color: #ffffff !important;\n  border-bottom: 2px solid #3b82f6 !important;\n}\n.report-header {\n  border-bottom: 2px solid #0f172a !important;\n}',
+    'minimal': '/* 📰 Financial Minimal */\n:root {\n  --table-head-bg: #f8fafc;\n  --table-head-text: #0f172a;\n  --accent: #94a3b8;\n  --row-alt: #ffffff;\n}\n.data-table thead th {\n  background: #f1f5f9 !important;\n  color: #0f172a !important;\n  border-bottom: 2px solid #94a3b8 !important;\n}\n.data-table tbody td {\n  font-family: ui-monospace, SFMono-Regular, monospace;\n  font-size: 7.5pt;\n}',
+    'emerald': '/* 🌲 Emerald Corporate */\n:root {\n  --table-head-bg: #064e3b;\n  --accent: #10b981;\n  --row-alt: #f0fdf4;\n}\n.data-table thead th {\n  background: #064e3b !important;\n  color: #ffffff !important;\n  border-bottom: 2px solid #10b981 !important;\n}\n.org-title {\n  color: #064e3b !important;\n}',
+    'tech': '/* 🟣 Modern Tech */\n:root {\n  --table-head-bg: #312e81;\n  --accent: #6366f1;\n  --row-alt: #eef2ff;\n}\n.data-table thead th {\n  background: #312e81 !important;\n  color: #ffffff !important;\n  border-bottom: 2px solid #6366f1 !important;\n}\n.badge-records {\n  background: #e0e7ff !important;\n  color: #4338ca !important;\n}',
+    'compact': '/* 📏 Dense Compact */\nbody {\n  font-size: 7.5pt !important;\n}\n.data-table th, .data-table td {\n  padding: 4px 6px !important;\n  font-size: 7pt !important;\n}\n.report-header {\n  margin-bottom: 8px !important;\n  padding-bottom: 6px !important;\n}'
+  };
+
+  if (presets[presetName]) {
+    _dev.css = presets[presetName];
+    var editor = document.getElementById('dev-css-editor');
+    if (editor) editor.value = _dev.css;
+    _devRefreshPreviewDebounced(150);
+    _dToast('Applied preset: ' + presetName);
+  }
+};
 
 function _devRenderFilePanel() {
   var el = document.getElementById('dev-file-panel');
@@ -229,7 +273,7 @@ function _devRenderFilePanel() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   CONTROL EVENT HANDLERS (window-scoped so inline onclick works)
+   CONTROL EVENT HANDLERS
    ══════════════════════════════════════════════════════════════════════════ */
 window._devOnTitleChange = function(v) { _dev.title = v; _devRefreshPreviewDebounced(); };
 window._devOnOrgChange   = function(v) { _dev.orgName = v; _devRefreshPreviewDebounced(); };
@@ -265,29 +309,36 @@ window._devSetHeader = function(col, val) {
 
 window._devCssChanged = function(val) {
   _dev.css = val;
-  _devRefreshPreviewDebounced(600);
+  _devRefreshPreviewDebounced(400);
 };
 
 window._devOnFileEdit = function(val) {
   _dev.fileBuf[_dev.fileTab] = val;
   if (_dev.fileTab === 'style.css') {
     _dev.css = val;
-    _devRefreshPreviewDebounced(800);
+    _devRefreshPreviewDebounced(500);
   }
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   PREVIEW
+   PREVIEW (Smooth & Scroll-Preserved)
    ══════════════════════════════════════════════════════════════════════════ */
 function _devRefreshPreviewDebounced(delay) {
   if (_dev.prevTid) clearTimeout(_dev.prevTid);
-  _dev.prevTid = setTimeout(_devRefreshPreview, delay || 500);
+  _dev.prevTid = setTimeout(_devRefreshPreview, delay || 300);
 }
 
 function _devRefreshPreview() {
   var iframe = document.getElementById('dev-preview-frame');
   if (!iframe) return;
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
+
+  // Preserve scroll offset
+  var scrollY = 0;
+  try {
+    if (iframe.contentWindow) scrollY = iframe.contentWindow.scrollY || 0;
+  } catch (e) {}
+
   _dApi('get_pdf_html_preview',
     _dev.title, _dev.orgName, _dev.logo, _dev.css,
     _dev.pageSize, _dev.orient,
@@ -295,13 +346,21 @@ function _devRefreshPreview() {
   ).then(function(r) {
     if (!r) return;
     var html = r;
-    // Inject preview wrapper CSS for the iframe
     var previewStyle = '<style>' +
       'body{background:#dde3ec;margin:0;padding:16px}' +
       '.dev-preview-scale{transform-origin:top center;width:210mm;margin:0 auto}' +
       '@media print{body{background:#fff;padding:0}}' +
     '</style>';
     iframe.srcdoc = previewStyle + html;
+
+    iframe.onload = function() {
+      try {
+        if (iframe.contentWindow && scrollY > 0) {
+          iframe.contentWindow.scrollTo(0, scrollY);
+        }
+      } catch (e) {}
+    };
+
     var spin = document.getElementById('dev-preview-spinner');
     if (spin) spin.classList.add('hidden');
   }).catch(function(e) {
@@ -399,6 +458,7 @@ window._devExportPdf = function() {
     var filepath = r;
     var orgEl = document.getElementById('s-org-name');
     var org = (orgEl && orgEl.value) || _dev.orgName;
+    _dToast('⚡ Generating PDF…', 'info');
     return _dApi('export_pdf_html',
       filepath, _dev.title, org, _dev.logo,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
