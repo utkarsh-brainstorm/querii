@@ -1848,10 +1848,44 @@ function exportPdf() {
   openModal('modal-pdf-export');
 }
 
+/* ── PDF Presets & Default Style ─────────────────────────────────────── */
+var PDF_PRESETS = {
+  'executive': '/* 🏢 Executive Slate */\n:root {\n  --navy: #0f172a;\n  --accent: #2563eb;\n  --table-head-bg: #0f172a;\n  --table-head-text: #ffffff;\n  --row-alt: #f8fafc;\n}\n.masthead { border-top-color: #0f172a; border-bottom-color: #0f172a; }\n.org-title { color: #0f172a; }',
+  'minimal': '/* 📰 Financial Minimal */\n:root {\n  --navy: #1e293b;\n  --accent: #94a3b8;\n  --table-head-bg: #f8fafc;\n  --table-head-text: #0f172a;\n  --row-alt: #ffffff;\n  --border: #e2e8f0;\n}\n.masthead { border-top: 1px solid #0f172a; border-bottom: 1px solid #cbd5e1; }\n.data-table thead th { border-bottom: 2px solid #94a3b8; }\n.badge-count { background: #f8fafc; border-color: #e2e8f0; }',
+  'emerald': '/* 🌲 Emerald Corporate */\n:root {\n  --navy: #064e3b;\n  --accent: #059669;\n  --accent-subtle: #ecfdf5;\n  --table-head-bg: #064e3b;\n  --table-head-text: #ffffff;\n  --row-alt: #f0fdf4;\n}\n.masthead { border-top-color: #064e3b; border-bottom-color: #064e3b; }\n.org-title { color: #064e3b; }\n.data-table thead th { border-bottom: 2px solid #059669; }\n.badge-count { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }',
+  'tech': '/* 🟣 Modern Tech */\n:root {\n  --navy: #312e81;\n  --accent: #6366f1;\n  --accent-subtle: #eef2ff;\n  --table-head-bg: #312e81;\n  --table-head-text: #ffffff;\n  --row-alt: #faf5ff;\n}\n.masthead { border-top-color: #312e81; border-bottom-color: #312e81; }\n.org-title { color: #312e81; }\n.data-table thead th { border-bottom: 2px solid #6366f1; }\n.badge-count { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }',
+  'compact': '/* 📏 Dense Compact */\n:root {\n  --data-font-weight: 400;\n}\n.pdf-page-sheet { padding: 8mm 10mm; }\n.masthead { padding-top: 6px; padding-bottom: 6px; margin-bottom: 10px; }\n.org-title { font-size: 14pt; }\n.data-table thead th { padding: 4px 6px; font-size: 6.5pt; }\n.data-table tbody td { padding: 3.5px 6px; font-size: 7pt; }\n.report-footer { margin-top: 8px; font-size: 6.5pt; }'
+};
+
+function applyPdfPreset(name) {
+  if (!PDF_PRESETS[name]) return;
+  var useHtml = document.getElementById('pdf-use-html');
+  if (useHtml) useHtml.checked = true;
+  var section = document.getElementById('pdf-css-section');
+  if (section) section.classList.remove('hidden');
+  var cssEl = document.getElementById('pdf-custom-css');
+  if (cssEl) cssEl.value = PDF_PRESETS[name];
+  toast('Applied preset: ' + name);
+}
+
+function savePdfCssAsDefault() {
+  var cssEl = document.getElementById('pdf-custom-css');
+  var css = cssEl ? cssEl.value : '';
+  _pdfCustomCss = css;
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = css;
+  apiCall('save_settings', { pdf_custom_css: css })
+    .then(function() {
+      toast('✓ Saved as default PDF style');
+    })
+    .catch(function(e) {
+      toast('Failed to save default style: ' + (e.message || e), 'error');
+    });
+}
+
 /* ── PDF Dev mode / HTML mode toggles ───────────────────────────────── */
 function togglePdfDevMode(checked) {
   _pdfDevMode = checked;
-  // If dev mode is on, always show CSS section in PDF export dialog
   var cssSection = document.getElementById('pdf-css-section');
   if (cssSection && checked) cssSection.classList.remove('hidden');
 }
@@ -1862,118 +1896,131 @@ function togglePdfHtmlMode(checked) {
 
 /* ── Copy PDF Requirement (AI template) ─────────────────────────────── */
 function copyPdfRequirement() {
-  var schemaLines = ['## Current Database Schema\n'];
-  _allSchemaData.forEach(function(t) {
-    var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
-    schemaLines.push('### Table: ' + t.table);
-    userCols.forEach(function(c) { schemaLines.push('  - ' + c.name + '  (' + c.type + ')'); });
-    schemaLines.push('');
-  });
-  var requirement = [
-'# Querii PDF Custom CSS — AI Generation Requirement',
-'',
-'You are helping generate custom CSS for a PDF export system. The PDF is rendered as',
-'a full standalone HTML document and printed via headless Chromium. Your CSS will be',
-'injected into a <style> block AFTER the base styles, so you can override anything.',
-'',
-'## Document Structure (HTML classes available to style)',
-'',
-'```',
-'<main class="page">',
-'  <div class="document-frame"></div>          <!-- decorative border inside page -->',
-'  <div class="watermark-area">               <!-- watermark overlay (low z-index) -->',
-'    <div class="watermark-text"></div>',
-'    <div class="logo-watermark-zone">',
-'      <img class="logo-watermark">           <!-- faded logo watermark in center -->',
-'    </div>',
-'  </div>',
-'  <header class="school-header">            <!-- org/school header card -->',
-'    <img class="school-logo">              <!-- circular logo, 78x78px -->',
-'    <div class="school-info">',
-'      <h2>Org Name</h2>',
-'      <div class="address">Address</div>',
-'      <div class="school-meta">Meta info</div>',
-'    </div>',
-'  </header>',
-'  <section class="document-heading">       <!-- title section -->',
-'    <div class="heading-accent"></div>     <!-- gold accent bar (52px wide, 3px tall) -->',
-'    <h1 class="title">Report Title</h1>',
-'    <div class="gen-date">Generated: date</div>',
-'  </section>',
-'  <div class="data-table-wrap">            <!-- scrollable table wrapper -->',
-'    <table class="data-table">',
-'      <thead><tr><th>Column Header</th>...</tr></thead>',
-'      <tbody><tr><td>Cell Value</td>...</tr></tbody>',
-'    </table>',
-'  </div>',
-'  <div class="report-footer">             <!-- record count + source + Querii -->',
-'  </div>',
-'  <section class="sql-block">             <!-- optional SQL query at bottom -->',
-'    <div class="sql-label">SQL Query</div>',
-'    <pre class="sql-pre">SELECT ...</pre>',
-'  </section>',
-'</main>',
-'```',
-'',
-'## CSS Custom Properties (variables you can reference or override)',
-'',
-'```css',
-':root {',
-'  --paper:        #fff;       /* page background */',
-'  --screen-bg:    #e7ebf0;   /* browser background */',
-'  --navy:         #0f172a;   /* primary dark color — used in header, title, table head */',
-'  --gold:         #b7791f;   /* accent bar and decorative elements */',
-'  --text:         #111827;   /* body text color */',
-'  --muted:        #64748b;   /* secondary/dim text */',
-'  --border:       #cbd5e1;   /* table borders */',
-'  --border-light: #e2e8f0;   /* subtle row separators */',
-'}',
-'```',
-'',
-'## Key Design Rules',
-'- Page size: A4 (210mm × 297mm) with `padding: 12mm 14mm`',
-'- The `.data-table` uses `border-collapse: separate; border-spacing: 0` with `border-radius: 12px` for Apple-style rounded corners',
-'- Table header: `background: var(--navy); color: #fff; border-bottom: 2px solid var(--gold)`',
-'- First/last header cells get `border-radius` on the top corners',
-'- Alternating rows: `.data-table tbody tr:nth-child(even) { background: #f8fafc }`',
-'- Watermark: `.watermark-text` is absolutely positioned, rotated -28deg, opacity 0.06',
-'- Logo watermark: `.logo-watermark` opacity 0.045, grayscale, centered circle',
-'- The `.document-frame` div creates a double-border decorative frame inside the page edges',
-'',
-'## Print Rules',
-'- `@page { size: A4 portrait; margin: 0; }` — the page size is injected based on user selection',
-'- The page orientation (portrait/landscape) and size (A4/A3/Letter) is controlled by the @page rule',
-'- In `@media print`: `.page` has `box-shadow: none` and fills the full page',
-'',
-'## Data Placeholders Available at Runtime',
-'The following are generated dynamically and placed inside the HTML elements above:',
-'  - `{{title}}` → inside `.title` h1',
-'  - `{{org_name}}` → inside `.school-info h2`',
-'  - `{{gen_date}}` → inside `.gen-date`',
-'  - `{{logo_src}}` → src attribute of `.school-logo` and `.logo-watermark` img',
-'  - `{{columns}}` → table column headers as `<th>` elements inside `.data-table thead`',
-'  - `{{rows}}` → table data as `<tr><td>` elements inside `.data-table tbody`',
-'  - `{{record_count}}` → inside `.report-footer`',
-'  - `{{sql_query}}` → inside `.sql-pre` (only if SQL display is enabled)',
-'',
-'## Instructions for AI',
-'Generate ONLY valid CSS that can be injected as-is into the PDF template.',
-'Do NOT include <style> tags — just the raw CSS rules.',
-'You may:',
-'  - Change colors, fonts, border-radius, padding, spacing',
-'  - Restyle the `.school-header`, `.document-heading`, `.data-table`',
-'  - Add custom `@media print` overrides',
-'  - Change the `.heading-accent` to any color',
-'  - Add box-shadows, gradients (note: gradients may not print in all browsers)',
-'Do NOT:',
-'  - Change `position: absolute` of `.watermark-area` or `.document-frame` (they will break layout)',
-'  - Remove the `.page` width (210mm) in non-print mode',
-'',
-].concat(schemaLines).join('\n');
+  var titleEl = document.getElementById('pdf-title');
+  var sizeEl  = document.getElementById('pdf-page-size');
+  var orntEl  = document.getElementById('pdf-orientation');
+  var orgEl   = document.getElementById('s-org-name');
+
+  var title   = (titleEl && titleEl.value) || 'Query Results';
+  var size    = (sizeEl  && sizeEl.value)  || 'A4';
+  var orient  = (orntEl  && orntEl.value)  || 'portrait';
+  var orgName = (orgEl   && orgEl.value)   || '';
+  var landscape = orient === 'landscape';
+  var dims = { 'A4': ['210mm', '297mm'], 'A3': ['297mm', '420mm'], 'Letter': ['216mm', '279mm'] }[size] || ['210mm', '297mm'];
+  var w = landscape ? dims[1] : dims[0];
+  var h = landscape ? dims[0] : dims[1];
+
+  var cols = (_lastResultCols && _lastResultCols.length) ? _lastResultCols : ['id', 'name', 'value'];
+
+  var prompt = [
+    '# Querii Executive PDF Custom CSS — AI Generation Specification',
+    '',
+    'You are generating custom CSS for an executive-grade PDF export in Querii. The report is rendered with headless Chromium via strict CSS Paged Media standards.',
+    'Your custom CSS is injected at the very end of the stylesheet, giving you 100% cascade power to customize styling, layout, colors, element positions, borders, visibility, and typography.',
+    '',
+    '## 1. Document Context & Geometry',
+    '- Page Size: ' + size + ' (' + w + ' × ' + h + ')',
+    '- Orientation: ' + orient + (landscape ? ' (Landscape mode)' : ' (Portrait mode)'),
+    '- Base Page Margins: @page { margin: 12mm 14mm 14mm 14mm; }',
+    '- Document Title: "' + title + '"',
+    '- Organisation: "' + (orgName || 'Querii Executive') + '"',
+    '- Total Columns (' + cols.length + '): ' + cols.join(', '),
+    '',
+    '## 2. Complete HTML Architecture (Classes & Hierarchy)',
+    '```html',
+    '<main class="pdf-page-sheet">',
+    '  <!-- Executive Masthead -->',
+    '  <header class="masthead">',
+    '    <div class="masthead-inner">',
+    '      <div class="brand-col">',
+    '        <div class="report-logo-frame"><img src="..." class="report-logo" alt="Logo"></div>',
+    '        <div>',
+    '          <div class="kicker">EXECUTIVE AUDIT DISPATCH • CONFIDENTIAL</div>',
+    '          <h1 class="org-title">' + (orgName || 'Querii Executive') + '</h1>',
+    '          <div class="report-title">' + title + '</div>',
+    '        </div>',
+    '      </div>',
+    '      <div class="meta-matrix">',
+    '        <div class="meta-item"><span class="meta-lbl">Date Issued</span><span class="meta-val">10 Oct 2026, 03:30 PM</span></div>',
+    '        <div class="meta-item"><span class="meta-lbl">Dataset</span><span class="meta-val">Source Table</span></div>',
+    '        <div class="meta-item"><span class="meta-lbl">Total Output</span><span class="badge-count">1,240 Records</span></div>',
+    '      </div>',
+    '    </div>',
+    '  </header>',
+    '',
+    '  <!-- Data Table -->',
+    '  <div class="data-table-wrap">',
+    '    <table class="data-table (optional .grid-lines)">',
+    '      <colgroup>',
+    cols.map(function(c, i) { return '        <col class="col-' + i + '" data-col="' + c + '">'; }).join('\n'),
+    '      </colgroup>',
+    '      <thead>',
+    '        <tr>',
+    cols.map(function(c, i) { return '          <th data-col="' + c + '" data-idx="' + i + '"><span class="th-content">' + c + '</span></th>'; }).join('\n'),
+    '        </tr>',
+    '      </thead>',
+    '      <tbody>',
+    '        <tr class="even">',
+    cols.map(function(c) { return '          <td data-col="' + c + '">Value</td>'; }).join('\n'),
+    '        </tr>',
+    '        <tr class="odd">...</tr>',
+    '      </tbody>',
+    '    </table>',
+    '  </div>',
+    '',
+    '  <!-- Executive Footer -->',
+    '  <footer class="report-footer">',
+    '    <div>Querii  •  Executive Analytics Platform</div>',
+    '    <div>Total Records: 1,240  •  Page 1</div>',
+    '  </footer>',
+    '',
+    '  <!-- Optional SQL Query Box -->',
+    '  <section class="sql-block">',
+    '    <div class="sql-label">SQL Query</div>',
+    '    <pre class="sql-pre">SELECT * FROM ...</pre>',
+    '  </section>',
+    '</main>',
+    '```',
+    '',
+    '## 3. CSS Variables Available to Override (:root)',
+    '```css',
+    ':root {',
+    '  --navy: #090d16;             /* Primary brand color for masthead borders & headings */',
+    '  --navy-light: #1e293b;       /* Secondary brand tint */',
+    '  --accent: #2563eb;           /* Header accent underline bar */',
+    '  --accent-subtle: #eff6ff;    /* Badge backgrounds & highlights */',
+    '  --border: #e2e8f0;           /* Table row border lines */',
+    '  --border-dark: #cbd5e1;      /* Table frame border */',
+    '  --text: #090d16;             /* Base body text */',
+    '  --text-muted: #64748b;       /* Metadata labels & kickers */',
+    '  --row-alt: #f8fafc;          /* Alternating zebra row tint */',
+    '  --table-head-bg: #090d16;    /* Table header background */',
+    '  --table-head-text: #ffffff;  /* Table header text color */',
+    '  --data-font-weight: 400;     /* Table body text weight (400 or 700) */',
+    '}',
+    '```',
+    '',
+    '## 4. Typography & Font Family',
+    '- Bundled Font: `Libron` (executive serif typography) is embedded via @font-face with weights 400 (regular), 700 (bold), and italic styles.',
+    '- System Fallbacks: You can use `Libron, Georgia, serif` or modern sans-serif: `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.',
+    '',
+    '## 5. HARD EXCEPTIONS & CRITICAL RULES (Follow Strictly)',
+    '1. ⛔ NO `position: fixed` or `position: absolute` on table elements (`table`, `thead`, `tbody`, `tr`, `td`): Chromium Paged Media pagination breaks completely across page boundaries if table rows or cells are positioned absolutely. It causes severe table overlaps and dropped rows.',
+    '2. ⛔ NO external web fonts via `@import url(...)` or `<link>`: PDF compilation runs in a sandboxed offline renderer; external network calls will fail or cause timeouts.',
+    '3. ⛔ NO fixed pixel table widths (e.g. `width: 900px`): Always use percentage widths (`width: 100%`) or relative units to honor dynamic paper sizes and margins.',
+    '4. ⛔ NO `break-inside: avoid` on the entire `.data-table` or `.data-table-wrap`: The table MUST be allowed to paginate cleanly across multiple pages (`page-break-inside: auto`). Only individual rows `<tr>` have `break-inside: avoid;`.',
+    '5. ⛔ NO `overflow: hidden` on `html` or `body`: Setting `overflow: hidden` on root elements disables Chromium print pagination and clips the entire document to page 1.',
+    '6. ⛔ Pure Declarative CSS Only: Do NOT include `<script>`, HTML markup, or markdown explanations outside the code block. Output valid CSS inside ```css ... ```.',
+    '',
+    '## 6. Generate Custom CSS:',
+    '```css',
+    '/* Your custom executive styling here */',
+    '```'
+  ].join('\n');
 
   try {
     var ta = document.createElement('textarea');
-    ta.value = requirement; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    ta.value = prompt; ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
     toast('✓ AI requirement copied! Paste it into any AI to generate custom PDF CSS.');
   } catch(e) { toast('Copy failed: ' + e.message, 'error'); }

@@ -770,13 +770,25 @@ DROP TABLE old_data;"></textarea>
       <div id="pdf-css-section" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-muted)">
         <div class="flex items-center justify-between mb-2">
           <span style="font-size:11px;font-weight:700;color:var(--text-head)">📝 Custom CSS</span>
-          <button onclick="copyPdfRequirement()" class="btn-ghost text-[10px] h-6 px-2">📋 Copy AI Requirement</button>
+          <div class="flex items-center gap-1.5">
+            <button onclick="savePdfCssAsDefault()" class="btn-ghost text-[10px] h-6 px-2" title="Save this CSS as your default PDF style in Settings">💾 Set as Default</button>
+            <button onclick="copyPdfRequirement()" class="btn-ghost text-[10px] h-6 px-2">📋 Copy AI Req</button>
+          </div>
+        </div>
+        <!-- 5 Presets for 1-click selection -->
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
+          <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">Presets:</span>
+          <button type="button" onclick="applyPdfPreset('executive')" class="btn-ghost text-[10px] h-6 px-2">🏢 Slate</button>
+          <button type="button" onclick="applyPdfPreset('minimal')" class="btn-ghost text-[10px] h-6 px-2">📰 Minimal</button>
+          <button type="button" onclick="applyPdfPreset('emerald')" class="btn-ghost text-[10px] h-6 px-2">🌲 Emerald</button>
+          <button type="button" onclick="applyPdfPreset('tech')" class="btn-ghost text-[10px] h-6 px-2">🟣 Tech</button>
+          <button type="button" onclick="applyPdfPreset('compact')" class="btn-ghost text-[10px] h-6 px-2">📏 Compact</button>
         </div>
         <textarea id="pdf-custom-css"
           class="input-sm w-full font-mono text-[10px]"
           style="height:140px;resize:vertical;line-height:1.5"
           placeholder="/* Override any styles here. Will be injected into the HTML before printing. */"></textarea>
-        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Pre-filled from Settings → PDF Style. Changes here apply to this export only.</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Pre-filled from Settings → PDF Style. Changes here apply to this export, or click 'Set as Default' to save.</div>
       </div>
     </div>
     <div class="modal-footer gap-2">
@@ -845,12 +857,14 @@ DROP TABLE old_data;"></textarea>
             <span style="font-size:9px;color:#94a3b8;font-weight:500;text-transform:none;letter-spacing:normal">(Ctrl+S to refresh)</span>
           </summary>
           <div style="padding:0 16px 16px">
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
               <button type="button" onclick="window._devApplyPreset('executive')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Executive Slate preset">🏢 Slate</button>
               <button type="button" onclick="window._devApplyPreset('minimal')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Financial Minimal preset">📰 Minimal</button>
               <button type="button" onclick="window._devApplyPreset('emerald')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Emerald Corporate preset">🌲 Emerald</button>
               <button type="button" onclick="window._devApplyPreset('tech')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Modern Tech preset">🟣 Tech</button>
               <button type="button" onclick="window._devApplyPreset('compact')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Dense Compact preset">📏 Compact</button>
+              <div style="flex:1"></div>
+              <button type="button" onclick="window._devSaveCssAsDefault()" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #c7d2fe;color:#4338ca;cursor:pointer;font-weight:700;transition:all .1s" title="Save current CSS as default for all future exports">💾 Set as Default</button>
             </div>
             <textarea id="dev-css-editor" spellcheck="false" oninput="window._devCssChanged(this.value)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();_dev.css=this.value;_devRefreshPreviewDebounced(100);_dToast('Preview refreshed')}" style="width:100%;height:220px;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)"></textarea>
           </div>
@@ -865,14 +879,21 @@ DROP TABLE old_data;"></textarea>
       <!-- ── RIGHT PANEL: LIVE PREVIEW ──────────────────────────────── -->
       <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#ffffff;border:1px solid rgba(203,213,225,0.6);border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);position:relative">
         <!-- Toolbar -->
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;flex-shrink:0">
-          <span style="font-size:12px;font-weight:700;color:#475569">Live Preview</span>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+          <span style="font-size:12px;font-weight:700;color:#0f172a">Live Preview</span>
+          <span id="dev-paper-badge" style="font-size:11px;font-weight:700;color:#334155;background:#e2e8f0;padding:2px 8px;border-radius:4px;border:1px solid #cbd5e1">📄 A4 Portrait (210 × 297 mm)</span>
           <span id="dev-preview-spinner" class="hidden" style="font-size:11px;font-weight:600;color:#3b82f6;animation:spin 1s linear infinite">⟳ Rendering…</span>
           <div style="flex:1"></div>
-          <button onclick="_devRefreshPreview()" style="font-size:11px;padding:5px 12px;border-radius:6px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600;transition:all .1s;box-shadow:0 1px 2px rgba(0,0,0,.03)" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">↺ Refresh View</button>
+          <!-- Zoom Controls -->
+          <div style="display:flex;align-items:center;gap:3px;background:#f1f5f9;padding:2px;border-radius:6px;border:1px solid #cbd5e1">
+            <button onclick="window._devSetZoom('fit')" id="dev-zoom-fit" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#2563eb;color:#fff;border:1px solid #2563eb;cursor:pointer;font-weight:700" title="Fit entire page in view">Fit Page</button>
+            <button onclick="window._devSetZoom('75')" id="dev-zoom-75" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600">75%</button>
+            <button onclick="window._devSetZoom('100')" id="dev-zoom-100" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600">100%</button>
+          </div>
+          <button onclick="_devRefreshPreview()" style="font-size:11px;padding:4px 10px;border-radius:6px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600;transition:all .1s;box-shadow:0 1px 2px rgba(0,0,0,.03)" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">↺ Refresh</button>
         </div>
         <!-- iframe -->
-        <div style="flex:1;overflow:auto;padding:0;background:#e2e8f0;display:flex;justify-content:center;align-items:flex-start">
+        <div style="flex:1;overflow:auto;padding:0;background:#334155;display:flex;justify-content:center;align-items:flex-start">
           <iframe id="dev-preview-frame" sandbox="allow-same-origin" style="width:100%;height:100%;border:none;background:transparent" srcdoc="<div style='display:flex;align-items:center;justify-content:center;height:100%'><p style='color:#94a3b8;font-family:system-ui;font-weight:500;text-align:center;background:#fff;padding:12px 24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.05)'>Loading preview...</p></div>"></iframe>
         </div>
       </div>

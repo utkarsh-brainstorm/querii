@@ -246,16 +246,16 @@ def _build_pdf_html(
         )
 
     # ── table cells HTML ──────────────────────────────────────────────────────
-    def _th(c: str) -> str:
+    def _th(idx: int, c: str) -> str:
         label = col_headers.get(c, c)
         w = col_widths.get(c)
         style = f' style="width:{w}%"' if w else ""
         handle = (
-            f'<div class="col-resize-handle" data-col="{he(c)}" title="Drag to adjust width with mouse"></div>'
+            f'<div class="col-resize-handle" data-col="{he(c)}" data-idx="{idx}" title="Drag with mouse to adjust column width"></div>'
             if is_preview
             else ""
         )
-        return f'<th{style} data-col="{he(c)}"><span class="th-content">{he(label)}</span>{handle}</th>'
+        return f'<th{style} data-col="{he(c)}" data-idx="{idx}"><span class="th-content">{he(label)}</span>{handle}</th>'
 
     def _td(c: str, row: dict) -> str:
         val = row.get(c, "")
@@ -265,12 +265,14 @@ def _build_pdf_html(
             text = he(str(val))
         w = col_widths.get(c)
         style = f' style="width:{w}%"' if w else ""
-        return f"<td{style}>{text}</td>"
+        return f'<td{style} data-col="{he(c)}">{text}</td>'
 
-    thead_cells = "".join(_th(c) for c in columns)
+    thead_cells = "".join(_th(i, c) for i, c in enumerate(columns))
     col_group = "".join(
-        f'<col style="width:{col_widths[c]}%">' if c in col_widths else "<col>"
-        for c in columns
+        f'<col class="col-{i}" data-col="{he(c)}"'
+        + (f' style="width:{col_widths[c]}%"' if c in col_widths else "")
+        + ">"
+        for i, c in enumerate(columns)
     )
 
     tbody_rows_html = ""
@@ -311,27 +313,60 @@ def _build_pdf_html(
     (function initColResizer() {
       var handles = document.querySelectorAll('.col-resize-handle');
       if (!handles.length) return;
+      var table = document.querySelector('.data-table');
+      if (!table) return;
+
       handles.forEach(function(handle) {
         handle.addEventListener('mousedown', function(e) {
           e.preventDefault();
           e.stopPropagation();
-          var th = handle.parentElement;
-          var colName = handle.getAttribute('data-col');
-          var table = th.closest('table');
-          var startX = e.clientX;
-          var startW = th.offsetWidth;
-          var tableW = table.offsetWidth;
+
+          var idx = parseInt(handle.getAttribute('data-idx'), 10);
+          var thA = handle.parentElement;
+          var thElements = Array.from(table.querySelectorAll('thead th'));
+          var colElements = Array.from(table.querySelectorAll('colgroup col'));
+          var colNameA = handle.getAttribute('data-col');
+          var thB = (idx + 1 < thElements.length) ? thElements[idx + 1] : null;
+          var colNameB = thB ? thB.getAttribute('data-col') : null;
+
+          var tableRect = table.getBoundingClientRect();
+          var tableW = tableRect.width || 1;
+
+          var rectA = thA.getBoundingClientRect();
+          var startPctA = (rectA.width / tableW) * 100;
+          var startPctB = thB ? (thB.getBoundingClientRect().width / tableW) * 100 : 0;
+          var combinedPct = startPctA + startPctB;
+
+          var startScreenX = e.screenX;
           handle.classList.add('resizing');
           document.body.style.cursor = 'col-resize';
           document.body.style.userSelect = 'none';
 
           function onMouseMove(me) {
-            var delta = me.clientX - startX;
-            var newW = Math.max(20, startW + delta);
-            var newPct = Math.max(2, Math.min(90, Math.round((newW / tableW) * 100)));
-            th.style.width = newPct + '%';
-            if (window.parent && window.parent._devOnColumnDragged) {
-              window.parent._devOnColumnDragged(colName, newPct);
+            var deltaScreen = me.screenX - startScreenX;
+            var deltaPct = (deltaScreen / tableW) * 100;
+
+            if (thB && colElements[idx + 1]) {
+              var newPctA = Math.max(3, Math.min(combinedPct - 3, Math.round(startPctA + deltaPct)));
+              var newPctB = Math.max(3, Math.round(combinedPct - newPctA));
+
+              if (colElements[idx]) colElements[idx].style.width = newPctA + '%';
+              thA.style.width = newPctA + '%';
+
+              colElements[idx + 1].style.width = newPctB + '%';
+              thB.style.width = newPctB + '%';
+
+              if (window.parent && window.parent._devOnColumnsResized) {
+                window.parent._devOnColumnsResized(colNameA, newPctA, colNameB, newPctB);
+              }
+            } else {
+              var newPctSingle = Math.max(3, Math.min(95, Math.round(startPctA + deltaPct)));
+              if (colElements[idx]) colElements[idx].style.width = newPctSingle + '%';
+              thA.style.width = newPctSingle + '%';
+
+              if (window.parent && window.parent._devOnColumnDragged) {
+                window.parent._devOnColumnDragged(colNameA, newPctSingle);
+              }
             }
           }
 
@@ -339,15 +374,32 @@ def _build_pdf_html(
             handle.classList.remove('resizing');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
+            window.removeEventListener('mousemove', onMouseMove, true);
+            window.removeEventListener('mouseup', onMouseUp, true);
+            document.removeEventListener('mousemove', onMouseMove, true);
+            document.removeEventListener('mouseup', onMouseUp, true);
+            try {
+              if (window.parent && window.parent !== window) {
+                window.parent.removeEventListener('mousemove', onMouseMove, true);
+                window.parent.removeEventListener('mouseup', onMouseUp, true);
+              }
+            } catch(err) {}
+
             if (window.parent && window.parent._devOnColumnDragEnd) {
-              window.parent._devOnColumnDragEnd(colName);
+              window.parent._devOnColumnDragEnd(colNameA, colNameB);
             }
           }
 
-          document.addEventListener('mousemove', onMouseMove);
-          document.addEventListener('mouseup', onMouseUp);
+          window.addEventListener('mousemove', onMouseMove, true);
+          window.addEventListener('mouseup', onMouseUp, true);
+          document.addEventListener('mousemove', onMouseMove, true);
+          document.addEventListener('mouseup', onMouseUp, true);
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.addEventListener('mousemove', onMouseMove, true);
+              window.parent.addEventListener('mouseup', onMouseUp, true);
+            }
+          } catch(err) {}
         });
       });
     })();
@@ -411,25 +463,28 @@ def _build_pdf_html(
     html, body {{
       margin: 0;
       padding: 0;
-      background: {'#cbd5e1' if is_preview else '#ffffff'};
+      background: {'#334155' if is_preview else '#ffffff'};
       color: var(--text);
       font-family: 'Libron', Georgia, serif;
       font-size: 8.5pt;
       line-height: 1.4;
       -webkit-font-smoothing: antialiased;
-      {'display: flex; justify-content: center; padding: 24px 16px; min-height: 100vh;' if is_preview else ''}
+      {'width: 100%; height: 100%; overflow: auto;' if is_preview else ''}
     }}
+
+    {'/* Studio Viewport for Preview */ .preview-viewport { display: block; text-align: center; padding: 28px 24px 48px; min-width: max-content; margin: 0 auto; box-sizing: border-box; }' if is_preview else ''}
 
     /* Paper Page Sheet (Authentic Physical Preview) */
     .pdf-page-sheet {{
-      width: var(--page-w);
-      min-height: var(--page-h);
-      max-width: var(--page-w);
+      {'display: inline-block; vertical-align: top; text-align: left;' if is_preview else ''}
+      width: {'var(--page-w)' if is_preview else '100%'};
+      {'height: var(--page-h); max-height: var(--page-h); overflow: hidden; transform-origin: top center; transition: transform 0.15s ease-out;' if is_preview else 'min-height: 0;'}
+      max-width: {'var(--page-w)' if is_preview else '100%'};
       background: #ffffff;
-      padding: 14mm 16mm;
+      padding: {'14mm 16mm' if is_preview else '0'};
       box-sizing: border-box;
       position: relative;
-      {'box-shadow: 0 16px 40px rgba(15,23,42,0.18), 0 2px 6px rgba(15,23,42,0.06); border-radius: 2px;' if is_preview else ''}
+      {'border: 1px solid #94a3b8; box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15); border-radius: 2px;' if is_preview else ''}
     }}
 
     /* Premium Masthead */
@@ -537,10 +592,11 @@ def _build_pdf_html(
       margin-bottom: 16px;
     }}
     .data-table {{
+      table-layout: fixed;
       width: 100%;
       border-collapse: collapse;
       border-spacing: 0;
-      font-family: 'Libron', serif;
+      font-family: 'Libron', Georgia, serif;
       font-size: 8pt;
       border: 1px solid var(--border-dark);
       border-radius: 4px;
@@ -560,6 +616,9 @@ def _build_pdf_html(
       padding: 8px 10px;
       text-align: left;
       border-bottom: 2px solid var(--accent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }}
     .data-table tbody tr {{
       break-inside: avoid;
@@ -572,6 +631,8 @@ def _build_pdf_html(
       vertical-align: middle;
       font-variant-numeric: tabular-nums;
       font-weight: var(--data-font-weight);
+      word-break: break-word;
+      overflow-wrap: break-word;
     }}
     .data-table tbody tr:nth-child(even) {{
       background: var(--row-alt);
@@ -659,16 +720,25 @@ def _build_pdf_html(
         margin: 0 !important;
         display: block !important;
       }}
+      .preview-viewport {{
+        padding: 0 !important;
+        display: block !important;
+        min-width: 0 !important;
+      }}
       .pdf-page-sheet {{
         width: 100% !important;
         max-width: 100% !important;
-        min-height: 0 !important;
+        height: auto !important;
+        max-height: none !important;
         box-shadow: none !important;
+        border: none !important;
         border-radius: 0 !important;
         padding: 0 !important;
         margin: 0 !important;
+        overflow: visible !important;
+        transform: none !important;
       }}
-      .col-resize-handle {{
+      .col-resize-handle, .page-indicator {{
         display: none !important;
       }}
       .data-table thead {{
@@ -676,19 +746,19 @@ def _build_pdf_html(
       }}
     }}
 
-    /* ── USER CUSTOM CSS ── */
-{custom_css}
 {"" if full_override else f'''
-    /* Enforced Page Settings */
+    /* Enforced Page Size/Orientation from Dialog */
     @page {{
-      size: {css_page_size} !important;
-      margin: 12mm 14mm 14mm 14mm !important;
+      size: {css_page_size};
     }}
 '''}
+
+    /* ── USER CUSTOM CSS (Injected last for 100% cascade control) ── */
+{custom_css}
   </style>
 </head>
-<body>
-  <main class="pdf-page-sheet">
+{"<body>" if not is_preview else '<body><div class="preview-viewport">'}
+  <main class="pdf-page-sheet" id="pdfPageSheet">
     <header class="masthead">
       <div class="masthead-inner">
         <div class="brand-col">
@@ -728,6 +798,10 @@ def _build_pdf_html(
 
     {sql_block}
   </main>
+{f'''  <div class="page-indicator" style="margin-top:14px;font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:0.04em">
+    ── Page 1 Physical Paper Boundary ({pw} × {ph}) ──
+  </div>
+</div>''' if is_preview else ""}
   {resize_script if is_preview else ""}
 </body>
 </html>"""

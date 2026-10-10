@@ -29,6 +29,7 @@ var _dev = {
   prevTid:     null,        // debounce timer
   previewPage: 1,
   previewTotal:1,
+  zoom:        'fit',       // 'fit' | '75' | '100'
 };
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -105,6 +106,8 @@ function openUltraDevMode() {
     }).catch(function(){});
 
   _devRenderAll();
+  _devUpdatePaperBadge();
+  window._devSetZoom(_dev.zoom || 'fit');
   _devRefreshPreviewDebounced(300);
 }
 
@@ -303,10 +306,15 @@ function _devRenderFilePanel() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devOnTitleChange = function(v) { _dev.title = v; _devRefreshPreviewDebounced(); };
 window._devOnOrgChange   = function(v) { _dev.orgName = v; _devRefreshPreviewDebounced(); };
-window._devOnPageSize    = function(v) { _dev.pageSize = v; _devRefreshPreviewDebounced(200); };
+window._devOnPageSize    = function(v) {
+  _dev.pageSize = v;
+  _devUpdatePaperBadge();
+  _devRefreshPreviewDebounced(200);
+};
 window._devOnOrient      = function(v) {
   _dev.orient = v;
   document.querySelectorAll('.dev-radio').forEach(function(r) { r.classList.toggle('active', r.querySelector('input').value === v); });
+  _devUpdatePaperBadge();
   _devRefreshPreviewDebounced(200);
 };
 window._devOnInclSql     = function(v) { _dev.inclSql = v; _devRefreshPreviewDebounced(); };
@@ -339,17 +347,40 @@ window._devSetWidthInput = function(col, val) {
   _devRefreshPreviewDebounced(300);
 };
 
-window._devOnColumnDragged = function(col, newPct) {
-  _dev.colWidths[col] = newPct;
-  var sld = document.getElementById('slider-' + col);
-  if (sld) sld.value = newPct;
-  var inp = document.getElementById('input-' + col);
-  if (inp) inp.value = newPct;
+window._devOnColumnsResized = function(colA, pctA, colB, pctB) {
+  if (colA) {
+    _dev.colWidths[colA] = pctA;
+    var sldA = document.getElementById('slider-' + colA);
+    if (sldA) sldA.value = pctA;
+    var inpA = document.getElementById('input-' + colA);
+    if (inpA) inpA.value = pctA;
+  }
+  if (colB) {
+    _dev.colWidths[colB] = pctB;
+    var sldB = document.getElementById('slider-' + colB);
+    if (sldB) sldB.value = pctB;
+    var inpB = document.getElementById('input-' + colB);
+    if (inpB) inpB.value = pctB;
+  }
 };
 
-window._devOnColumnDragEnd = function(col) {
+window._devOnColumnDragged = function(col, newPct) {
+  if (col) {
+    _dev.colWidths[col] = newPct;
+    var sld = document.getElementById('slider-' + col);
+    if (sld) sld.value = newPct;
+    var inp = document.getElementById('input-' + col);
+    if (inp) inp.value = newPct;
+  }
+};
+
+window._devOnColumnDragEnd = function(colA, colB) {
   _devRefreshPreviewDebounced(100);
-  _dToast('Column ' + col + ' width: ' + (_dev.colWidths[col] || '') + '%');
+  if (colA && colB) {
+    _dToast('Resized: ' + colA + ' (' + (_dev.colWidths[colA] || '') + '%), ' + colB + ' (' + (_dev.colWidths[colB] || '') + '%)');
+  } else if (colA) {
+    _dToast('Column ' + colA + ' width: ' + (_dev.colWidths[colA] || '') + '%');
+  }
 };
 
 window._devSetHeader = function(col, val) {
@@ -369,6 +400,88 @@ window._devOnFileEdit = function(val) {
     _devRefreshPreviewDebounced(500);
   }
 };
+
+window._devSaveCssAsDefault = function() {
+  var css = _dev.css || '';
+  if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = css;
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = css;
+  var pdfCssInp = document.getElementById('pdf-custom-css');
+  if (pdfCssInp) pdfCssInp.value = css;
+  _dApi('save_settings', { pdf_custom_css: css })
+    .then(function() {
+      _dToast('✓ Saved as default PDF style');
+    })
+    .catch(function(e) {
+      _dToast('Failed to save default style: ' + (e.message || e), 'error');
+    });
+};
+
+/* ── Paper Dimensions & Zoom ───────────────────────────────────────────── */
+function _devUpdatePaperBadge() {
+  var badge = document.getElementById('dev-paper-badge');
+  if (!badge) return;
+  var orient = _dev.orient || 'portrait';
+  var size = _dev.pageSize || 'A4';
+  var landscape = orient === 'landscape';
+  var dims = {
+    'A4': ['210', '297'],
+    'A3': ['297', '420'],
+    'Letter': ['216', '279']
+  }[size] || ['210', '297'];
+  var w = landscape ? dims[1] : dims[0];
+  var h = landscape ? dims[0] : dims[1];
+  badge.textContent = '📄 ' + size + ' ' + (landscape ? 'Landscape' : 'Portrait') + ' (' + w + ' × ' + h + ' mm)';
+}
+
+window._devSetZoom = function(mode) {
+  _dev.zoom = mode;
+  ['fit', '75', '100'].forEach(function(m) {
+    var btn = document.getElementById('dev-zoom-' + m);
+    if (btn) {
+      if (m === mode) {
+        btn.style.background = '#2563eb';
+        btn.style.color = '#ffffff';
+        btn.style.borderColor = '#2563eb';
+      } else {
+        btn.style.background = '#ffffff';
+        btn.style.color = '#64748b';
+        btn.style.borderColor = '#cbd5e1';
+      }
+    }
+  });
+  _devApplyZoomToIframe();
+};
+
+function _devApplyZoomToIframe() {
+  var iframe = document.getElementById('dev-preview-frame');
+  if (!iframe) return;
+  try {
+    var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+    if (!doc) return;
+    var sheet = doc.getElementById('pdfPageSheet');
+    if (!sheet) return;
+    var mode = _dev.zoom || 'fit';
+    if (mode === '100') {
+      sheet.style.transform = 'none';
+    } else if (mode === '75') {
+      sheet.style.transform = 'scale(0.75)';
+    } else if (mode === 'fit') {
+      var availW = (iframe.clientWidth || 800) - 64;
+      var availH = (iframe.clientHeight || 700) - 80;
+      var sheetW = sheet.offsetWidth || 1;
+      var sheetH = sheet.offsetHeight || 1;
+      var scale = Math.min(availW / sheetW, availH / sheetH, 1.0);
+      sheet.style.transform = 'scale(' + Math.max(0.2, scale).toFixed(3) + ')';
+    }
+  } catch (e) {}
+}
+
+window.addEventListener('resize', function() {
+  if (_dev.open && (_dev.zoom === 'fit' || !_dev.zoom)) {
+    _devApplyZoomToIframe();
+  }
+});
 
 /* ══════════════════════════════════════════════════════════════════════════
    PREVIEW (Smooth & Scroll-Preserved with True Paper Geometry)
@@ -408,6 +521,8 @@ function _devRefreshPreview() {
           iframe.contentWindow.scrollTo(scrollX, scrollY);
         }
       } catch (e) {}
+      _devUpdatePaperBadge();
+      _devApplyZoomToIframe();
     };
 
     var spin = document.getElementById('dev-preview-spinner');
@@ -525,75 +640,127 @@ window._devExportPdf = function() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devCopyAiRequirement = function() {
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : _dev.cols;
-  var orient  = _dev.orient;
-  var size    = _dev.pageSize;
+  var orient  = _dev.orient || 'portrait';
+  var size    = _dev.pageSize || 'A4';
   var landscape = orient === 'landscape';
   var w = size === 'A3' ? '297mm' : size === 'Letter' ? '216mm' : '210mm';
   var h = size === 'A3' ? '420mm' : size === 'Letter' ? '279mm' : '297mm';
   if (landscape) { var tmp = w; w = h; h = tmp; }
 
-  var widthHints = visArr.map(function(c) {
-    return c + ': ' + (_dev.colWidths[c] ? _dev.colWidths[c] + '%' : 'auto');
-  }).join(', ');
+  var widthLines = visArr.map(function(c, i) {
+    var widthVal = (_dev.colWidths && _dev.colWidths[c]) ? _dev.colWidths[c] + '%' : 'auto';
+    return '- Column ' + (i + 1) + ' (`' + c + '`): ' + widthVal;
+  }).join('\n');
 
   var prompt = [
-    '# Querii PDF Custom CSS — AI Generation Request',
+    '# Querii Executive PDF Custom CSS — AI Generation Specification',
     '',
-    '## Configuration',
-    '- Page size: ' + size + ' (' + w + ' × ' + h + ')',
-    '- Orientation: ' + orient,
-    '- Title: ' + _dev.title,
-    '- Organisation: ' + (_dev.orgName || '(none)'),
-    '- Columns (' + visArr.length + '): ' + visArr.join(', '),
-    '- Column widths: ' + (widthHints || 'all auto'),
+    'You are generating custom CSS for an executive-grade PDF export in Querii. The report is rendered with headless Chromium via strict CSS Paged Media standards.',
+    'Your custom CSS is injected at the very end of the stylesheet, giving you 100% cascade power to customize styling, layout, colors, element positions, borders, visibility, and typography.',
     '',
-    '## Instructions',
-    'Generate a CSS snippet to be injected into a Querii PDF report.',
-    'The CSS overrides the base WeasyPrint-compatible stylesheet.',
-    'Do NOT use external fonts — use system fonts only.',
-    'Do NOT use JavaScript.',
-    'Do NOT break the @page rule.',
+    '## 1. Document Context & Geometry',
+    '- Page Size: ' + size + ' (' + w + ' × ' + h + ')',
+    '- Orientation: ' + orient + (landscape ? ' (Landscape mode)' : ' (Portrait mode)'),
+    '- Base Page Margins: @page { margin: 12mm 14mm 14mm 14mm; }',
+    '- Document Title: "' + (_dev.title || 'Query Results') + '"',
+    '- Organisation: "' + (_dev.orgName || 'Querii Executive') + '"',
+    '- Total Visible Columns (' + visArr.length + '): ' + visArr.join(', '),
     '',
-    '## Base @page rule (do not duplicate, just override if needed)',
-    '@page {',
-    '  size: ' + size + (landscape ? ' landscape' : '') + ';',
-    '  margin: 18mm 14mm 14mm 14mm;',
-    '  @top-center { content: "' + (_dev.orgName||'Organisation') + ' \u2014 ' + _dev.title + '"; font-size: 8pt; color: #64748b; }',
-    '  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #64748b; }',
-    '}',
+    '### Active Columns & Current Widths:',
+    widthLines,
     '',
-    '## HTML structure (classes you can target)',
-    '/* body — the page root */',
-    '/* .school-header — org header block (contains logo + org name) */',
-    '/* .school-logo — logo <img> (circular, 68×68px) */',
-    '/* .school-info h2 — org name heading */',
-    '/* .document-heading — title section */',
-    '/* .heading-accent — decorative accent bar above title */',
-    '/* .title — the h1 report title */',
-    '/* .gen-date — generated date line */',
-    '/* .data-table — the results <table> */',
-    '/* .data-table thead th — header cells */',
-    '/* .data-table tbody td — data cells */',
-    '/* .data-table tbody tr.even — zebra even rows */',
-    '/* .data-table tbody tr.odd — zebra odd rows */',
-    '/* .report-footer — bottom summary line */',
-    '/* .sql-block, .sql-pre — SQL query section */',
+    '## 2. Complete HTML Architecture (Classes & Hierarchy)',
+    '```html',
+    '<main class="pdf-page-sheet">',
+    '  <!-- Executive Masthead -->',
+    '  <header class="masthead">',
+    '    <div class="masthead-inner">',
+    '      <div class="brand-col">',
+    '        <div class="report-logo-frame"><img src="..." class="report-logo" alt="Logo"></div>',
+    '        <div>',
+    '          <div class="kicker">EXECUTIVE AUDIT DISPATCH • CONFIDENTIAL</div>',
+    '          <h1 class="org-title">' + (_dev.orgName || 'Querii Executive') + '</h1>',
+    '          <div class="report-title">' + (_dev.title || 'Query Results') + '</div>',
+    '        </div>',
+    '      </div>',
+    '      <div class="meta-matrix">',
+    '        <div class="meta-item"><span class="meta-lbl">Date Issued</span><span class="meta-val">10 Oct 2026, 03:30 PM</span></div>',
+    '        <div class="meta-item"><span class="meta-lbl">Dataset</span><span class="meta-val">Source Table</span></div>',
+    '        <div class="meta-item"><span class="meta-lbl">Total Output</span><span class="badge-count">1,240 Records</span></div>',
+    '      </div>',
+    '    </div>',
+    '  </header>',
     '',
-    '## Column width reference',
-    '/* Use <col> width via CSS — colgroup widths are set by the app */',
-    '/* To override a specific column by index: */',
-    '/* .data-table col:nth-child(1) { width: 30% } */',
-    visArr.map(function(c, i) {
-      return '/* col ' + (i+1) + ': ' + c + (_dev.colWidths[c] ? ' (' + _dev.colWidths[c] + '%)' : ' (auto)') + ' */';
-    }).join('\n'),
+    '  <!-- Data Table -->',
+    '  <div class="data-table-wrap">',
+    '    <table class="data-table (optional .grid-lines)">',
+    '      <colgroup>',
+    visArr.map(function(c, i) { return '        <col class="col-' + i + '" data-col="' + c + '">'; }).join('\n'),
+    '      </colgroup>',
+    '      <thead>',
+    '        <tr>',
+    visArr.map(function(c, i) { return '          <th data-col="' + c + '" data-idx="' + i + '"><span class="th-content">' + c + '</span></th>'; }).join('\n'),
+    '        </tr>',
+    '      </thead>',
+    '      <tbody>',
+    '        <tr class="even">',
+    visArr.map(function(c) { return '          <td data-col="' + c + '">Value</td>'; }).join('\n'),
+    '        </tr>',
+    '        <tr class="odd">...</tr>',
+    '      </tbody>',
+    '    </table>',
+    '  </div>',
     '',
-    '## Generate CSS below (pure CSS only):',
-    '```css',
-    '/* Your custom styles here */',
+    '  <!-- Executive Footer -->',
+    '  <footer class="report-footer">',
+    '    <div>Querii  •  Executive Analytics Platform</div>',
+    '    <div>Total Records: 1,240  •  Page 1</div>',
+    '  </footer>',
+    '',
+    '  <!-- Optional SQL Query Box -->',
+    '  <section class="sql-block">',
+    '    <div class="sql-label">SQL Query</div>',
+    '    <pre class="sql-pre">SELECT * FROM ...</pre>',
+    '  </section>',
+    '</main>',
     '```',
+    '',
+    '## 3. CSS Variables Available to Override (:root)',
+    '```css',
+    ':root {',
+    '  --navy: #090d16;             /* Primary brand color for masthead borders & headings */',
+    '  --navy-light: #1e293b;       /* Secondary brand tint */',
+    '  --accent: #2563eb;           /* Header accent underline bar */',
+    '  --accent-subtle: #eff6ff;    /* Badge backgrounds & highlights */',
+    '  --border: #e2e8f0;           /* Table row border lines */',
+    '  --border-dark: #cbd5e1;      /* Table frame border */',
+    '  --text: #090d16;             /* Base body text */',
+    '  --text-muted: #64748b;       /* Metadata labels & kickers */',
+    '  --row-alt: #f8fafc;          /* Alternating zebra row tint */',
+    '  --table-head-bg: #090d16;    /* Table header background */',
+    '  --table-head-text: #ffffff;  /* Table header text color */',
+    '  --data-font-weight: 400;     /* Table body text weight (400 or 700) */',
+    '}',
+    '```',
+    '',
+    '## 4. Typography & Font Family',
+    '- Bundled Font: `Libron` (executive serif typography) is embedded via @font-face with weights 400 (regular), 700 (bold), and italic styles.',
+    '- System Fallbacks: You can use `Libron, Georgia, serif` or modern sans-serif: `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.',
+    '',
+    '## 5. HARD EXCEPTIONS & CRITICAL RULES (Follow Strictly)',
+    '1. ⛔ NO `position: fixed` or `position: absolute` on table elements (`table`, `thead`, `tbody`, `tr`, `td`): Chromium Paged Media pagination breaks completely across page boundaries if table rows or cells are positioned absolutely. It causes severe table overlaps and dropped rows.',
+    '2. ⛔ NO external web fonts via `@import url(...)` or `<link>`: PDF compilation runs in a sandboxed offline renderer; external network calls will fail or cause timeouts.',
+    '3. ⛔ NO fixed pixel table widths (e.g. `width: 900px`): Always use percentage widths (`width: 100%`) or relative units to honor dynamic paper sizes and margins.',
+    '4. ⛔ NO `break-inside: avoid` on the entire `.data-table` or `.data-table-wrap`: The table MUST be allowed to paginate cleanly across multiple pages (`page-break-inside: auto`). Only individual rows `<tr>` have `break-inside: avoid;`.',
+    '5. ⛔ NO `overflow: hidden` on `html` or `body`: Setting `overflow: hidden` on root elements disables Chromium print pagination and clips the entire document to page 1.',
+    '6. ⛔ Pure Declarative CSS Only: Do NOT include `<script>`, HTML markup, or markdown explanations outside the code block. Output valid CSS inside ```css ... ```.',
+    '',
+    '## 6. Generate Custom CSS:',
+    '```css',
+    '/* Your custom executive styling here */',
+    '```'
   ].join('\n');
 
-  // Avoid navigator.clipboard because it triggers Qt setFeaturePermission crash
   _devFallbackCopy(prompt);
 };
 
