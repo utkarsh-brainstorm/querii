@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Querii — Sheet to SQL</title>
+  <link rel="icon" type="image/png" href="app_icon.png" />
+  <link rel="shortcut icon" href="favicon.ico" />
   <meta name="description" content="Import any spreadsheet or CSV and query it with SQL. Multi-table joins, visual filter builder, SQL explainer." />
 
   <script src="tailwind.js"></script>
@@ -42,9 +44,9 @@
 
   <!-- NAVBAR -->
   <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3" id="navbar">
-    <div class="flex items-center gap-2 shrink-0">
-      <span class="text-xl leading-none">⚡</span>
-      <span class="font-semibold text-[14px] text-nav-main tracking-tight">Querii</span>
+    <div class="flex items-center gap-2.5 shrink-0">
+      <img src="app_icon.png" alt="Querii Icon" class="w-6 h-6 rounded-md shadow-sm object-cover border border-[var(--border)] shrink-0" />
+      <span class="font-semibold text-[15px] text-nav-main tracking-tight">Querii</span>
       <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">Version 4.0</span>
     </div>
     <div class="flex-1 flex justify-center">
@@ -461,7 +463,7 @@
   </div>
 
   <!-- SETTINGS MODAL -->
-  <div id="modal-settings" class="modal hidden" style="width:580px">
+  <div id="modal-settings" class="modal hidden" style="width:680px;max-width:96vw">
     <div class="modal-header">
       <span>Settings</span>
       <button class="modal-close" onclick="closeModal()">✕</button>
@@ -599,55 +601,133 @@ DROP TABLE old_data;"></textarea>
 
     <!-- About -->
     <div id="tab-about" class="settings-tab-body hidden">
-      <div class="space-y-4 text-[12px] text-[var(--text-dim)] leading-relaxed h-[320px] overflow-y-auto pr-2">
+      <div class="space-y-5 text-[12px] text-[var(--text-dim)] leading-relaxed h-[420px] overflow-y-auto pr-3">
 
-        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Querii Version 4.0</h3>
+        <!-- App Identity Masthead -->
+        <div class="flex items-center gap-3.5 pb-4 border-b border-[var(--border)]">
+          <img src="app_icon.png" alt="Querii App Icon" class="w-14 h-14 rounded-xl shadow-md border border-[var(--border)] object-cover flex-shrink-0" />
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <h3 class="font-bold text-[var(--text-main)] text-[18px] tracking-tight">Querii</h3>
+              <span class="text-[10px] font-mono bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-dim)] px-2 py-0.5 rounded-full font-semibold">Version 4.0</span>
+            </div>
+            <p class="text-[11px] text-[var(--text-dim)] mt-0.5">Professional Local-First SQL Database Studio & Executive Report Engine</p>
+          </div>
+        </div>
 
-        <!-- Creator section -->
+        <!-- Creator & Philosophy -->
         <div class="rounded-xl border border-[var(--accent-dim)] bg-[var(--accent-bg)] p-4">
           <div class="flex items-start gap-3">
-            <div class="text-3xl">⚡</div>
+            <div class="text-2xl flex-shrink-0">⚡</div>
             <div>
-              <div class="font-semibold text-[var(--text-head)] text-[13px]">Made by Heisenberg</div>
-              <p class="text-[11px] mt-1 italic text-[var(--text-body)]">
-                "I built this to learn SQL myself — it's funny that I'm building a platform
-                where people can explore data using SQL and I didn't even know how to write
-                a query when I started. 😄 If you're here, you're on the same journey.
-                Don't be afraid to break things and ask questions — that's how you learn."
+              <div class="font-semibold text-[var(--text-head)] text-[12.5px]">Crafted with Passion by Heisenberg</div>
+              <p class="text-[11px] mt-1.5 italic text-[var(--text-body)] leading-relaxed">
+                "I started building this to learn SQL myself — it's funny building a tool where people explore databases when I didn't even know how to write a simple SELECT query at the beginning! 😄 If you're on the same journey, welcome. Don't be afraid to experiment, write queries, inspect schemas, and break things — that's how true understanding is forged."
               </p>
-              <div class="text-[10px] text-[var(--text-dim)] mt-2">
-                Querii is a fork of <strong>AttendanceProcessor</strong> — built with Python, SQLite, and pywebview.
-                Zero cloud, zero tracking, runs entirely on your machine.
+              <div class="text-[10px] text-[var(--text-dim)] mt-2 font-medium">
+                Querii is a standalone, local-first evolution of <strong>AttendanceProcessor</strong>. Engineered with Python, SQLite, pywebview, and a native Rust PDF acceleration engine. Zero cloud dependencies, zero telemetry, 100% offline.
               </div>
             </div>
           </div>
         </div>
 
-        <h4 class="font-semibold text-[var(--text-main)] text-[13px] mt-2">How to use</h4>
-        <ol class="list-decimal pl-5 space-y-2 text-[11px]">
-          <li><strong>Import</strong> — Drop a file or Browse. Preview detects column types. Hit Import.</li>
-          <li><strong>File List</strong> — Click "📁 Files" to manage tables, select multiple for JOIN mode.</li>
-          <li><strong>Visual Filter</strong> — Add conditions and groups. Groups create <code class="font-mono bg-[var(--bg-muted)] px-1 rounded">(A AND B) OR (C AND D)</code> style SQL automatically.</li>
-          <li><strong>SQL Editor</strong> — Auto-filled from the filter. Edit freely, Ctrl+Enter to run.</li>
-          <li><strong>💡 Explain</strong> — Click "Explain" for a plain-English description of any query.</li>
-          <li><strong>📝 Templates</strong> — Ready-made SQL patterns to get started fast.</li>
-          <li><strong>Schema stats</strong> — Click any column in the Schema panel to see stats (min, max, distinct, nulls).</li>
-          <li><strong>Export</strong> — Export any result to CSV or PDF.</li>
-        </ol>
+        <!-- Core Philosophy Badges -->
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] text-center">
+            <div class="text-base">🔒</div>
+            <div class="font-semibold text-[11px] text-[var(--text-head)] mt-0.5">100% Private & Offline</div>
+            <div class="text-[10px] text-[var(--text-dim)] mt-0.5">Data never leaves your machine. No accounts, no telemetry.</div>
+          </div>
+          <div class="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] text-center">
+            <div class="text-base">⚡</div>
+            <div class="font-semibold text-[11px] text-[var(--text-head)] mt-0.5">Native Rust Engine</div>
+            <div class="text-[10px] text-[var(--text-dim)] mt-0.5">Sub-40ms report generation with zero IPC overhead.</div>
+          </div>
+          <div class="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] text-center">
+            <div class="text-base">📐</div>
+            <div class="font-semibold text-[11px] text-[var(--text-head)] mt-0.5">Executive Design</div>
+            <div class="text-[10px] text-[var(--text-dim)] mt-0.5">Document_Template standard with Libron typography.</div>
+          </div>
+        </div>
 
-        <h4 class="font-semibold text-[var(--text-main)] text-[13px] mt-2">Type inference</h4>
-        <table class="text-[10px] border-collapse w-full mt-1">
-          <thead><tr class="bg-[var(--bg-muted)]">
-            <th class="tbl-head text-left">Detected as</th><th class="tbl-head text-left">SQLite type</th><th class="tbl-head text-left">Example values</th>
-          </tr></thead>
-          <tbody>
-            <tr><td class="tbl-cell font-mono">INTEGER</td><td class="tbl-cell">Whole numbers only</td><td class="tbl-cell text-[var(--text-dim)]">1, 42, -7</td></tr>
-            <tr><td class="tbl-cell font-mono">REAL</td><td class="tbl-cell">Decimal numbers</td><td class="tbl-cell text-[var(--text-dim)]">3.14, 99.99</td></tr>
-            <tr><td class="tbl-cell font-mono">DATE</td><td class="tbl-cell">Date patterns</td><td class="tbl-cell text-[var(--text-dim)]">2024-07-15, 15/07/24</td></tr>
-            <tr><td class="tbl-cell font-mono">TIME</td><td class="tbl-cell">Time patterns</td><td class="tbl-cell text-[var(--text-dim)]">09:30, 14:00:00</td></tr>
-            <tr><td class="tbl-cell font-mono">TEXT</td><td class="tbl-cell">Everything else</td><td class="tbl-cell text-[var(--text-dim)]">Names, codes, etc.</td></tr>
-          </tbody>
-        </table>
+        <!-- Feature Guide -->
+        <div>
+          <h4 class="font-semibold text-[var(--text-main)] text-[13px] border-b border-[var(--border)] pb-1.5 mb-2.5">Platform Capabilities</h4>
+          <div class="space-y-3 text-[11px]">
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">1. File Import & Multi-Format Ingestion</strong>
+              <p class="text-[var(--text-body)] mt-0.5">Drag and drop or browse CSV, TSV, Excel (<code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded">.xlsx</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded">.xls</code>), JSON, and SQLite files. Instant schema detection with automated type inference. Multi-table datasets are loaded as independent SQL tables within the local database.</p>
+            </div>
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">2. Visual Filter & JOIN Builder</strong>
+              <p class="text-[var(--text-body)] mt-0.5">Construct complex queries visually without typing SQL. Add grouped conditions generating <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">(A AND B) OR (C AND D)</code> boolean trees. Enable multi-table mode to define INNER/LEFT joins with custom ON conditions and aggregations.</p>
+            </div>
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">3. Full SQL Workspace (DML & DDL Enabled)</strong>
+              <p class="text-[var(--text-body)] mt-0.5">The SQL editor supports complete database interaction: <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">SELECT</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">WITH</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">INSERT</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">UPDATE</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">DELETE</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">ALTER TABLE</code> (<code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">ADD COLUMN</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">DROP COLUMN</code>, <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">RENAME COLUMN</code>), and <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">CREATE TABLE</code>. Transactions commit automatically with live schema reloading. Standalone <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">DROP TABLE</code> commands are reserved for Developer Mode (<code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded">Settings → Advanced</code>) for data safety.</p>
+            </div>
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">4. 💡 Plain-English SQL Explainer</strong>
+              <p class="text-[var(--text-body)] mt-0.5">Click "Explain" to parse your query AST into plain human terms. Breaks down selected columns, table sources, join conditions, where predicates, groupings, and orderings.</p>
+            </div>
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">5. Global In-Memory Search (<code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">Ctrl+F</code>)</strong>
+              <p class="text-[var(--text-body)] mt-0.5">Perform instant browser-style search across all displayed table cells. Matches are highlighted dynamically with <code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded">&lt;mark&gt;</code> tags, and pressing Enter automatically cycles through occurrences.</p>
+            </div>
+            <div class="border-l-2 border-[var(--accent)] pl-2.5">
+              <strong class="text-[var(--text-head)]">6. Ultra Dev Mode & Executive PDF Studio</strong>
+              <p class="text-[var(--text-body)] mt-0.5">An interactive desktop studio for publishing audit-grade documents. Features authentic physical page sheet geometry (A4, A3, Letter in Portrait/Landscape), interactive mouse-drag column resizing, 5 complete editable CSS presets, Libron corporate typography, content scaling (100%, 80%, 60%, 120%), dense repeating watermarks, and isolated preview canvas zoom (<code class="bg-[var(--bg-muted)] px-1 py-0.5 rounded font-mono">Ctrl +/-</code>).</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Table -->
+        <div>
+          <h4 class="font-semibold text-[var(--text-main)] text-[13px] border-b border-[var(--border)] pb-1.5 mb-2.5">Keyboard Shortcuts</h4>
+          <table class="text-[10.5px] border-collapse w-full">
+            <thead><tr class="bg-[var(--bg-muted)]">
+              <th class="tbl-head text-left">Shortcut</th><th class="tbl-head text-left">Scope</th><th class="tbl-head text-left">Action</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl + Enter</td><td class="tbl-cell text-[var(--text-dim)]">SQL Editor</td><td class="tbl-cell text-[var(--text-body)]">Execute current query / mutation statement</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl + F</td><td class="tbl-cell text-[var(--text-dim)]">Global Table</td><td class="tbl-cell text-[var(--text-body)]">Open global search and cycle through occurrences</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl + S</td><td class="tbl-cell text-[var(--text-dim)]">Ultra Dev Mode</td><td class="tbl-cell text-[var(--text-body)]">Save CSS and refresh live document preview</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl + / Ctrl =</td><td class="tbl-cell text-[var(--text-dim)]">Dev Mode / App</td><td class="tbl-cell text-[var(--text-body)]">Zoom In (Preview sheet in Dev Mode; UI in app)</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl -</td><td class="tbl-cell text-[var(--text-dim)]">Dev Mode / App</td><td class="tbl-cell text-[var(--text-body)]">Zoom Out (Preview sheet in Dev Mode; UI in app)</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Ctrl + 0</td><td class="tbl-cell text-[var(--text-dim)]">Dev Mode / App</td><td class="tbl-cell text-[var(--text-body)]">Reset Zoom / Fit Page to Window</td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold">Escape</td><td class="tbl-cell text-[var(--text-dim)]">Global</td><td class="tbl-cell text-[var(--text-body)]">Close active modal or exit Ultra Dev Mode overlay</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Type Inference Reference -->
+        <div>
+          <h4 class="font-semibold text-[var(--text-main)] text-[13px] border-b border-[var(--border)] pb-1.5 mb-2.5">Automated Type Inference Engine</h4>
+          <table class="text-[10px] border-collapse w-full">
+            <thead><tr class="bg-[var(--bg-muted)]">
+              <th class="tbl-head text-left">Detected As</th><th class="tbl-head text-left">SQLite Storage Class</th><th class="tbl-head text-left">Inference Pattern & Examples</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="tbl-cell font-mono font-semibold text-[var(--text-head)]">INTEGER</td><td class="tbl-cell">INTEGER</td><td class="tbl-cell text-[var(--text-dim)]">Signed whole numbers: <code class="bg-[var(--bg-muted)] px-1 rounded">1</code>, <code class="bg-[var(--bg-muted)] px-1 rounded">42</code>, <code class="bg-[var(--bg-muted)] px-1 rounded">-300</code></td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold text-[var(--text-head)]">REAL</td><td class="tbl-cell">REAL</td><td class="tbl-cell text-[var(--text-dim)]">Floating-point decimals: <code class="bg-[var(--bg-muted)] px-1 rounded">3.14159</code>, <code class="bg-[var(--bg-muted)] px-1 rounded">199.99</code></td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold text-[var(--text-head)]">DATE</td><td class="tbl-cell">TEXT</td><td class="tbl-cell text-[var(--text-dim)]">ISO & standard dates: <code class="bg-[var(--bg-muted)] px-1 rounded">2026-10-10</code>, <code class="bg-[var(--bg-muted)] px-1 rounded">10/10/2026</code></td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold text-[var(--text-head)]">TIME</td><td class="tbl-cell">TEXT</td><td class="tbl-cell text-[var(--text-dim)]">24h & 12h timestamps: <code class="bg-[var(--bg-muted)] px-1 rounded">09:30:00</code>, <code class="bg-[var(--bg-muted)] px-1 rounded">18:45</code></td></tr>
+              <tr><td class="tbl-cell font-mono font-semibold text-[var(--text-head)]">TEXT</td><td class="tbl-cell">TEXT</td><td class="tbl-cell text-[var(--text-dim)]">Alphanumeric strings, codes, freeform descriptions</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Local Storage Architecture -->
+        <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3">
+          <div class="font-semibold text-[11px] text-[var(--text-head)]">Data Directory Locations</div>
+          <div class="text-[10px] text-[var(--text-dim)] mt-1 space-y-1">
+            <div>• <strong>Linux:</strong> <code class="font-mono bg-[var(--bg-surface)] px-1 rounded border border-[var(--border)]">~/.local/share/querii/querii.db</code></div>
+            <div>• <strong>macOS:</strong> <code class="font-mono bg-[var(--bg-surface)] px-1 rounded border border-[var(--border)]">~/Library/Application Support/Querii/querii.db</code></div>
+            <div>• <strong>Windows:</strong> <code class="font-mono bg-[var(--bg-surface)] px-1 rounded border border-[var(--border)]">%APPDATA%\Querii\querii.db</code></div>
+          </div>
+          <div class="text-[9.5px] text-[var(--text-dim)] mt-2">All settings, imported tables, and query logs persist safely across app updates.</div>
+        </div>
+
       </div>
     </div>
 

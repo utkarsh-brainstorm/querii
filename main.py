@@ -71,6 +71,10 @@ def main() -> None:
             "Ensure the 'web/' directory is present alongside main.py."
         )
 
+    icon_path = os.path.join(ROOT, "app_icon.png")
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(ROOT, "web", "app_icon.png")
+
     window = webview.create_window(
         title            = "Querii Version 4.0 — Sheet to SQL",
         url              = f"file://{html_path}",
@@ -91,7 +95,10 @@ def main() -> None:
     if sys.platform == "linux":
         os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
         
-    webview.start(debug="--debug" in sys.argv)
+    webview.start(
+        debug="--debug" in sys.argv,
+        icon=icon_path if os.path.exists(icon_path) else None,
+    )
 
 
 if __name__ == "__main__":

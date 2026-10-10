@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Querii
+GenericName=SQL Database Studio
+Comment=Sheet to SQL Studio & Executive PDF Report Platform
+Exec=python3 -m main
+Icon=app_icon.png
+Terminal=false
+Categories=Development;Database;Office;Utility;
+Keywords=sql;sqlite;database;csv;excel;sheets;pdf;reports;
+StartupNotify=true
+StartupWMClass=Querii Version 4.0 — Sheet to SQL
