@@ -322,31 +322,44 @@ def get_table_column_meta(table_name: str) -> List[Dict]:
 # Generic query executor
 # ---------------------------------------------------------------------------
 
-def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
+def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict], int]:
     """
-    Execute any SELECT / WITH / PRAGMA query.
-    Returns (column_names, rows).
-    Non-SELECT statements are blocked.
+    Execute SQL statement.
+    Allows: SELECT, WITH, PRAGMA, INSERT, UPDATE, DELETE, ALTER TABLE, CREATE TABLE.
+    Blocks: DROP statements (e.g. DROP TABLE), which are reserved for Developer Mode (Settings -> Advanced).
+    Returns (columns, rows, affected_rows).
     """
-    stripped = sql.strip().upper()
-    if not (
-        stripped.startswith("SELECT")
-        or stripped.startswith("WITH")
-        or stripped.startswith("PRAGMA")
-    ):
+    import re
+    clean = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    clean = re.sub(r"--[^\n]*", "", clean).strip()
+    if not clean:
+        return [], [], 0
+
+    first_word = clean.split()[0].upper() if clean.split() else ""
+
+    # Block standalone DROP statements (DROP TABLE, DROP VIEW, DROP INDEX, etc.)
+    # Exception: ALTER TABLE ... DROP COLUMN ... is an ALTER statement, which is permitted!
+    if first_word == "DROP" or re.search(r"\bDROP\s+(TABLE|VIEW|INDEX|TRIGGER|DATABASE)\b", clean, re.IGNORECASE):
         raise ValueError(
-            "Only SELECT queries are permitted.\n"
-            "To modify data, use Import."
+            "DROP operations (e.g. DROP TABLE) can only be executed in Developer Mode (Settings → Advanced)."
         )
 
     conn = _connect()
     try:
         cur = conn.execute(sql, params)
+        conn.commit()
         cols = [d[0] for d in cur.description] if cur.description else []
-        rows = [dict(r) for r in cur.fetchall()]
-        return cols, rows
+        rows = [dict(r) for r in cur.fetchall()] if cur.description else []
+        affected = cur.rowcount
+        return cols, rows, affected
     finally:
         conn.close()
+
+
+def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
+    """Execute SQL query/mutation and return (columns, rows)."""
+    cols, rows, _ = execute_query_full(sql, params)
+    return cols, rows
 
 
 # ---------------------------------------------------------------------------

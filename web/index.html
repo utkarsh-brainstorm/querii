@@ -232,7 +232,7 @@
           <textarea id="sql-editor"
                     class="sql-editor flex-1"
                     spellcheck="false"
-                    placeholder="-- Write a SELECT query, or use Search above…"></textarea>
+                    placeholder="-- Write SQL (SELECT, INSERT, UPDATE, DELETE, ALTER), or use Search above…"></textarea>
           <div id="schema-panel" class="hidden schema-ref overflow-y-auto shrink-0" style="width:340px"></div>
         </div>
         <div id="sql-status" class="shrink-0 px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
@@ -900,8 +900,10 @@ DROP TABLE old_data;"></textarea>
           <div style="flex:1"></div>
           <!-- Zoom Controls -->
           <div style="display:flex;align-items:center;gap:3px;background:#f1f5f9;padding:2px;border-radius:6px;border:1px solid #cbd5e1">
-            <button onclick="window._devSetZoom('fit')" id="dev-zoom-fit" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#2563eb;color:#fff;border:1px solid #2563eb;cursor:pointer;font-weight:700" title="Fit entire page in view">Fit Page</button>
-            <button onclick="window._devSetZoom('75')" id="dev-zoom-75" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600">75%</button>
+            <button onclick="window._devSetZoom('fit')" id="dev-zoom-fit" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#2563eb;color:#fff;border:1px solid #2563eb;cursor:pointer;font-weight:700" title="Fit entire page in view (Ctrl+0)">Fit Page</button>
+            <button onclick="window._devZoomStep(-0.1)" id="dev-zoom-out" style="font-size:10px;padding:3px 6px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:700" title="Zoom Out (Ctrl+-)">−</button>
+            <span id="dev-zoom-level" style="font-size:10px;font-weight:700;color:#334155;padding:0 4px;min-width:32px;text-align:center">Fit</span>
+            <button onclick="window._devZoomStep(0.1)" id="dev-zoom-in" style="font-size:10px;padding:3px 6px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:700" title="Zoom In (Ctrl++)">+</button>
             <button onclick="window._devSetZoom('100')" id="dev-zoom-100" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600">100%</button>
           </div>
           <button onclick="_devRefreshPreview()" style="font-size:11px;padding:4px 10px;border-radius:6px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600;transition:all .1s;box-shadow:0 1px 2px rgba(0,0,0,.03)" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">↺ Refresh</button>

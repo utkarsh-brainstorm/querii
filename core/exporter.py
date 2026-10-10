@@ -609,7 +609,16 @@ def _build_pdf_html(
       box-sizing: border-box;
       position: relative;
       {'border: 1px solid #94a3b8; box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15); border-radius: 2px;' if is_preview else ''}
+    }}
+
+    /* Scalable Document Content Container (Scales content without shrinking the physical paper sheet) */
+    .sheet-content {{
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      box-sizing: border-box;
       zoom: {scale};
+      transform-origin: top left;
     }}
 
     /* Document border frame */
@@ -907,7 +916,7 @@ def _build_pdf_html(
         padding: 0 !important;
         margin: 0 !important;
         display: block !important;
-        zoom: {scale} !important;
+        zoom: 1 !important;
       }}
       .preview-viewport {{
         padding: 0 !important;
@@ -926,6 +935,11 @@ def _build_pdf_html(
         margin: 0 !important;
         overflow: visible !important;
         transform: none !important;
+        zoom: 1 !important;
+      }}
+      .sheet-content {{
+        zoom: {scale} !important;
+        width: 100% !important;
       }}
       .document-frame {{
         display: none !important;
@@ -961,15 +975,24 @@ def _build_pdf_html(
       }}
     }}
 
+    /* ── USER CUSTOM CSS (Injected) ── */
+{custom_css}
+
 {"" if full_override else f'''
-    /* Enforced Page Size/Orientation from Dialog */
+    /* ── ENFORCED PAGE GEOMETRY & ORIENTATION (Wins Cascade Over Pasted CSS) ── */
+    :root {{
+      --page-w: {pw} !important;
+      --page-h: {ph} !important;
+    }}
     @page {{
       size: {css_page_size};
     }}
+    .pdf-page-sheet, .page {{
+      width: {pw if is_preview else "100%"} !important;
+      max-width: {pw if is_preview else "100%"} !important;
+      {"height: " + ph + " !important; max-height: " + ph + " !important;" if is_preview else ""}
+    }}
 '''}
-
-    /* ── USER CUSTOM CSS (Injected last for 100% cascade control) ── */
-{custom_css}
   </style>
 </head>
 {"<body>" if not is_preview else '<body><div class="preview-viewport">'}
@@ -985,36 +1008,39 @@ def _build_pdf_html(
       </div>
     </div>
 
-    <!-- Organisation Header -->
-    <header class="school-header masthead">
-      {logo_img_header}
-      <div class="school-info">
-        <h2 class="org-title">{org_display}</h2>
+    <!-- Scalable Document Content Container -->
+    <div class="sheet-content" id="sheetContent">
+      <!-- Organisation Header -->
+      <header class="school-header masthead">
+        {logo_img_header}
+        <div class="school-info">
+          <h2 class="org-title">{org_display}</h2>
+        </div>
+      </header>
+
+      <!-- Document Heading -->
+      <section class="document-heading">
+        <div class="heading-accent"></div>
+        <h1 class="title report-title">{he(title)}</h1>
+      </section>
+
+      <!-- Data Table -->
+      <div class="data-table-wrap">
+        <table class="data-table{grid_lines_class}">
+          <colgroup>{col_group}</colgroup>
+          <thead><tr>{thead_cells}</tr></thead>
+          <tbody>{tbody_rows_html}</tbody>
+        </table>
       </div>
-    </header>
 
-    <!-- Document Heading -->
-    <section class="document-heading">
-      <div class="heading-accent"></div>
-      <h1 class="title report-title">{he(title)}</h1>
-    </section>
+      <!-- Footer -->
+      <footer class="report-footer">
+        <div class="footer-timestamp">Generated: {gen_date}</div>
+        <div class="footer-page">Page 1 of 1</div>
+      </footer>
 
-    <!-- Data Table -->
-    <div class="data-table-wrap">
-      <table class="data-table{grid_lines_class}">
-        <colgroup>{col_group}</colgroup>
-        <thead><tr>{thead_cells}</tr></thead>
-        <tbody>{tbody_rows_html}</tbody>
-      </table>
+      {sql_block}
     </div>
-
-    <!-- Footer -->
-    <footer class="report-footer">
-      <div class="footer-timestamp">Generated: {gen_date}</div>
-      <div class="footer-page">Page 1 of 1</div>
-    </footer>
-
-    {sql_block}
   </main>
 {f'''  <div class="page-indicator" style="margin-top:14px;font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:0.04em">
     ── Page 1 Physical Paper Boundary ({pw} × {ph}) ──

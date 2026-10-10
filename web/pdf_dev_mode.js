@@ -377,14 +377,43 @@ function _devRenderFilePanel() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devOnTitleChange = function(v) { _dev.title = v; _devRefreshPreviewDebounced(); };
 window._devOnOrgChange   = function(v) { _dev.orgName = v; _devRefreshPreviewDebounced(); };
+function _devSyncPageSizeInCode(size, orient) {
+  var pageStr = size + (orient === 'landscape' ? ' landscape' : '');
+  var regex = /(@page\s*\{[^}]*size\s*:\s*)([^;\}]+)/i;
+  if (_dev.css && regex.test(_dev.css)) {
+    _dev.css = _dev.css.replace(regex, '$1' + pageStr);
+    var cssEd = document.getElementById('dev-css-editor');
+    if (cssEd && document.activeElement !== cssEd) cssEd.value = _dev.css;
+  }
+  if (_dev.fileBuf && _dev.fileBuf['style.css'] && regex.test(_dev.fileBuf['style.css'])) {
+    _dev.fileBuf['style.css'] = _dev.fileBuf['style.css'].replace(regex, '$1' + pageStr);
+    var fileEd = document.getElementById('dev-file-editor');
+    if (fileEd && _dev.fileTab === 'style.css' && document.activeElement !== fileEd) {
+      fileEd.value = _dev.fileBuf['style.css'];
+    }
+  }
+  if (_dev.fileBuf && _dev.fileBuf['render.py']) {
+    _dev.fileBuf['render.py'] = _dev.fileBuf['render.py']
+      .replace(/page_size=['"][^'"]*['"]/, "page_size='" + size + "'")
+      .replace(/orientation=['"][^'"]*['"]/, "orientation='" + orient + "'");
+    _dApi('write_dev_file', 'render.py', _dev.fileBuf['render.py']).catch(function(){});
+    var fileEd2 = document.getElementById('dev-file-editor');
+    if (fileEd2 && _dev.fileTab === 'render.py' && document.activeElement !== fileEd2) {
+      fileEd2.value = _dev.fileBuf['render.py'];
+    }
+  }
+}
+
 window._devOnPageSize    = function(v) {
   _dev.pageSize = v;
+  _devSyncPageSizeInCode(v, _dev.orient || 'portrait');
   _devUpdatePaperBadge();
   _devRefreshPreviewDebounced(200);
 };
 window._devOnOrient      = function(v) {
   _dev.orient = v;
   document.querySelectorAll('.dev-radio').forEach(function(r) { r.classList.toggle('active', r.querySelector('input').value === v); });
+  _devSyncPageSizeInCode(_dev.pageSize || 'A4', v);
   _devUpdatePaperBadge();
   _devRefreshPreviewDebounced(200);
 };
@@ -505,24 +534,67 @@ function _devUpdatePaperBadge() {
   badge.textContent = '📄 ' + size + ' ' + (landscape ? 'Landscape' : 'Portrait') + ' (' + w + ' × ' + h + ' mm)';
 }
 
+function _devGetCurrentScale() {
+  var iframe = document.getElementById('dev-preview-frame');
+  if (!iframe) return 1.0;
+  try {
+    var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+    var sheet = doc && doc.getElementById('pdfPageSheet');
+    if (sheet && sheet.style.transform) {
+      var match = sheet.style.transform.match(/scale\(([^)]+)\)/);
+      if (match) return parseFloat(match[1]) || 1.0;
+    }
+  } catch (e) {}
+  return 1.0;
+}
+
 window._devSetZoom = function(mode) {
   _dev.zoom = mode;
-  ['fit', '75', '100'].forEach(function(m) {
-    var btn = document.getElementById('dev-zoom-' + m);
-    if (btn) {
-      if (m === mode) {
-        btn.style.background = '#2563eb';
-        btn.style.color = '#ffffff';
-        btn.style.borderColor = '#2563eb';
-      } else {
-        btn.style.background = '#ffffff';
-        btn.style.color = '#64748b';
-        btn.style.borderColor = '#cbd5e1';
-      }
-    }
-  });
+  _dev.customZoomScale = null;
+  _devUpdateZoomUi();
   _devApplyZoomToIframe();
 };
+
+window._devZoomStep = function(delta) {
+  var cur = _devGetCurrentScale();
+  var next = Math.max(0.2, Math.min(3.0, Math.round((cur + delta) * 10) / 10));
+  _dev.zoom = 'custom';
+  _dev.customZoomScale = next;
+  _devUpdateZoomUi();
+  _devApplyZoomToIframe();
+};
+
+function _devUpdateZoomUi() {
+  var mode = _dev.zoom || 'fit';
+  var fitBtn = document.getElementById('dev-zoom-fit');
+  var p100Btn = document.getElementById('dev-zoom-100');
+  var lbl = document.getElementById('dev-zoom-level');
+
+  if (fitBtn) {
+    var isFit = mode === 'fit';
+    fitBtn.style.background = isFit ? '#2563eb' : '#ffffff';
+    fitBtn.style.color = isFit ? '#ffffff' : '#64748b';
+    fitBtn.style.borderColor = isFit ? '#2563eb' : '#cbd5e1';
+  }
+  if (p100Btn) {
+    var is100 = mode === '100' || (mode === 'custom' && Math.abs((_dev.customZoomScale || 1) - 1.0) < 0.01);
+    p100Btn.style.background = is100 ? '#2563eb' : '#ffffff';
+    p100Btn.style.color = is100 ? '#ffffff' : '#64748b';
+    p100Btn.style.borderColor = is100 ? '#2563eb' : '#cbd5e1';
+  }
+  if (lbl) {
+    if (mode === 'fit') {
+      var s = _devGetCurrentScale();
+      lbl.textContent = Math.round(s * 100) + '%';
+    } else if (mode === '100') {
+      lbl.textContent = '100%';
+    } else if (_dev.customZoomScale) {
+      lbl.textContent = Math.round(_dev.customZoomScale * 100) + '%';
+    } else {
+      lbl.textContent = '100%';
+    }
+  }
+}
 
 function _devApplyZoomToIframe() {
   var iframe = document.getElementById('dev-preview-frame');
@@ -535,8 +607,8 @@ function _devApplyZoomToIframe() {
     var mode = _dev.zoom || 'fit';
     if (mode === '100') {
       sheet.style.transform = 'none';
-    } else if (mode === '75') {
-      sheet.style.transform = 'scale(0.75)';
+    } else if (mode === 'custom' && _dev.customZoomScale) {
+      sheet.style.transform = 'scale(' + _dev.customZoomScale.toFixed(3) + ')';
     } else if (mode === 'fit') {
       var availW = (iframe.clientWidth || 800) - 64;
       var availH = (iframe.clientHeight || 700) - 80;
@@ -545,7 +617,39 @@ function _devApplyZoomToIframe() {
       var scale = Math.min(availW / sheetW, availH / sheetH, 1.0);
       sheet.style.transform = 'scale(' + Math.max(0.2, scale).toFixed(3) + ')';
     }
+    _devUpdateZoomUi();
   } catch (e) {}
+}
+
+function _devAttachIframeZoomListeners(iframe) {
+  try {
+    var win = iframe.contentWindow;
+    if (!win) return;
+    win.addEventListener('keydown', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+' || e.code === 'NumpadAdd' || e.keyCode === 187 || e.keyCode === 107) {
+          e.preventDefault();
+          e.stopPropagation();
+          window._devZoomStep(0.1);
+        } else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract' || e.keyCode === 189 || e.keyCode === 109) {
+          e.preventDefault();
+          e.stopPropagation();
+          window._devZoomStep(-0.1);
+        } else if (e.key === '0' || e.code === 'Numpad0' || e.keyCode === 48 || e.keyCode === 96) {
+          e.preventDefault();
+          e.stopPropagation();
+          window._devSetZoom('fit');
+        }
+      }
+    }, true);
+
+    win.addEventListener('wheel', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        window._devZoomStep(e.deltaY < 0 ? 0.08 : -0.08);
+      }
+    }, { passive: false });
+  } catch (err) {}
 }
 
 window.addEventListener('resize', function() {
@@ -594,6 +698,7 @@ function _devRefreshPreview() {
       } catch (e) {}
       _devUpdatePaperBadge();
       _devApplyZoomToIframe();
+      _devAttachIframeZoomListeners(iframe);
     };
 
     var spin = document.getElementById('dev-preview-spinner');
@@ -972,22 +1077,39 @@ function _devFallbackCopy(text) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   KEYBOARD SHORTCUT — Ctrl+S saves CSS in file editor
+   KEYBOARD SHORTCUTS — Ultra Dev Mode
    ══════════════════════════════════════════════════════════════════════════ */
-document.addEventListener('keydown', function(e) {
+window.addEventListener('keydown', function(e) {
   if (!_dev.open) return;
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    var active = document.activeElement;
-    if (active && active.id === 'dev-css-editor') {
-      _dev.css = active.value;
-      _devRefreshPreviewDebounced(100);
-      _dToast('Preview refreshed (Ctrl+S)');
-    } else if (active && active.id === 'dev-file-editor') {
-      window._devSaveFile();
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 's') {
+      e.preventDefault();
+      var active = document.activeElement;
+      if (active && active.id === 'dev-css-editor') {
+        _dev.css = active.value;
+        _devRefreshPreviewDebounced(100);
+        _dToast('Preview refreshed (Ctrl+S)');
+      } else if (active && active.id === 'dev-file-editor') {
+        window._devSaveFile();
+      }
+      return;
+    }
+    // Zoom shortcuts on Ultra Dev Mode preview page only (does NOT zoom the whole app!)
+    if (e.key === '=' || e.key === '+' || e.code === 'NumpadAdd' || e.keyCode === 187 || e.keyCode === 107) {
+      e.preventDefault();
+      e.stopPropagation();
+      window._devZoomStep(0.1);
+    } else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract' || e.keyCode === 189 || e.keyCode === 109) {
+      e.preventDefault();
+      e.stopPropagation();
+      window._devZoomStep(-0.1);
+    } else if (e.key === '0' || e.code === 'Numpad0' || e.keyCode === 48 || e.keyCode === 96) {
+      e.preventDefault();
+      e.stopPropagation();
+      window._devSetZoom('fit');
     }
   }
   if (e.key === 'Escape' && _dev.open) {
     closeUltraDevMode();
   }
-});
+}, true);

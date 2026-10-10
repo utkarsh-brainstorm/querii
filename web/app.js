@@ -1350,8 +1350,18 @@ function runSql() {
   setSqlStatus('Running…');
   apiCall('run_sql', sql.trim())
     .then(function(d) {
+      if (d.message && (!d.columns || d.columns.length === 0)) {
+        setSqlStatus(d.message);
+        toast('✓ ' + d.message);
+        refreshSchema();
+        renderResults([], [], 0);
+        return;
+      }
       setSqlStatus((d.count || 0).toLocaleString() + ' rows');
       renderResults(d.columns || [], d.rows || [], d.count || 0);
+      if (d.is_mutation) {
+        refreshSchema();
+      }
     })
     .catch(function(e) { setSqlStatus('⚠ ' + e.message); toast(e.message, 'error'); });
 }
@@ -3333,6 +3343,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeModal();
     if (!e.ctrlKey) return;
+    if (window._dev && window._dev.open) return;
     if (e.key === '=' || e.key === '+') { e.preventDefault(); adjustZoom(0.1); }
     else if (e.key === '-') { e.preventDefault(); adjustZoom(-0.1); }
     else if (e.key === '0') { e.preventDefault(); resetZoom(); }

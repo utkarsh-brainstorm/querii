@@ -444,11 +444,19 @@ class Api:
 
     def run_sql(self, sql: str) -> dict:
         try:
-            cols, data = db.execute_query(sql)
+            cols, data, affected = db.execute_query_full(sql)
             self._last_result_cols = cols
             self._last_result_rows = data
-            # Explicitly log (execute_query logs parameterised; this logs literal)
-            db.log_query(sql.strip(), len(data), source="manual")
+            db.log_query(sql.strip(), len(data) if cols else max(0, affected), source="manual")
+            if not cols:
+                msg = f"Query OK — {affected} row(s) affected." if affected >= 0 else "Query executed successfully."
+                return _ok({
+                    "columns": [],
+                    "rows": [],
+                    "count": max(0, affected),
+                    "message": msg,
+                    "is_mutation": True,
+                })
             return _ok({"columns": cols, "rows": data[:200], "count": len(data)})
         except ValueError as e:
             return _err(str(e))
