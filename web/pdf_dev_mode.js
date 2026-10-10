@@ -765,11 +765,32 @@ window._devCopyAiRequirement = function() {
 };
 
 function _devFallbackCopy(text) {
-  var ta = document.createElement('textarea');
-  ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
-  document.body.appendChild(ta); ta.select();
-  document.execCommand('copy'); document.body.removeChild(ta);
-  _dToast('✓ AI requirement copied!');
+  if (typeof copyToClipboard === 'function') {
+    copyToClipboard(text, '✓ AI requirement copied to clipboard!');
+  } else {
+    _dApi('copy_to_clipboard', text)
+      .then(function() {
+        _dToast('✓ AI requirement copied to clipboard!');
+      })
+      .catch(function() {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '-9999px';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          _dToast('✓ AI requirement copied to clipboard!');
+        } catch (e) {
+          _dToast('Copy failed: ' + e.message, 'error');
+        }
+      });
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

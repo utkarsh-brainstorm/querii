@@ -746,3 +746,38 @@ class Api:
             return _ok("Database deleted. Restart Querii to create a fresh one.")
         except Exception as e:
             return _err(e)
+
+    def copy_to_clipboard(self, text: str) -> dict:
+        """Copy text to system clipboard with multiple robust fallbacks."""
+        text = str(text or "")
+        # 1. Try pyperclip
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            return _ok("Copied to clipboard")
+        except Exception:
+            pass
+
+        # 2. Try PyQt6 clipboard
+        try:
+            from PyQt6.QtWidgets import QApplication
+            cb = QApplication.clipboard()
+            if cb:
+                cb.setText(text)
+                return _ok("Copied to clipboard")
+        except Exception:
+            pass
+
+        # 3. Try Linux command-line utilities
+        try:
+            import shutil, subprocess
+            if shutil.which("wl-copy"):
+                subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True, timeout=2)
+                return _ok("Copied to clipboard")
+            if shutil.which("xclip"):
+                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True, timeout=2)
+                return _ok("Copied to clipboard")
+        except Exception:
+            pass
+
+        return _err("Could not access system clipboard")

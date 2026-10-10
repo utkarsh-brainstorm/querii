@@ -80,6 +80,45 @@ function on(id, ev, fn) {
   if (el) el.addEventListener(ev, fn);
 }
 
+function copyToClipboard(text, successMsg) {
+  successMsg = successMsg || '✓ Copied to clipboard!';
+  text = String(text || '');
+
+  if (typeof apiCall === 'function') {
+    return apiCall('copy_to_clipboard', text)
+      .then(function() {
+        toast(successMsg);
+        return true;
+      })
+      .catch(function() {
+        return _fallbackDomCopy(text, successMsg);
+      });
+  }
+  return Promise.resolve(_fallbackDomCopy(text, successMsg));
+}
+
+function _fallbackDomCopy(text, successMsg) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) {
+      toast(successMsg || '✓ Copied to clipboard!');
+      return true;
+    }
+  } catch (e) {}
+  toast('Could not copy automatically. Please copy manually.', 'error');
+  return false;
+}
+
 /* ── Toast ──────────────────────────────────────────────────────────── */
 var _toastTimer = null;
 function toast(msg, type) {
@@ -241,12 +280,8 @@ function useQueryLog(idx) {
   // 1) Paste into SQL editor
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
-  // 2) Copy to clipboard (always fallback to avoid Qt setFeaturePermission crash)
-  var ta = document.createElement('textarea');
-  ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
-  document.body.appendChild(ta); ta.select(); 
-  try { document.execCommand('copy'); } catch(e) {}
-  document.body.removeChild(ta);
+  // 2) Copy to clipboard
+  copyToClipboard(sql, 'Query loaded into editor and copied');
   // 3) Close modal
   closeModal();
   // 4) Switch to SQL tab if there's a tab switch mechanism
@@ -703,10 +738,7 @@ function copySchemaText() {
     lines.push('');
   });
   var text = lines.join('\n');
-  var ta = document.createElement('textarea');
-  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-  toast('Schema copied to clipboard! Paste it into ChatGPT or any AI to get custom queries.');
+  copyToClipboard(text, 'Schema copied to clipboard! Paste it into ChatGPT or any AI to get custom queries.');
 }
 
 /* ── Column Stats ────────────────────────────────────────────────────── */
@@ -1799,12 +1831,7 @@ function copyCsv() {
     lines.push(cols.map(function(c) { return csvEsc(row[c]); }).join(','));
   });
   var csv = lines.join('\n');
-  try {
-    var ta = document.createElement('textarea');
-    ta.value = csv; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    toast('✓ ' + allRows.length.toLocaleString() + ' rows copied as CSV!');
-  } catch(e) { toast('Copy failed: ' + e.message, 'error'); }
+  copyToClipboard(csv, '✓ ' + allRows.length.toLocaleString() + ' rows copied as CSV!');
 }
 /* ── PDF Export ─────────────────────────────────────────────────────── */
 var _pdfDefaultDir = '';
@@ -1910,7 +1937,9 @@ function copyPdfRequirement() {
   var w = landscape ? dims[1] : dims[0];
   var h = landscape ? dims[0] : dims[1];
 
-  var cols = (_lastResultCols && _lastResultCols.length) ? _lastResultCols : ['id', 'name', 'value'];
+  var cols = (_lastResults && _lastResults.columns && _lastResults.columns.length)
+    ? _lastResults.columns
+    : ((typeof _lastResultCols !== 'undefined' && _lastResultCols && _lastResultCols.length) ? _lastResultCols : ['id', 'name', 'value']);
 
   var prompt = [
     '# Querii Executive PDF Custom CSS — AI Generation Specification',
@@ -2018,12 +2047,7 @@ function copyPdfRequirement() {
     '```'
   ].join('\n');
 
-  try {
-    var ta = document.createElement('textarea');
-    ta.value = prompt; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    toast('✓ AI requirement copied! Paste it into any AI to generate custom PDF CSS.');
-  } catch(e) { toast('Copy failed: ' + e.message, 'error'); }
+  copyToClipboard(prompt, '✓ AI requirement copied to clipboard! Paste it into any AI to generate custom PDF CSS.');
 }
 
 /* ── PDF folder chooser ────────────────────────────────────────────── */

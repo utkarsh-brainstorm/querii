@@ -72,7 +72,7 @@ def main() -> None:
         )
 
     window = webview.create_window(
-        title            = "Querii — Sheet to SQL",
+        title            = "Querii Version 4.0 — Sheet to SQL",
         url              = f"file://{html_path}",
         js_api           = api,
         width            = 1024,
