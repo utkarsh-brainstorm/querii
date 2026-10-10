@@ -11,6 +11,7 @@ Engines:
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import os
@@ -134,6 +135,36 @@ _CHROMIUM_CANDIDATES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Libron Font Embedding (Base64 WOFF2)
+# ---------------------------------------------------------------------------
+
+_FONT_DIR = Path(__file__).parent.parent / "web" / "fonts"
+if not _FONT_DIR.exists():
+    _FONT_DIR = Path(__file__).parent.parent / "Libron_Web"
+
+_LIBRON_REG_B64 = ""
+_LIBRON_BOLD_B64 = ""
+_LIBRON_ITALIC_B64 = ""
+_LIBRON_BOLD_ITALIC_B64 = ""
+
+try:
+    reg_p = _FONT_DIR / "Libron-Regular.woff2"
+    bold_p = _FONT_DIR / "Libron-Bold.woff2"
+    italic_p = _FONT_DIR / "Libron-Italic.woff2"
+    bold_italic_p = _FONT_DIR / "Libron-BoldItalic.woff2"
+    if reg_p.exists():
+        _LIBRON_REG_B64 = base64.b64encode(reg_p.read_bytes()).decode("ascii")
+    if bold_p.exists():
+        _LIBRON_BOLD_B64 = base64.b64encode(bold_p.read_bytes()).decode("ascii")
+    if italic_p.exists():
+        _LIBRON_ITALIC_B64 = base64.b64encode(italic_p.read_bytes()).decode("ascii")
+    if bold_italic_p.exists():
+        _LIBRON_BOLD_ITALIC_B64 = base64.b64encode(bold_italic_p.read_bytes()).decode("ascii")
+except Exception as _font_err:
+    print(f"[Libron font] Warning loading fonts: {_font_err}")
+
+
 def _find_chromium() -> Optional[str]:
     """Return path to a usable native Chromium/Chrome binary, or None."""
     import shutil
@@ -161,9 +192,13 @@ def _build_pdf_html(
     col_headers: Optional[Dict[str, str]] = None,
     col_visible: Optional[List[str]] = None,
     full_override: bool = False,
+    bold_data: bool = False,
+    show_grid_lines: bool = False,
+    is_preview: bool = False,
 ) -> str:
     """
     Build a complete, standalone, executive-grade HTML string for high-fidelity printing.
+    Uses Libron font typography, executive masthead, and exact physical page sheet geometry.
     """
     # ── column filtering & labelling ──────────────────────────────────────────
     if col_visible is not None:
@@ -171,6 +206,23 @@ def _build_pdf_html(
         columns = [c for c in columns if c in vis_set]
     col_widths = col_widths or {}
     col_headers = col_headers or {}
+
+    total_records = len(rows)
+
+    # In live dev preview: render page 1 only so it's super responsive and doesn't lag
+    if is_preview:
+        max_preview_rows = 18 if orientation == "landscape" else 26
+        rows = rows[:max_preview_rows]
+
+    # ── page dimensions for true paper geometry ──────────────────────────────
+    dim_map = {
+        "A4": ("210mm", "297mm"),
+        "A3": ("297mm", "420mm"),
+        "Letter": ("216mm", "279mm"),
+    }
+    pw, ph = dim_map.get(page_size, ("210mm", "297mm"))
+    if orientation == "landscape":
+        pw, ph = ph, pw
 
     # ── page size for @page rule ──────────────────────────────────────────────
     page_size_map = {"A4": "A4", "A3": "A3", "Letter": "letter"}
@@ -198,7 +250,12 @@ def _build_pdf_html(
         label = col_headers.get(c, c)
         w = col_widths.get(c)
         style = f' style="width:{w}%"' if w else ""
-        return f"<th{style}>{he(label)}</th>"
+        handle = (
+            f'<div class="col-resize-handle" data-col="{he(c)}" title="Drag to adjust width with mouse"></div>'
+            if is_preview
+            else ""
+        )
+        return f'<th{style} data-col="{he(c)}"><span class="th-content">{he(label)}</span>{handle}</th>'
 
     def _td(c: str, row: dict) -> str:
         val = row.get(c, "")
@@ -234,15 +291,68 @@ def _build_pdf_html(
 
     # ── generated date ────────────────────────────────────────────────────────
     gen_date = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    org_display = he(org_name) if org_name else "Querii Analytics"
-    logo_img_header = (
-        f'<img src="{logo_src}" alt="Logo" class="report-logo">' if logo_src else ""
+    org_display = he(org_name) if org_name else "Querii Executive"
+    logo_markup = (
+        f'<div class="report-logo-frame"><img src="{logo_src}" alt="Logo" class="report-logo"></div>'
+        if logo_src
+        else ""
     )
-    source_chip = (
-        f'<span class="badge badge-source">Source: {he(source_label)}</span>'
+    source_item = (
+        f'<div class="meta-item"><span class="meta-lbl">Dataset</span><span class="meta-val">{he(source_label)}</span></div>'
         if source_label
         else ""
     )
+
+    body_data_weight = "700" if bold_data else "400"
+    grid_lines_class = " grid-lines" if show_grid_lines else ""
+
+    resize_script = """
+  <script>
+    (function initColResizer() {
+      var handles = document.querySelectorAll('.col-resize-handle');
+      if (!handles.length) return;
+      handles.forEach(function(handle) {
+        handle.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var th = handle.parentElement;
+          var colName = handle.getAttribute('data-col');
+          var table = th.closest('table');
+          var startX = e.clientX;
+          var startW = th.offsetWidth;
+          var tableW = table.offsetWidth;
+          handle.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+
+          function onMouseMove(me) {
+            var delta = me.clientX - startX;
+            var newW = Math.max(20, startW + delta);
+            var newPct = Math.max(2, Math.min(90, Math.round((newW / tableW) * 100)));
+            th.style.width = newPct + '%';
+            if (window.parent && window.parent._devOnColumnDragged) {
+              window.parent._devOnColumnDragged(colName, newPct);
+            }
+          }
+
+          function onMouseUp() {
+            handle.classList.remove('resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            if (window.parent && window.parent._devOnColumnDragEnd) {
+              window.parent._devOnColumnDragEnd(colName);
+            }
+          }
+
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        });
+      });
+    })();
+  </script>
+"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -250,105 +360,177 @@ def _build_pdf_html(
   <meta charset="UTF-8">
   <title>{he(title)}</title>
   <style>
+    @font-face {{
+      font-family: 'Libron';
+      src: url('data:font/woff2;base64,{_LIBRON_REG_B64}') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }}
+    @font-face {{
+      font-family: 'Libron';
+      src: url('data:font/woff2;base64,{_LIBRON_BOLD_B64}') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }}
+    @font-face {{
+      font-family: 'Libron';
+      src: url('data:font/woff2;base64,{_LIBRON_ITALIC_B64}') format('woff2');
+      font-weight: 400;
+      font-style: italic;
+    }}
+    @font-face {{
+      font-family: 'Libron';
+      src: url('data:font/woff2;base64,{_LIBRON_BOLD_ITALIC_B64}') format('woff2');
+      font-weight: 700;
+      font-style: italic;
+    }}
+
     :root {{
-      --primary: #0f172a;
-      --accent: #3b82f6;
-      --accent-soft: #eff6ff;
-      --text: #0f172a;
-      --text-muted: #64748b;
+      --page-w: {pw};
+      --page-h: {ph};
+      --navy: #090d16;
+      --navy-light: #1e293b;
+      --accent: #2563eb;
+      --accent-subtle: #eff6ff;
       --border: #e2e8f0;
       --border-dark: #cbd5e1;
+      --text: #090d16;
+      --text-muted: #64748b;
       --row-alt: #f8fafc;
-      --table-head-bg: #0f172a;
+      --table-head-bg: #090d16;
       --table-head-text: #ffffff;
+      --data-font-weight: {body_data_weight};
     }}
+
     * {{
       box-sizing: border-box;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }}
+
     html, body {{
       margin: 0;
       padding: 0;
-      background: #ffffff;
+      background: {'#cbd5e1' if is_preview else '#ffffff'};
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: 'Libron', Georgia, serif;
       font-size: 8.5pt;
-      line-height: 1.45;
+      line-height: 1.4;
       -webkit-font-smoothing: antialiased;
+      {'display: flex; justify-content: center; padding: 24px 16px; min-height: 100vh;' if is_preview else ''}
     }}
-    .content-wrap {{
-      padding: 12mm 14mm;
+
+    /* Paper Page Sheet (Authentic Physical Preview) */
+    .pdf-page-sheet {{
+      width: var(--page-w);
+      min-height: var(--page-h);
+      max-width: var(--page-w);
+      background: #ffffff;
+      padding: 14mm 16mm;
+      box-sizing: border-box;
+      position: relative;
+      {'box-shadow: 0 16px 40px rgba(15,23,42,0.18), 0 2px 6px rgba(15,23,42,0.06); border-radius: 2px;' if is_preview else ''}
     }}
-    /* Header Section */
-    .report-header {{
+
+    /* Premium Masthead */
+    .masthead {{
+      border-top: 3.5px solid var(--navy);
+      padding-top: 14px;
+      margin-bottom: 18px;
+      border-bottom: 1.5px solid var(--navy);
+      padding-bottom: 14px;
+      break-inside: avoid;
+    }}
+    .masthead-inner {{
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      border-bottom: 2px solid var(--primary);
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-      break-inside: avoid;
+      gap: 20px;
     }}
-    .brand-section {{
+    .brand-col {{
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
+    }}
+    .report-logo-frame {{
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      padding: 3px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }}
     .report-logo {{
-      width: 44px;
-      height: 44px;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
-      border-radius: 6px;
+    }}
+    .kicker {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 6.5pt;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 3px;
     }}
     .org-title {{
       margin: 0;
-      font-size: 15pt;
-      font-weight: 800;
-      color: var(--primary);
-      letter-spacing: -0.02em;
+      font-size: 19pt;
+      font-weight: 700;
+      color: var(--navy);
+      letter-spacing: -0.015em;
+      line-height: 1.15;
     }}
     .report-title {{
-      margin: 3px 0 0;
+      margin-top: 4px;
       font-size: 11pt;
-      font-weight: 600;
+      font-weight: 400;
       color: #334155;
+      line-height: 1.3;
     }}
-    .report-meta {{
-      text-align: right;
-    }}
-    .gen-date {{
-      font-size: 7.5pt;
-      color: var(--text-muted);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }}
-    .badge-group {{
+    .meta-matrix {{
       display: flex;
-      gap: 6px;
-      justify-content: flex-end;
-      margin-top: 6px;
+      gap: 16px;
+      text-align: right;
+      align-items: flex-end;
+      flex-shrink: 0;
     }}
-    .badge {{
+    .meta-item {{
+      display: flex;
+      flex-direction: column;
+    }}
+    .meta-lbl {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 6pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      margin-bottom: 2px;
+    }}
+    .meta-val {{
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--navy);
+    }}
+    .badge-count {{
       display: inline-block;
+      padding: 3px 8px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 7.5pt;
       font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: #f1f5f9;
-      color: #334155;
-      border: 1px solid var(--border-dark);
+      color: #1e293b;
+      white-space: nowrap;
     }}
-    .badge-records {{
-      background: var(--accent-soft);
-      color: #1d4ed8;
-      border-color: #bfdbfe;
-    }}
-    .badge-source {{
-      background: #f8fafc;
-      color: #475569;
-    }}
+
     /* Data Table */
     .data-table-wrap {{
       width: 100%;
@@ -358,21 +540,23 @@ def _build_pdf_html(
       width: 100%;
       border-collapse: collapse;
       border-spacing: 0;
+      font-family: 'Libron', serif;
       font-size: 8pt;
       border: 1px solid var(--border-dark);
-      border-radius: 6px;
+      border-radius: 4px;
       overflow: hidden;
     }}
     .data-table thead {{
       display: table-header-group;
     }}
     .data-table thead th {{
+      position: relative;
       background: var(--table-head-bg);
       color: var(--table-head-text);
       font-weight: 700;
       font-size: 7.5pt;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
       padding: 8px 10px;
       text-align: left;
       border-bottom: 2px solid var(--accent);
@@ -387,6 +571,7 @@ def _build_pdf_html(
       color: #1e293b;
       vertical-align: middle;
       font-variant-numeric: tabular-nums;
+      font-weight: var(--data-font-weight);
     }}
     .data-table tbody tr:nth-child(even) {{
       background: var(--row-alt);
@@ -394,10 +579,35 @@ def _build_pdf_html(
     .data-table tbody tr:last-child td {{
       border-bottom: none;
     }}
-    .cell-null {{
-      color: var(--text-muted);
-      font-weight: 500;
+
+    /* Vertical grid lines when enabled */
+    .data-table.grid-lines th,
+    .data-table.grid-lines td {{
+      border-right: 1px solid var(--border-dark);
     }}
+    .data-table.grid-lines th:last-child,
+    .data-table.grid-lines td:last-child {{
+      border-right: none;
+    }}
+
+    /* Interactive Column Resize Handles in Dev Preview */
+    .col-resize-handle {{
+      position: absolute;
+      top: 0;
+      right: -3px;
+      bottom: 0;
+      width: 7px;
+      cursor: col-resize;
+      z-index: 10;
+      user-select: none;
+      background: transparent;
+      transition: background 0.15s;
+    }}
+    .col-resize-handle:hover,
+    .col-resize-handle.resizing {{
+      background: rgba(37, 99, 235, 0.7);
+    }}
+
     /* Footer */
     .report-footer {{
       margin-top: 14px;
@@ -410,6 +620,7 @@ def _build_pdf_html(
       font-weight: 600;
       break-inside: avoid;
     }}
+
     /* SQL Box */
     .sql-block {{
       margin-top: 14px;
@@ -435,22 +646,36 @@ def _build_pdf_html(
       white-space: pre-wrap;
       word-break: break-all;
     }}
+
     /* Print Rules */
     @page {{
       size: {css_page_size};
       margin: 12mm 14mm 14mm 14mm;
     }}
     @media print {{
-      body {{
+      html, body {{
         background: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
       }}
-      .content-wrap {{
-        padding: 0;
+      .pdf-page-sheet {{
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }}
+      .col-resize-handle {{
+        display: none !important;
       }}
       .data-table thead {{
         display: table-header-group;
       }}
     }}
+
     /* ── USER CUSTOM CSS ── */
 {custom_css}
 {"" if full_override else f'''
@@ -463,26 +688,33 @@ def _build_pdf_html(
   </style>
 </head>
 <body>
-  <div class="content-wrap">
-    <header class="report-header">
-      <div class="brand-section">
-        {logo_img_header}
-        <div>
-          <h1 class="org-title">{org_display}</h1>
-          <div class="report-title">{he(title)}</div>
+  <main class="pdf-page-sheet">
+    <header class="masthead">
+      <div class="masthead-inner">
+        <div class="brand-col">
+          {logo_markup}
+          <div>
+            <div class="kicker">EXECUTIVE AUDIT DISPATCH • CONFIDENTIAL</div>
+            <h1 class="org-title">{org_display}</h1>
+            <div class="report-title">{he(title)}</div>
+          </div>
         </div>
-      </div>
-      <div class="report-meta">
-        <div class="gen-date">{gen_date}</div>
-        <div class="badge-group">
-          <span class="badge badge-records">{len(rows):,} Records</span>
-          {source_chip}
+        <div class="meta-matrix">
+          <div class="meta-item">
+            <span class="meta-lbl">Date Issued</span>
+            <span class="meta-val">{gen_date}</span>
+          </div>
+          {source_item}
+          <div class="meta-item">
+            <span class="meta-lbl">Total Output</span>
+            <span class="badge-count">{total_records:,} Records</span>
+          </div>
         </div>
       </div>
     </header>
 
     <div class="data-table-wrap">
-      <table class="data-table">
+      <table class="data-table{grid_lines_class}">
         <colgroup>{col_group}</colgroup>
         <thead><tr>{thead_cells}</tr></thead>
         <tbody>{tbody_rows_html}</tbody>
@@ -490,12 +722,13 @@ def _build_pdf_html(
     </div>
 
     <footer class="report-footer">
-      <div>Querii  •  Confidential Executive Report</div>
-      <div>Total Records: {len(rows):,}</div>
+      <div>Querii  •  Executive Analytics Platform</div>
+      <div>Total Records: {total_records:,}  •  Page 1</div>
     </footer>
 
     {sql_block}
-  </div>
+  </main>
+  {resize_script if is_preview else ""}
 </body>
 </html>"""
     return html
@@ -517,6 +750,8 @@ def export_pdf_html(
     col_headers: Dict[str, str] = None,
     col_visible: List[str] = None,
     full_override: bool = False,
+    bold_data: bool = False,
+    show_grid_lines: bool = False,
 ) -> None:
     """
     Render query results to PDF using headless native Chromium/Chrome.
@@ -539,7 +774,8 @@ def export_pdf_html(
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
-        full_override=full_override,
+        full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
+        is_preview=False,
     )
 
     out_path = str(Path(filepath).resolve())
@@ -602,15 +838,19 @@ def get_pdf_html_preview(
     col_headers: Optional[Dict[str, str]] = None,
     col_visible: Optional[List[str]] = None,
     full_override: bool = False,
+    bold_data: bool = False,
+    show_grid_lines: bool = False,
 ) -> str:
-    """Return the HTML string for in-app preview (iframe srcdoc)."""
+    """Return the HTML string for in-app preview (iframe srcdoc) with exact paper geometry."""
     return _build_pdf_html(
-        columns=columns, rows=rows[:100], title=title, org_name=org_name,
+        columns=columns, rows=rows, title=title, org_name=org_name,
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
-        full_override=full_override,
+        full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
+        is_preview=True,
     )
+
 
 
 # ---------------------------------------------------------------------------

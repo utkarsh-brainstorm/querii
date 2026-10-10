@@ -2043,6 +2043,11 @@ function confirmExportPdf() {
   var sourceLabel = inclSource ? (_selectedTables.length > 1 ? _selectedTables.join(', ') : _activeTable) : '';
 
 
+  var boldEl    = document.getElementById('pdf-bold-data');
+  var gridEl    = document.getElementById('pdf-grid-lines');
+  var boldData  = boldEl ? boldEl.checked : false;
+  var gridLines = gridEl ? gridEl.checked : false;
+
   closeModal();
   showProgress(true);
   toast('⚡ Generating PDF…', 'info');
@@ -2053,8 +2058,10 @@ function confirmExportPdf() {
     var cWidths = (typeof _dev !== 'undefined') ? _dev.colWidths : {};
     var cHeads  = (typeof _dev !== 'undefined') ? _dev.colHeaders : {};
     var cFullO  = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
+    var cBold   = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
+    var cGrid   = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
 
-    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, cWidths, cHeads, visArr, cFullO)
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   } else {

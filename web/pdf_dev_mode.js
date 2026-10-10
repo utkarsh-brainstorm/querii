@@ -19,6 +19,8 @@ var _dev = {
   inclSql:     false,
   inclSource:  false,
   fullOverride:false,
+  boldData:    false,
+  showGridLines:false,
   fileTab:     'style.css', // active file tab
   fileBuf:     {},          // name -> content (in-memory edits)
   devPaths:    {},          // {dir, csv, css, script}
@@ -60,12 +62,16 @@ function openUltraDevMode() {
   var orgEl   = document.getElementById('s-org-name');
   var cssEl   = document.getElementById('s-pdf-custom-css');
   var devCssEl= document.getElementById('pdf-custom-css-input');
+  var boldEl  = document.getElementById('pdf-bold-data');
+  var gridEl  = document.getElementById('pdf-grid-lines');
 
   _dev.title   = (titleEl && titleEl.value) || 'Query Results';
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
   _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
   _dev.orgName = (orgEl   && orgEl.value)   || '';
   _dev.css     = (devCssEl && devCssEl.value) || (cssEl && cssEl.value) || (typeof _pdfCustomCss !== 'undefined' ? _pdfCustomCss : '');
+  _dev.boldData= boldEl ? boldEl.checked : false;
+  _dev.showGridLines = gridEl ? gridEl.checked : false;
   _dev.logo    = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
                  (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
 
@@ -154,10 +160,24 @@ function _devRenderDocControls() {
       '</div>' +
     '</div>' +
     '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Table Text</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-bold-data" class="dev-cb"' + (_dev.boldData?' checked':'') + ' onchange="window._devOnBoldData(this.checked)">' +
+        ' <strong>B</strong> Bold table text' +
+      '</label>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Vertical Lines</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-grid-lines" class="dev-cb"' + (_dev.showGridLines?' checked':'') + ' onchange="window._devOnGridLines(this.checked)">' +
+        ' Render vertical lines in PDF' +
+      '</label>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
       '<label class="dev-lbl">Include SQL</label>' +
       '<input type="checkbox" id="dev-incl-sql" class="dev-cb"' + (_dev.inclSql?' checked':'') + ' onchange="window._devOnInclSql(this.checked)">' +
     '</div>' +
-    '<div class="dev-field-row" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">' +
+    '<div class="dev-field-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">' +
       '<label class="dev-lbl" title="If checked, your Custom CSS fully controls page size. If unchecked, Querii enforces the selected size/orientation.">CSS Override</label>' +
       '<label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer">' +
         '<input type="checkbox" class="dev-cb" ' + (_dev.fullOverride?'checked':'') + ' onchange="window._devOnFullOverride(this.checked)"> Full Override (Allow CSS @page)' +
@@ -175,9 +195,12 @@ function _devRenderColControls() {
   var visColsCount = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); }).length;
   var avgWidth = visColsCount > 0 ? Math.floor(100 / visColsCount) : 20;
 
-  var toolbar = '<div style="display:flex;gap:6px;margin-bottom:10px">' +
+  var toolbar = '<div style="display:flex;gap:6px;margin-bottom:8px">' +
     '<button class="dev-btn dev-btn-sm" onclick="window._devDistributeEvenly()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#334155" title="Distribute widths equally across all visible columns">⚖ Equal Widths</button>' +
     '<button class="dev-btn dev-btn-sm" onclick="window._devResetColumns()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#64748b" title="Reset all custom widths and headers">↺ Reset All</button>' +
+  '</div>' +
+  '<div style="font-size:9.5px;color:#64748b;margin-bottom:10px;background:#f8fafc;padding:6px 8px;border-radius:6px;border:1px solid #e2e8f0;line-height:1.35">' +
+    '💡 <em>Tip: You can also hover &amp; drag vertical column borders directly on the table header with your mouse!</em>' +
   '</div>';
 
   var html = toolbar + '<div class="dev-col-list">';
@@ -191,9 +214,12 @@ function _devRenderColControls() {
         '<span class="dev-col-name" title="' + _dEsc(c) + '">' + _dEsc(c) + '</span>' +
       '</label>' +
       '<input class="dev-col-hdr" placeholder="Label override…" value="' + _dEsc(header) + '" oninput="window._devSetHeader(\'' + _dEsc(c) + '\', this.value)" title="Custom column header">' +
-      '<div class="dev-col-width-wrap">' +
-        '<input type="range" min="1" max="100" step="1" value="' + width + '" class="dev-slider" oninput="window._devSetWidth(\'' + _dEsc(c) + '\', this.value, this.nextElementSibling)">' +
-        '<span class="dev-width-lbl">' + width + '%</span>' +
+      '<div class="dev-col-width-wrap" style="display:flex;align-items:center;gap:6px">' +
+        '<input type="range" min="1" max="100" step="1" value="' + width + '" class="dev-slider" style="flex:1" id="slider-' + _dEsc(c) + '" oninput="window._devSetWidth(\'' + _dEsc(c) + '\', this.value)">' +
+        '<div style="display:flex;align-items:center;gap:2px">' +
+          '<input type="number" min="1" max="100" step="1" value="' + width + '" class="dev-width-input" id="input-' + _dEsc(c) + '" style="width:44px;height:22px;text-align:right;font-size:11px;font-weight:700;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;color:#0f172a;background:#fff" oninput="window._devSetWidthInput(\'' + _dEsc(c) + '\', this.value)">' +
+          '<span style="font-size:10px;font-weight:600;color:#64748b">%</span>' +
+        '</div>' +
       '</div>' +
     '</div>';
   });
@@ -285,6 +311,8 @@ window._devOnOrient      = function(v) {
 };
 window._devOnInclSql     = function(v) { _dev.inclSql = v; _devRefreshPreviewDebounced(); };
 window._devOnFullOverride= function(v) { _dev.fullOverride = v; _devRefreshPreviewDebounced(200); };
+window._devOnBoldData    = function(v) { _dev.boldData = v; _devRefreshPreviewDebounced(150); };
+window._devOnGridLines   = function(v) { _dev.showGridLines = v; _devRefreshPreviewDebounced(150); };
 
 window._devToggleCol = function(col, vis) {
   if (_dev.colVisible === null) {
@@ -295,11 +323,33 @@ window._devToggleCol = function(col, vis) {
   _devRefreshPreviewDebounced();
 };
 
-window._devSetWidth = function(col, val, lbl) {
-  var n = parseInt(val, 10);
+window._devSetWidth = function(col, val) {
+  var n = Math.max(1, Math.min(100, parseInt(val, 10) || 1));
   _dev.colWidths[col] = n;
-  if (lbl) lbl.textContent = n + '%';
-  _devRefreshPreviewDebounced();
+  var inp = document.getElementById('input-' + col);
+  if (inp && document.activeElement !== inp) inp.value = n;
+  _devRefreshPreviewDebounced(250);
+};
+
+window._devSetWidthInput = function(col, val) {
+  var n = Math.max(1, Math.min(100, parseInt(val, 10) || 1));
+  _dev.colWidths[col] = n;
+  var sld = document.getElementById('slider-' + col);
+  if (sld) sld.value = n;
+  _devRefreshPreviewDebounced(300);
+};
+
+window._devOnColumnDragged = function(col, newPct) {
+  _dev.colWidths[col] = newPct;
+  var sld = document.getElementById('slider-' + col);
+  if (sld) sld.value = newPct;
+  var inp = document.getElementById('input-' + col);
+  if (inp) inp.value = newPct;
+};
+
+window._devOnColumnDragEnd = function(col) {
+  _devRefreshPreviewDebounced(100);
+  _dToast('Column ' + col + ' width: ' + (_dev.colWidths[col] || '') + '%');
 };
 
 window._devSetHeader = function(col, val) {
@@ -321,7 +371,7 @@ window._devOnFileEdit = function(val) {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   PREVIEW (Smooth & Scroll-Preserved)
+   PREVIEW (Smooth & Scroll-Preserved with True Paper Geometry)
    ══════════════════════════════════════════════════════════════════════════ */
 function _devRefreshPreviewDebounced(delay) {
   if (_dev.prevTid) clearTimeout(_dev.prevTid);
@@ -335,28 +385,27 @@ function _devRefreshPreview() {
 
   // Preserve scroll offset
   var scrollY = 0;
+  var scrollX = 0;
   try {
-    if (iframe.contentWindow) scrollY = iframe.contentWindow.scrollY || 0;
+    if (iframe.contentWindow) {
+      scrollY = iframe.contentWindow.scrollY || 0;
+      scrollX = iframe.contentWindow.scrollX || 0;
+    }
   } catch (e) {}
 
   _dApi('get_pdf_html_preview',
     _dev.title, _dev.orgName, _dev.logo, _dev.css,
     _dev.pageSize, _dev.orient,
-    _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride
+    _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
+    _dev.boldData, _dev.showGridLines
   ).then(function(r) {
     if (!r) return;
-    var html = r;
-    var previewStyle = '<style>' +
-      'body{background:#dde3ec;margin:0;padding:16px}' +
-      '.dev-preview-scale{transform-origin:top center;width:210mm;margin:0 auto}' +
-      '@media print{body{background:#fff;padding:0}}' +
-    '</style>';
-    iframe.srcdoc = previewStyle + html;
+    iframe.srcdoc = r;
 
     iframe.onload = function() {
       try {
-        if (iframe.contentWindow && scrollY > 0) {
-          iframe.contentWindow.scrollTo(0, scrollY);
+        if (iframe.contentWindow && (scrollY > 0 || scrollX > 0)) {
+          iframe.contentWindow.scrollTo(scrollX, scrollY);
         }
       } catch (e) {}
     };
@@ -463,7 +512,8 @@ window._devExportPdf = function() {
       filepath, _dev.title, org, _dev.logo,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
       '', _dev.css, _dev.pageSize, _dev.orient,
-      _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride
+      _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
+      _dev.boldData, _dev.showGridLines
     );
   }).then(function(r) {
     if (r) _dToast('✓ PDF exported!');

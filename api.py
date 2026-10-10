@@ -580,6 +580,8 @@ class Api:
         col_headers: dict = None,
         col_visible: list = None,
         full_override: bool = False,
+        bold_data: bool = False,
+        show_grid_lines: bool = False,
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
@@ -597,6 +599,8 @@ class Api:
                 col_headers=col_headers,
                 col_visible=col_visible,
                 full_override=full_override,
+                bold_data=bold_data,
+                show_grid_lines=show_grid_lines,
             )
             return _ok(filepath)
         except Exception as e:
@@ -614,17 +618,20 @@ class Api:
         col_headers: dict = None,
         col_visible: list = None,
         full_override: bool = False,
+        bold_data: bool = False,
+        show_grid_lines: bool = False,
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
             cols = self._last_result_cols or []
             rows = self._last_result_rows or []
             html = get_pdf_html_preview(
-                columns=cols, rows=rows[:100],
+                columns=cols, rows=rows,
                 title=title, org_name=org_name, logo_b64=logo_b64,
                 custom_css=custom_css, page_size=page_size, orientation=orientation,
                 col_widths=col_widths or {}, col_headers=col_headers or {},
                 col_visible=col_visible, full_override=full_override,
+                bold_data=bold_data, show_grid_lines=show_grid_lines,
             )
             return _ok(html)
         except Exception as e:

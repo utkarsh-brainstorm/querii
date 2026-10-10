@@ -21,8 +21,21 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <style>
+    @font-face {
+      font-family: 'Libron';
+      src: url('fonts/Libron-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Libron';
+      src: url('fonts/Libron-Bold.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+  </style>
 </head>
 
 <body class="app-body h-full w-full absolute inset-0 flex flex-col overflow-hidden select-none">
@@ -744,6 +757,14 @@ DROP TABLE old_data;"></textarea>
         <div style="font-size:10px;color:var(--text-dim);margin-left:21px;margin-top:-2px">
           Default (unchecked): ⚡ Ultra-Fast Native Engine (&lt;50ms, vector graphics)
         </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-bold-data" style="width:13px;height:13px">
+          <span><strong>B</strong> Bold table text</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-grid-lines" style="width:13px;height:13px">
+          <span>Render vertical grid lines between columns</span>
+        </label>
       </div>
       <!-- Custom CSS section (shown when html mode or dev mode active) -->
       <div id="pdf-css-section" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-muted)">
