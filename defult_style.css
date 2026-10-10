@@ -1,21 +1,25 @@
-/* General Querii PDF CSS — reusable across organizations and reports.
-   No organization names, addresses, logos, or report titles are hardcoded.
-   Uses the generic class names from the general template. */
+/* ==========================================================================
+   Querii Executive PDF Default Style Template
+   Inspired by Document_Template.html — High Data Density, Clean Typography
+   ========================================================================== */
 
 :root {
   --paper: #ffffff;
   --screen-bg: #e7ebf0;
-  --navy: #334155;
-  --navy-soft: #475569;
+  --navy: #0f172a;
+  --navy-light: #1e293b;
   --gold: #b7791f;
+  --accent: #b7791f;
   --text: #111827;
   --muted: #64748b;
   --border: #cbd5e1;
   --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
   --row-alt: #f8fafc;
-  --table-head: #e9eef5;
-  --table-head-text: #243247;
+  --table-head-bg: #0f172a;
+  --table-head-text: #ffffff;
   --header-bg: #f8fafc;
+  --data-font-weight: 400;
 }
 
 *,
@@ -30,106 +34,184 @@ body {
   padding: 0;
   background: var(--paper);
   color: var(--text);
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: "Libron", "Playfair Display", Georgia, serif;
+  font-size: 8.5pt;
+  line-height: 1.35;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
 }
 
-/* Main content area. Use normal flow so long reports paginate cleanly. */
+/* ==========================================================================
+   PAGE CONTAINER & DOCUMENT FRAME
+   ========================================================================== */
+
+.pdf-page-sheet,
+.page,
 .content {
   position: relative;
-  z-index: 10;
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
   padding: 12mm 14mm;
-  color: var(--text);
   background: var(--paper);
-  overflow-wrap: anywhere;
+  box-sizing: border-box;
 }
 
-/* =========================
-   ORGANIZATION HEADER
-========================= */
+.document-frame {
+  position: absolute;
+  top: 6mm;
+  right: 6mm;
+  bottom: 6mm;
+  left: 6mm;
+  border: 1.2px solid #9ca8b7;
+  pointer-events: none;
+  z-index: 30;
+}
 
-.school-header {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  min-height: 88px;
-  margin: 0 0 16px;
-  padding: 13px 18px;
+.document-frame::after {
+  content: "";
+  position: absolute;
+  top: 2mm;
+  right: 2mm;
+  bottom: 2mm;
+  left: 2mm;
+  border: 0.5px solid #e1e6eb;
+}
+
+/* ==========================================================================
+   DENSE BACKGROUND WATERMARK
+   ========================================================================== */
+
+.watermark-area {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.watermark-text {
+  position: absolute;
+  left: -30%;
+  top: -30%;
+  display: flex;
+  flex-direction: column;
+  transform: rotate(-28deg);
+  opacity: 0.055;
+  z-index: 1;
+}
+
+.watermark-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 22px;
+  white-space: nowrap;
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 22px;
+  letter-spacing: 0.5px;
+  color: #475569;
+}
+
+.watermark-item {
+  flex-shrink: 0;
+}
+
+.logo-watermark-zone {
+  position: absolute;
+  width: 140mm;
+  height: 140mm;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-radius: 50%;
+  z-index: 5;
+}
+
+.logo-watermark {
+  width: 140mm;
+  height: 140mm;
+  object-fit: contain;
+  opacity: 0.045;
+  filter: grayscale(100%);
+}
+
+.pdf-page-sheet > *:not(.watermark-area):not(.document-frame),
+.page > *:not(.watermark-area):not(.document-frame) {
+  position: relative;
+  z-index: 10;
+}
+
+/* ==========================================================================
+   ORGANISATION HEADER
+   ========================================================================== */
+
+.school-header,
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 20px;
   background: var(--header-bg);
   border: 1px solid var(--border);
-  border-top: 3px solid #c5a15a;
+  border-top: 3px solid var(--gold);
   border-radius: 10px;
+  margin-bottom: 14px;
   text-align: center;
   page-break-inside: avoid;
   break-inside: avoid;
 }
 
-.school-logo {
-  display: inline-block;
-  vertical-align: middle;
-  width: 68px;
-  height: 68px;
-  margin: 0 18px 0 0;
+.school-logo,
+.report-logo {
+  width: 60px;
+  height: 60px;
   object-fit: contain;
+  flex-shrink: 0;
+  border-radius: 6px;
 }
 
 .school-info {
-  display: inline-block;
-  vertical-align: middle;
-  max-width: calc(100% - 100px);
-  text-align: center;
-  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.school-info h2 {
-  margin: 0 0 5px;
-  color: #26364b;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 21px;
-  line-height: 1.25;
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
-.address {
+.school-info h2,
+.org-title {
   margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.school-meta {
-  margin-top: 6px;
-  color: var(--navy-soft);
-  font-size: 9px;
-  line-height: 1.4;
+  font-family: "Libron", "Playfair Display", Georgia, serif;
+  font-size: 21px;
+  line-height: 1.2;
   font-weight: 800;
-  overflow-wrap: anywhere;
+  color: var(--navy);
+  letter-spacing: -0.01em;
 }
 
-.school-meta span {
-  display: inline-block;
-  margin: 2px 8px;
-}
-
-/* =========================
-   DOCUMENT HEADING
-========================= */
+/* ==========================================================================
+   DOCUMENT / REPORT HEADING
+   ========================================================================== */
 
 .document-heading {
-  width: 100%;
-  margin: 0 0 17px;
-  padding: 2px 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
   text-align: center;
-  border-bottom: 2px solid var(--navy-soft);
+  border-bottom: 2px solid var(--navy);
   page-break-inside: avoid;
   break-inside: avoid;
 }
@@ -137,283 +219,242 @@ body {
 .heading-accent {
   width: 48px;
   height: 3px;
-  margin: 0 auto 7px;
+  margin-bottom: 6px;
   background: var(--gold);
   border-radius: 4px;
 }
 
-.title {
-  width: 100%;
-  max-width: 100%;
+.title,
+.report-title {
   margin: 0;
-  color: #26364b;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 25px;
-  line-height: 1.25;
+  width: 100%;
+  font-family: "Libron", "Playfair Display", Georgia, serif;
+  font-size: 22px;
+  line-height: 1.2;
   font-weight: 800;
-  overflow-wrap: anywhere;
-  word-break: normal;
+  color: var(--navy);
 }
 
-.gen-date {
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-/* =========================
-   DATA TABLE
-========================= */
+/* ==========================================================================
+   DATA TABLE — COMPACT FORMATION FOR 7-8 COLUMNS
+   ========================================================================== */
 
 .data-table-wrap {
   width: 100%;
   max-width: 100%;
-  min-width: 0;
-  margin: 0 0 16px;
+  margin-bottom: 12px;
   overflow: visible;
 }
 
 .data-table {
   width: 100%;
-  max-width: 100%;
-  margin: 0 0 16px;
-  border: 1px solid var(--border);
   border-collapse: separate;
   border-spacing: 0;
+  font-family: "Libron", Georgia, serif;
+  font-size: 8.5pt;
+  line-height: 1.3;
+  border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
   table-layout: auto;
-  background: #fff;
-  color: var(--text);
-  font-size: 9px;
-  line-height: 1.4;
+  background: #ffffff;
 }
 
 .data-table thead {
   display: table-header-group;
 }
 
-.data-table tfoot {
-  display: table-footer-group;
+.data-table thead th {
+  position: relative;
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  padding: 6px 7px;
+  font-weight: 700;
+  font-size: 8pt;
+  text-align: left;
+  border-bottom: 2px solid var(--gold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.data-table tr {
+.data-table thead th:first-child {
+  border-top-left-radius: 7px;
+}
+
+.data-table thead th:last-child {
+  border-top-right-radius: 7px;
+}
+
+.data-table tbody tr {
   page-break-inside: avoid;
   break-inside: avoid;
 }
 
-.data-table th,
-.data-table td {
-  min-width: 0;
-  max-width: 70mm;
-  padding: 7px 8px;
-  text-align: left;
-  vertical-align: top;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  hyphens: auto;
-}
-
-.data-table th {
-  background: var(--table-head);
-  color: var(--table-head-text);
-  font-size: 8.5px;
-  line-height: 1.35;
-  font-weight: 800;
-  border: 0;
-  border-bottom: 2px solid #c5a15a;
-}
-
-.data-table th:first-child {
-  border-top-left-radius: 7px;
-}
-
-.data-table th:last-child {
-  border-top-right-radius: 7px;
-}
-
-.data-table td {
-  color: var(--text);
-  border: 0;
+.data-table tbody td {
+  padding: 5px 7px;
   border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--data-font-weight, 400);
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .data-table tbody tr:nth-child(even) {
   background: var(--row-alt);
 }
 
-.data-table tbody tr:nth-child(odd) {
-  background: #fff;
+.data-table tbody tr:hover {
+  background: #f1f5f9;
 }
 
 .data-table tbody tr:last-child td {
-  border-bottom: 0;
+  border-bottom: none;
 }
 
-.data-table td a,
-.data-table th a,
-.data-table td code {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
+.data-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 7px;
 }
 
-.data-table td img {
-  max-width: 100%;
-  height: auto;
+.data-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 7px;
 }
 
-/* =========================
-   FOOTER
-========================= */
+/* Vertical Grid Lines */
+.data-table.grid-lines th,
+.data-table.grid-lines td {
+  border-right: 1px solid var(--border);
+}
 
+.data-table.grid-lines th:last-child,
+.data-table.grid-lines td:last-child {
+  border-right: none;
+}
+
+/* ==========================================================================
+   FOOTER (Timestamp & Page Number Only)
+   ========================================================================== */
+
+.report-footer,
 .footer {
-  width: 100%;
-  margin: 15px 0 0;
-  padding: 9px 0 0;
-  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+  font-size: 7.5pt;
   color: var(--muted);
-  font-size: 9px;
-  line-height: 1.5;
-  text-align: center;
+  font-weight: 600;
   page-break-inside: avoid;
   break-inside: avoid;
-  overflow-wrap: anywhere;
 }
 
-/* Support the alternate footer class used by some report layouts. */
-.report-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 7px 14px;
-  width: 100%;
-  margin: 15px 0 0;
-  padding: 9px 0 0;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 8.5px;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.report-footer > * {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-/* =========================
-   SQL BLOCK
-========================= */
+/* ==========================================================================
+   OPTIONAL SQL BLOCK
+   ========================================================================== */
 
 .sql-block {
-  width: 100%;
-  min-width: 0;
-  margin: 18px 0 0;
-  padding: 0;
-  overflow: hidden;
+  margin-top: 12px;
   background: #f8fafc;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 10px;
+  border-radius: 6px;
+  padding: 8px 12px;
   page-break-inside: avoid;
   break-inside: avoid;
 }
 
 .sql-label {
-  margin: 0;
-  padding: 7px 10px;
-  color: #243247;
-  background: var(--table-head);
-  border-bottom: 2px solid #c5a15a;
-  font-size: 9px;
-  font-weight: 800;
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
 }
 
-.sql-block pre,
 .sql-pre {
-  max-width: 100%;
   margin: 0;
-  padding: 10px;
-  color: var(--text);
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 8px;
-  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 7pt;
+  color: #334155;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: break-all;
 }
 
-/* =========================
-   PRINT
-========================= */
+/* ==========================================================================
+   PRINT MEDIA RULES
+   ========================================================================== */
 
 @page {
   size: A4 portrait;
-  margin: 12mm 14mm;
+  margin: 10mm 12mm 12mm 12mm;
 }
 
 @media print {
   html,
   body {
-    width: auto;
-    height: auto;
-    margin: 0;
-    padding: 0;
-    background: #fff !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
     overflow: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 
+  .pdf-page-sheet,
+  .page,
   .content {
-    width: auto;
-    max-width: none;
-    margin: 0;
-    padding: 0;
-    overflow: visible;
-    background: #fff !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .document-frame {
+    display: none !important;
+  }
+
+  .watermark-area {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
+  }
+
+  .watermark-text {
+    opacity: 0.055 !important;
   }
 
   .school-header,
   .document-heading,
-  .footer,
   .report-footer,
   .sql-block {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .data-table-wrap {
-    overflow: visible !important;
-  }
-
   .data-table {
-    width: 100%;
-    max-width: 100%;
-    font-size: 8.5px;
+    page-break-inside: auto;
   }
 
-  .data-table thead {
-    display: table-header-group;
-  }
-
-  .data-table th {
-    background: var(--table-head) !important;
-    color: var(--table-head-text) !important;
-  }
-
-  .data-table tbody tr:nth-child(even) {
-    background: var(--row-alt) !important;
-  }
-
-  .data-table a {
-    color: inherit;
-    text-decoration: none;
+  .data-table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }

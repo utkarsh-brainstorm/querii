@@ -291,22 +291,61 @@ def _build_pdf_html(
           <pre class="sql-pre">{sql_lines}</pre>
         </section>"""
 
-    # ── generated date ────────────────────────────────────────────────────────
+    # ── generated date & watermark text ───────────────────────────────────────
     gen_date = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    org_display = he(org_name) if org_name else "Querii Executive"
-    logo_markup = (
-        f'<div class="report-logo-frame"><img src="{logo_src}" alt="Logo" class="report-logo"></div>'
+    org_display = he(org_name) if org_name else "Querii"
+    wm_text = (org_name.upper() + " • ") if org_name else "QUERII • "
+    logo_img_header = (
+        f'<img src="{logo_src}" alt="Logo" class="school-logo report-logo" onerror="this.style.visibility=\'hidden\';">'
         if logo_src
         else ""
     )
-    source_item = (
-        f'<div class="meta-item"><span class="meta-lbl">Dataset</span><span class="meta-val">{he(source_label)}</span></div>'
-        if source_label
+    logo_img_watermark = (
+        f'<img src="{logo_src}" class="logo-watermark" alt="">'
+        if logo_src
         else ""
     )
 
     body_data_weight = "700" if bold_data else "400"
     grid_lines_class = " grid-lines" if show_grid_lines else ""
+
+    watermark_script = f"""
+  <script>
+    (function generateDenseWatermark() {{
+      var area = document.getElementById('watermarkArea');
+      var text = document.getElementById('watermarkText');
+      if (!area || !text) return;
+      var w = (area.clientWidth || 800) * 2.2;
+      var h = (area.clientHeight || 1150) * 2.2;
+      text.style.width = w + 'px';
+      text.style.height = h + 'px';
+      var wt = {json.dumps(wm_text)};
+      var probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-family:"Plus Jakarta Sans",sans-serif;font-size:12px;font-weight:800;letter-spacing:.5px;';
+      probe.textContent = wt;
+      document.body.appendChild(probe);
+      var tw = probe.getBoundingClientRect().width || 180;
+      probe.remove();
+      var rowH = 22;
+      var rows = Math.ceil(h / rowH) + 14;
+      var cols = Math.ceil(w / tw) + 14;
+      var frag = document.createDocumentFragment();
+      for (var r = 0; r < rows; r++) {{
+        var row = document.createElement('div');
+        row.className = 'watermark-row';
+        if (r % 2) row.style.transform = 'translateX(-40px)';
+        for (var c = 0; c < cols; c++) {{
+          var sp = document.createElement('span');
+          sp.className = 'watermark-item';
+          sp.textContent = wt;
+          row.appendChild(sp);
+        }}
+        frag.appendChild(row);
+      }}
+      text.appendChild(frag);
+    }})();
+  </script>
+"""
 
     resize_script = """
   <script>
@@ -440,17 +479,21 @@ def _build_pdf_html(
     :root {{
       --page-w: {pw};
       --page-h: {ph};
-      --navy: #090d16;
+      --paper: #ffffff;
+      --screen-bg: #e7ebf0;
+      --navy: #0f172a;
       --navy-light: #1e293b;
-      --accent: #2563eb;
-      --accent-subtle: #eff6ff;
-      --border: #e2e8f0;
-      --border-dark: #cbd5e1;
-      --text: #090d16;
-      --text-muted: #64748b;
+      --gold: #b7791f;
+      --accent: #b7791f;
+      --text: #111827;
+      --muted: #64748b;
+      --border: #cbd5e1;
+      --border-light: #e2e8f0;
+      --border-dark: #94a3b8;
       --row-alt: #f8fafc;
-      --table-head-bg: #090d16;
+      --table-head-bg: #0f172a;
       --table-head-text: #ffffff;
+      --header-bg: #f8fafc;
       --data-font-weight: {body_data_weight};
     }}
 
@@ -467,7 +510,7 @@ def _build_pdf_html(
       color: var(--text);
       font-family: 'Libron', Georgia, serif;
       font-size: 8.5pt;
-      line-height: 1.4;
+      line-height: 1.35;
       -webkit-font-smoothing: antialiased;
       {'width: 100%; height: 100%; overflow: auto;' if is_preview else ''}
     }}
@@ -475,132 +518,185 @@ def _build_pdf_html(
     {'/* Studio Viewport for Preview */ .preview-viewport { display: block; text-align: center; padding: 28px 24px 48px; min-width: max-content; margin: 0 auto; box-sizing: border-box; }' if is_preview else ''}
 
     /* Paper Page Sheet (Authentic Physical Preview) */
-    .pdf-page-sheet {{
+    .pdf-page-sheet, .page {{
       {'display: inline-block; vertical-align: top; text-align: left;' if is_preview else ''}
       width: {'var(--page-w)' if is_preview else '100%'};
       {'height: var(--page-h); max-height: var(--page-h); overflow: hidden; transform-origin: top center; transition: transform 0.15s ease-out;' if is_preview else 'min-height: 0;'}
       max-width: {'var(--page-w)' if is_preview else '100%'};
       background: #ffffff;
-      padding: {'14mm 16mm' if is_preview else '0'};
+      padding: {'12mm 14mm' if is_preview else '0'};
       box-sizing: border-box;
       position: relative;
       {'border: 1px solid #94a3b8; box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15); border-radius: 2px;' if is_preview else ''}
     }}
 
-    /* Premium Masthead */
-    .masthead {{
-      border-top: 3.5px solid var(--navy);
-      padding-top: 14px;
-      margin-bottom: 18px;
-      border-bottom: 1.5px solid var(--navy);
-      padding-bottom: 14px;
-      break-inside: avoid;
+    /* Document border frame */
+    .document-frame {{
+      position: absolute;
+      top: 6mm;
+      right: 6mm;
+      bottom: 6mm;
+      left: 6mm;
+      border: 1.2px solid #9ca8b7;
+      pointer-events: none;
+      z-index: 30;
     }}
-    .masthead-inner {{
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 20px;
+    .document-frame::after {{
+      content: "";
+      position: absolute;
+      top: 2mm;
+      right: 2mm;
+      bottom: 2mm;
+      left: 2mm;
+      border: .5px solid #e1e6eb;
     }}
-    .brand-col {{
+
+    /* Watermark */
+    .watermark-area {{
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }}
+    .watermark-text {{
+      position: absolute;
+      left: -30%;
+      top: -30%;
       display: flex;
+      flex-direction: column;
+      transform: rotate(-28deg);
+      opacity: .055;
+      z-index: 1;
+    }}
+    .watermark-row {{
+      display: flex;
+      flex-shrink: 0;
       align-items: center;
-      gap: 14px;
+      height: 22px;
+      white-space: nowrap;
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 22px;
+      letter-spacing: .5px;
+      color: #475569;
     }}
-    .report-logo-frame {{
-      width: 48px;
-      height: 48px;
-      border: 1px solid var(--border-dark);
-      border-radius: 6px;
-      padding: 3px;
-      background: #fff;
+    .watermark-item {{
+      flex-shrink: 0;
+    }}
+    .logo-watermark-zone {{
+      position: absolute;
+      width: 140mm;
+      height: 140mm;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
+      background: transparent;
+      border-radius: 50%;
+      z-index: 5;
     }}
-    .report-logo {{
-      width: 100%;
-      height: 100%;
+    .logo-watermark {{
+      width: 140mm;
+      height: 140mm;
       object-fit: contain;
-    }}
-    .kicker {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 6.5pt;
-      font-weight: 800;
-      letter-spacing: 0.14em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      margin-bottom: 3px;
-    }}
-    .org-title {{
-      margin: 0;
-      font-size: 19pt;
-      font-weight: 700;
-      color: var(--navy);
-      letter-spacing: -0.015em;
-      line-height: 1.15;
-    }}
-    .report-title {{
-      margin-top: 4px;
-      font-size: 11pt;
-      font-weight: 400;
-      color: #334155;
-      line-height: 1.3;
-    }}
-    .meta-matrix {{
-      display: flex;
-      gap: 16px;
-      text-align: right;
-      align-items: flex-end;
-      flex-shrink: 0;
-    }}
-    .meta-item {{
-      display: flex;
-      flex-direction: column;
-    }}
-    .meta-lbl {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 6pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #94a3b8;
-      margin-bottom: 2px;
-    }}
-    .meta-val {{
-      font-size: 8pt;
-      font-weight: 700;
-      color: var(--navy);
-    }}
-    .badge-count {{
-      display: inline-block;
-      padding: 3px 8px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 7.5pt;
-      font-weight: 700;
-      color: #1e293b;
-      white-space: nowrap;
+      opacity: .045;
+      filter: grayscale(100%);
     }}
 
-    /* Data Table */
+    /* Keep content above watermark */
+    .pdf-page-sheet > *:not(.watermark-area):not(.document-frame) {{
+      position: relative;
+      z-index: 10;
+    }}
+
+    /* Organisation Header */
+    .school-header, .masthead {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 12px 20px;
+      background: var(--header-bg);
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--gold);
+      border-radius: 10px;
+      margin-bottom: 14px;
+      text-align: center;
+      break-inside: avoid;
+    }}
+    .school-logo, .report-logo {{
+      width: 60px;
+      height: 60px;
+      object-fit: contain;
+      flex-shrink: 0;
+      border-radius: 6px;
+    }}
+    .school-info {{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }}
+    .school-info h2, .org-title {{
+      margin: 0;
+      font-family: 'Libron', Georgia, serif;
+      font-size: 21px;
+      line-height: 1.2;
+      font-weight: 800;
+      color: var(--navy);
+      letter-spacing: -0.01em;
+    }}
+
+    /* Document Heading */
+    .document-heading {{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2px 0 10px;
+      margin-bottom: 14px;
+      text-align: center;
+      border-bottom: 2px solid var(--navy);
+      break-inside: avoid;
+    }}
+    .heading-accent {{
+      width: 48px;
+      height: 3px;
+      margin-bottom: 6px;
+      background: var(--gold);
+      border-radius: 4px;
+    }}
+    .title, .report-title {{
+      margin: 0;
+      width: 100%;
+      font-family: 'Libron', Georgia, serif;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 800;
+      color: var(--navy);
+    }}
+
+    /* Data Table — Compact Apple-style with high density */
     .data-table-wrap {{
       width: 100%;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }}
     .data-table {{
-      table-layout: fixed;
       width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
       border-spacing: 0;
       font-family: 'Libron', Georgia, serif;
-      font-size: 8pt;
-      border: 1px solid var(--border-dark);
-      border-radius: 4px;
+      font-size: 8.5pt;
+      line-height: 1.3;
+      border: 1px solid var(--border);
+      border-radius: 8px;
       overflow: hidden;
+      table-layout: auto;
     }}
     .data-table thead {{
       display: table-header-group;
@@ -609,25 +705,28 @@ def _build_pdf_html(
       position: relative;
       background: var(--table-head-bg);
       color: var(--table-head-text);
+      padding: 6px 7px;
       font-weight: 700;
-      font-size: 7.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 8px 10px;
+      font-size: 8pt;
       text-align: left;
-      border-bottom: 2px solid var(--accent);
+      border-bottom: 2px solid var(--gold);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
     }}
+    .data-table thead th:first-child {{ border-top-left-radius: 7px; }}
+    .data-table thead th:last-child  {{ border-top-right-radius: 7px; }}
+
     .data-table tbody tr {{
       break-inside: avoid;
       page-break-inside: avoid;
     }}
     .data-table tbody td {{
-      padding: 6.5px 10px;
-      border-bottom: 1px solid var(--border);
-      color: #1e293b;
+      padding: 5px 7px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text);
       vertical-align: middle;
       font-variant-numeric: tabular-nums;
       font-weight: var(--data-font-weight);
@@ -637,14 +736,19 @@ def _build_pdf_html(
     .data-table tbody tr:nth-child(even) {{
       background: var(--row-alt);
     }}
+    .data-table tbody tr:hover {{
+      background: #f1f5f9;
+    }}
     .data-table tbody tr:last-child td {{
       border-bottom: none;
     }}
+    .data-table tbody tr:last-child td:first-child {{ border-bottom-left-radius: 7px; }}
+    .data-table tbody tr:last-child td:last-child  {{ border-bottom-right-radius: 7px; }}
 
     /* Vertical grid lines when enabled */
     .data-table.grid-lines th,
     .data-table.grid-lines td {{
-      border-right: 1px solid var(--border-dark);
+      border-right: 1px solid var(--border);
     }}
     .data-table.grid-lines th:last-child,
     .data-table.grid-lines td:last-child {{
@@ -669,24 +773,25 @@ def _build_pdf_html(
       background: rgba(37, 99, 235, 0.7);
     }}
 
-    /* Footer */
+    /* Footer — Timestamp and Page Number only */
     .report-footer {{
-      margin-top: 14px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-light);
       font-size: 7.5pt;
-      color: var(--text-muted);
+      color: var(--muted);
       font-weight: 600;
       break-inside: avoid;
     }}
 
     /* SQL Box */
     .sql-block {{
-      margin-top: 14px;
+      margin-top: 12px;
       background: #f8fafc;
-      border: 1px solid var(--border-dark);
+      border: 1px solid var(--border);
       border-radius: 6px;
       padding: 8px 12px;
       break-inside: avoid;
@@ -695,7 +800,7 @@ def _build_pdf_html(
       font-size: 7pt;
       font-weight: 700;
       text-transform: uppercase;
-      color: var(--text-muted);
+      color: var(--muted);
       letter-spacing: 0.05em;
       margin-bottom: 4px;
     }}
@@ -711,7 +816,7 @@ def _build_pdf_html(
     /* Print Rules */
     @page {{
       size: {css_page_size};
-      margin: 12mm 14mm 14mm 14mm;
+      margin: 10mm 12mm 12mm 12mm;
     }}
     @media print {{
       html, body {{
@@ -725,7 +830,7 @@ def _build_pdf_html(
         display: block !important;
         min-width: 0 !important;
       }}
-      .pdf-page-sheet {{
+      .pdf-page-sheet, .page {{
         width: 100% !important;
         max-width: 100% !important;
         height: auto !important;
@@ -738,11 +843,36 @@ def _build_pdf_html(
         overflow: visible !important;
         transform: none !important;
       }}
+      .document-frame {{
+        display: none !important;
+      }}
+      .watermark-area {{
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+        z-index: 0 !important;
+      }}
+      .watermark-text {{
+        opacity: .055 !important;
+      }}
       .col-resize-handle, .page-indicator {{
         display: none !important;
       }}
-      .data-table thead {{
-        display: table-header-group;
+      .school-header, .document-heading, .report-footer {{
+        break-inside: avoid;
+      }}
+      .data-table {{
+        page-break-inside: auto;
+      }}
+      .data-table tr {{
+        page-break-inside: avoid;
+        break-inside: avoid;
       }}
     }}
 
@@ -758,31 +888,33 @@ def _build_pdf_html(
   </style>
 </head>
 {"<body>" if not is_preview else '<body><div class="preview-viewport">'}
-  <main class="pdf-page-sheet" id="pdfPageSheet">
-    <header class="masthead">
-      <div class="masthead-inner">
-        <div class="brand-col">
-          {logo_markup}
-          <div>
-            <div class="kicker">EXECUTIVE AUDIT DISPATCH • CONFIDENTIAL</div>
-            <h1 class="org-title">{org_display}</h1>
-            <div class="report-title">{he(title)}</div>
-          </div>
-        </div>
-        <div class="meta-matrix">
-          <div class="meta-item">
-            <span class="meta-lbl">Date Issued</span>
-            <span class="meta-val">{gen_date}</span>
-          </div>
-          {source_item}
-          <div class="meta-item">
-            <span class="meta-lbl">Total Output</span>
-            <span class="badge-count">{total_records:,} Records</span>
-          </div>
-        </div>
+  <main class="pdf-page-sheet page" id="pdfPageSheet">
+    <!-- Document border frame -->
+    <div class="document-frame" aria-hidden="true"></div>
+
+    <!-- Background Watermark -->
+    <div class="watermark-area" id="watermarkArea" aria-hidden="true">
+      <div class="watermark-text" id="watermarkText"></div>
+      <div class="logo-watermark-zone">
+        {logo_img_watermark}
+      </div>
+    </div>
+
+    <!-- Organisation Header -->
+    <header class="school-header masthead">
+      {logo_img_header}
+      <div class="school-info">
+        <h2 class="org-title">{org_display}</h2>
       </div>
     </header>
 
+    <!-- Document Heading -->
+    <section class="document-heading">
+      <div class="heading-accent"></div>
+      <h1 class="title report-title">{he(title)}</h1>
+    </section>
+
+    <!-- Data Table -->
     <div class="data-table-wrap">
       <table class="data-table{grid_lines_class}">
         <colgroup>{col_group}</colgroup>
@@ -791,9 +923,10 @@ def _build_pdf_html(
       </table>
     </div>
 
+    <!-- Footer -->
     <footer class="report-footer">
-      <div>Querii  •  Executive Analytics Platform</div>
-      <div>Total Records: {total_records:,}  •  Page 1</div>
+      <div class="footer-timestamp">Generated: {gen_date}</div>
+      <div class="footer-page">Page 1 of 1</div>
     </footer>
 
     {sql_block}
@@ -802,6 +935,7 @@ def _build_pdf_html(
     ── Page 1 Physical Paper Boundary ({pw} × {ph}) ──
   </div>
 </div>''' if is_preview else ""}
+  {watermark_script}
   {resize_script if is_preview else ""}
 </body>
 </html>"""
