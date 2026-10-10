@@ -53,11 +53,64 @@ function _dApi(method) {
 /* ══════════════════════════════════════════════════════════════════════════
    OPEN / CLOSE
    ══════════════════════════════════════════════════════════════════════════ */
+function _devComputeDefaultSpecs(cols, rows) {
+  var widths = {};
+  var headers = {};
+  var weights = {};
+  cols.forEach(function(c) {
+    var hStr = String(c);
+    var hLen = hStr.length;
+    var maxContentLen = 0;
+    if (rows && rows.length) {
+      for (var i = 0; i < rows.length; i++) {
+        var val = rows[i][c];
+        if (val !== undefined && val !== null) {
+          var sLen = String(val).length;
+          if (sLen > maxContentLen) maxContentLen = sLen;
+        }
+      }
+    }
+
+    var dispName = hStr;
+    var effW = 3;
+    if (hLen < 5 && maxContentLen < 5) {
+      dispName = hStr;
+      effW = Math.max(hLen, maxContentLen, 3);
+    } else if (maxContentLen < hLen && hLen > 5) {
+      var truncLen = Math.max(3, Math.min(hLen - 2, Math.max(4, maxContentLen)));
+      dispName = hStr.substring(0, truncLen) + '..';
+      effW = Math.max(dispName.length, maxContentLen, 3);
+    } else {
+      dispName = hStr;
+      effW = Math.max(maxContentLen, 3);
+    }
+    weights[c] = { w: effW, name: dispName };
+  });
+
+  var totalW = 0;
+  cols.forEach(function(c) { totalW += weights[c].w; });
+  if (totalW <= 0) totalW = 1;
+
+  var rem = 100.0;
+  cols.forEach(function(c, i) {
+    if (i === cols.length - 1) {
+      widths[c] = Math.max(3, Math.round(rem * 10) / 10);
+    } else {
+      var pct = Math.max(3, Math.round((weights[c].w / totalW) * 1000) / 10);
+      widths[c] = pct;
+      rem -= pct;
+    }
+    headers[c] = weights[c].name;
+  });
+  return { widths: widths, headers: headers };
+}
+
 function openUltraDevMode() {
   // Seed state from export dialog if open
   var titleEl = document.getElementById('pdf-title');
   var sizeEl  = document.getElementById('pdf-page-size');
   var orntEl  = document.getElementById('pdf-orientation');
+  var scaleEl = document.getElementById('pdf-scale');
   var sqEl    = document.getElementById('logo-sq-img');
   var imgEl   = document.getElementById('logo-img');
   var orgEl   = document.getElementById('s-org-name');
@@ -69,6 +122,7 @@ function openUltraDevMode() {
   _dev.title   = (titleEl && titleEl.value) || 'Query Results';
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
   _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
+  _dev.scale   = scaleEl ? (parseFloat(scaleEl.value) || 1.0) : 1.0;
   _dev.orgName = (orgEl   && orgEl.value)   || '';
   _dev.css     = (devCssEl && devCssEl.value) || (cssEl && cssEl.value) || (typeof _pdfCustomCss !== 'undefined' ? _pdfCustomCss : '');
   _dev.boldData= boldEl ? boldEl.checked : false;
@@ -79,12 +133,14 @@ function openUltraDevMode() {
   // Columns from last result
   _dev.cols = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.columns) ? _lastResults.columns.slice() : [];
   if (!_dev.cols.length && typeof _lastResultCols !== 'undefined') _dev.cols = (_lastResultCols || []).slice();
+  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
 
-  // Reset col state only if cols changed
-  var needReset = !_dev.colVisible || Object.keys(_dev.colWidths).some(function(k){ return _dev.cols.indexOf(k) < 0; });
+  // Reset col state only if cols changed or empty
+  var needReset = !_dev.colVisible || Object.keys(_dev.colWidths).length === 0 || Object.keys(_dev.colWidths).some(function(k){ return _dev.cols.indexOf(k) < 0; });
   if (needReset) {
-    _dev.colWidths  = {};
-    _dev.colHeaders = {};
+    var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows);
+    _dev.colWidths  = defaultSpecs.widths;
+    _dev.colHeaders = defaultSpecs.headers;
     _dev.colVisible = null;
   }
 
@@ -161,6 +217,14 @@ function _devRenderDocControls() {
         '<label class="dev-radio' + (_dev.orient==='portrait'  ?' active':'') + '"><input type="radio" name="dev-orient" value="portrait"'  + (_dev.orient==='portrait' ?' checked':'') + ' onchange="window._devOnOrient(this.value)"> Portrait</label>' +
         '<label class="dev-radio' + (_dev.orient==='landscape' ?' active':'') + '"><input type="radio" name="dev-orient" value="landscape"' + (_dev.orient==='landscape'?' checked':'') + ' onchange="window._devOnOrient(this.value)"> Landscape</label>' +
       '</div>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Content Scale</label>' +
+      '<select id="dev-content-scale" class="dev-select" onchange="window._devOnScale(this.value)">' +
+        [['1.0','100% (normal)'],['0.8','80% (compact)'],['0.6','60% (tiny)'],['1.2','120% (large)']].map(function(s){
+          return '<option value="' + s[0] + '"' + (parseFloat(s[0]) === (_dev.scale || 1.0) ? ' selected' : '') + '>' + s[1] + '</option>';
+        }).join('') +
+      '</select>' +
     '</div>' +
     '<div class="dev-field-row">' +
       '<label class="dev-lbl">Table Text</label>' +
@@ -242,9 +306,16 @@ window._devDistributeEvenly = function() {
   _dToast('Columns distributed evenly (' + equalW + '%)');
 };
 
+window._devOnScale = function(val) {
+  _dev.scale = parseFloat(val) || 1.0;
+  _devRefreshPreviewDebounced(150);
+};
+
 window._devResetColumns = function() {
-  _dev.colWidths = {};
-  _dev.colHeaders = {};
+  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows);
+  _dev.colWidths  = defaultSpecs.widths;
+  _dev.colHeaders = defaultSpecs.headers;
   _dev.colVisible = null;
   _devRenderColControls();
   _devRefreshPreviewDebounced(150);
@@ -267,6 +338,11 @@ window._devApplyPreset = function(presetName) {
     if (editor) editor.value = _dev.css;
     var fileEd = document.getElementById('dev-file-editor');
     if (fileEd && _dev.fileTab === 'style.css') fileEd.value = _dev.css;
+    var sInp = document.getElementById('s-pdf-custom-css');
+    if (sInp) sInp.value = _dev.css;
+    var pdfCssInp = document.getElementById('pdf-custom-css');
+    if (pdfCssInp) pdfCssInp.value = _dev.css;
+    if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = _dev.css;
     _devRefreshPreviewDebounced(150);
     _dToast('Applied complete preset: ' + presetName);
   }
@@ -503,7 +579,7 @@ function _devRefreshPreview() {
 
   _dApi('get_pdf_html_preview',
     _dev.title, _dev.orgName, _dev.logo, _dev.css,
-    _dev.pageSize, _dev.orient,
+    _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
     _dev.boldData, _dev.showGridLines
   ).then(function(r) {
@@ -621,7 +697,7 @@ window._devExportPdf = function() {
     return _dApi('export_pdf_html',
       filepath, _dev.title, org, _dev.logo,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
-      '', _dev.css, _dev.pageSize, _dev.orient,
+      '', _dev.css, _dev.pageSize, _dev.orient, _dev.scale || 1.0,
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
       _dev.boldData, _dev.showGridLines
     );

@@ -177,6 +177,67 @@ def _find_chromium() -> Optional[str]:
     return None
 
 
+def compute_default_col_specs(
+    columns: List[str],
+    rows: List[Dict],
+) -> tuple[Dict[str, float], Dict[str, str]]:
+    """
+    Compute default column widths and header labels:
+    1. Base column width is decided by the longest string that column has (not the header).
+    2. If header has < 5 chars AND largest content is also < 5 chars:
+       Keep width according to header (label remains unchanged).
+    3. If content is smaller than header AND header is > 5 chars:
+       Name the header as abbreviated 'abcd..' so long headers don't bloat the column.
+    4. Otherwise: width is decided by largest content string.
+    """
+    col_widths: Dict[str, float] = {}
+    col_headers: Dict[str, str] = {}
+    char_weights: Dict[str, tuple[float, str]] = {}
+
+    for c in columns:
+        h_str = str(c)
+        h_len = len(h_str)
+        max_content_len = 0
+        if rows:
+            for r in rows:
+                val = r.get(c, "")
+                if val is not None:
+                    s_len = len(str(val))
+                    if s_len > max_content_len:
+                        max_content_len = s_len
+
+        # Rule 1: header < 5 chars AND largest content < 5 chars -> keep width according to header
+        if h_len < 5 and max_content_len < 5:
+            display_name = h_str
+            effective_w = max(h_len, max_content_len, 3)
+        # Rule 2: content < header AND header > 5 chars -> name header as 'abcd..'
+        elif max_content_len < h_len and h_len > 5:
+            trunc_len = max(3, min(h_len - 2, max(4, max_content_len)))
+            display_name = h_str[:trunc_len] + ".."
+            effective_w = max(len(display_name), max_content_len, 3)
+        # Rule 3: general case -> width according to longest string in content
+        else:
+            display_name = h_str
+            effective_w = max(max_content_len, 3)
+
+        char_weights[c] = (effective_w, display_name)
+
+    total_weight = sum(w for w, _ in char_weights.values()) or 1.0
+    rem = 100.0
+    for i, c in enumerate(columns):
+        w, disp = char_weights[c]
+        if i == len(columns) - 1:
+            pct = round(max(3.0, rem), 1)
+        else:
+            pct = round((w / total_weight) * 100.0, 1)
+            pct = max(3.0, pct)
+            rem -= pct
+        col_widths[c] = pct
+        col_headers[c] = disp
+
+    return col_widths, col_headers
+
+
 def _build_pdf_html(
     columns: List[str],
     rows: List[Dict],
@@ -188,6 +249,7 @@ def _build_pdf_html(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    scale: float = 1.0,
     col_widths: Optional[Dict[str, float]] = None,
     col_headers: Optional[Dict[str, str]] = None,
     col_visible: Optional[List[str]] = None,
@@ -200,12 +262,31 @@ def _build_pdf_html(
     Build a complete, standalone, executive-grade HTML string for high-fidelity printing.
     Uses Libron font typography, executive masthead, and exact physical page sheet geometry.
     """
+    scale = max(0.4, min(2.0, float(scale or 1.0)))
+    if custom_css and "\\n" in custom_css and "\n" not in custom_css:
+        custom_css = custom_css.replace("\\n", "\n")
+
     # ── column filtering & labelling ──────────────────────────────────────────
     if col_visible is not None:
         vis_set = set(col_visible)
         columns = [c for c in columns if c in vis_set]
-    col_widths = col_widths or {}
-    col_headers = col_headers or {}
+
+    default_widths, default_headers = compute_default_col_specs(columns, rows)
+    if not col_widths:
+        col_widths = default_widths
+    else:
+        col_widths = dict(col_widths)
+        for c in columns:
+            if c not in col_widths:
+                col_widths[c] = default_widths.get(c, round(100.0 / max(len(columns), 1), 1))
+
+    if not col_headers:
+        col_headers = default_headers
+    else:
+        col_headers = dict(col_headers)
+        for c in columns:
+            if c not in col_headers:
+                col_headers[c] = default_headers.get(c, c)
 
     total_records = len(rows)
 
@@ -528,6 +609,7 @@ def _build_pdf_html(
       box-sizing: border-box;
       position: relative;
       {'border: 1px solid #94a3b8; box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15); border-radius: 2px;' if is_preview else ''}
+      zoom: {scale};
     }}
 
     /* Document border frame */
@@ -732,11 +814,12 @@ def _build_pdf_html(
       font-weight: var(--data-font-weight);
       word-break: break-word;
       overflow-wrap: break-word;
+      background: #ffffff;
     }}
-    .data-table tbody tr:nth-child(even) {{
+    .data-table tbody tr:nth-child(even) td {{
       background: var(--row-alt);
     }}
-    .data-table tbody tr:hover {{
+    .data-table tbody tr:hover td {{
       background: #f1f5f9;
     }}
     .data-table tbody tr:last-child td {{
@@ -824,6 +907,7 @@ def _build_pdf_html(
         padding: 0 !important;
         margin: 0 !important;
         display: block !important;
+        zoom: {scale} !important;
       }}
       .preview-viewport {{
         padding: 0 !important;
@@ -857,6 +941,7 @@ def _build_pdf_html(
         overflow: hidden !important;
         pointer-events: none !important;
         z-index: 0 !important;
+        zoom: 1 !important;
       }}
       .watermark-text {{
         opacity: .055 !important;
@@ -954,6 +1039,7 @@ def export_pdf_html(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    scale: float = 1.0,
     col_widths: Dict[str, float] = None,
     col_headers: Dict[str, str] = None,
     col_visible: List[str] = None,
@@ -972,7 +1058,7 @@ def export_pdf_html(
             columns=columns, rows=rows, filepath=filepath,
             title=title, org_name=org_name, logo_b64=logo_b64,
             sql_display=sql_display, source_label=source_label,
-            page_size=page_size, orientation=orientation,
+            page_size=page_size, orientation=orientation, scale=scale,
             col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         )
         return
@@ -981,6 +1067,7 @@ def export_pdf_html(
         columns=columns, rows=rows, title=title, org_name=org_name,
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
+        scale=scale,
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=False,
@@ -1021,7 +1108,7 @@ def export_pdf_html(
             columns=columns, rows=rows, filepath=filepath,
             title=title, org_name=org_name, logo_b64=logo_b64,
             sql_display=sql_display, source_label=source_label,
-            page_size=page_size, orientation=orientation,
+            page_size=page_size, orientation=orientation, scale=scale,
             col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         )
     finally:
@@ -1042,6 +1129,7 @@ def get_pdf_html_preview(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    scale: float = 1.0,
     col_widths: Optional[Dict[str, float]] = None,
     col_headers: Optional[Dict[str, str]] = None,
     col_visible: Optional[List[str]] = None,
@@ -1054,6 +1142,7 @@ def get_pdf_html_preview(
         columns=columns, rows=rows, title=title, org_name=org_name,
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
+        scale=scale,
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=True,

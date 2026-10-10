@@ -1868,35 +1868,572 @@ function exportPdf() {
   var cssSection = document.getElementById('pdf-css-section');
   if (cssSection) cssSection.classList.toggle('hidden', !_pdfDevMode);
 
-  // Restore html mode checkbox
+  // Default to HTML mode so rich templates, presets, and scaling are active
   var useHtmlEl = document.getElementById('pdf-use-html');
-  if (useHtmlEl) useHtmlEl.checked = false;
+  if (useHtmlEl) useHtmlEl.checked = true;
 
   openModal('modal-pdf-export');
 }
 
 /* ── PDF Presets & Default Style ─────────────────────────────────────── */
 var PDF_PRESETS = {
-  'executive': '/* ==========================================================================\\n   🏢 EXECUTIVE SLATE — Complete Style Template\\n   Inspired by Document_Template.html — High Data Density & Clean Elegance\\n   ========================================================================== */\\n:root {\\n  --paper: #ffffff;\\n  --screen-bg: #e7ebf0;\\n  --navy: #0f172a;\\n  --navy-light: #1e293b;\\n  --gold: #b7791f;\\n  --accent: #b7791f;\\n  --text: #111827;\\n  --muted: #64748b;\\n  --border: #cbd5e1;\\n  --border-light: #e2e8f0;\\n  --border-dark: #94a3b8;\\n  --row-alt: #f8fafc;\\n  --table-head-bg: #0f172a;\\n  --table-head-text: #ffffff;\\n  --header-bg: #f8fafc;\\n  --data-font-weight: 400;\\n}\\n\\n.pdf-page-sheet, .page {\\n  background: var(--paper);\\n  color: var(--text);\\n  font-family: \"Libron\", Georgia, serif;\\n}\\n.document-frame {\\n  border: 1.2px solid #9ca8b7;\\n}\\n.document-frame::after {\\n  border: 0.5px solid #e1e6eb;\\n}\\n\\n.school-header, .masthead {\\n  background: var(--header-bg);\\n  border: 1px solid var(--border);\\n  border-top: 3px solid var(--gold);\\n  border-radius: 10px;\\n  padding: 12px 20px;\\n  margin-bottom: 14px;\\n}\\n.school-logo, .report-logo {\\n  width: 60px;\\n  height: 60px;\\n}\\n.school-info h2, .org-title {\\n  color: var(--navy);\\n  font-family: \"Libron\", Georgia, serif;\\n  font-size: 21px;\\n  font-weight: 800;\\n  letter-spacing: -0.01em;\\n}\\n\\n.document-heading {\\n  border-bottom: 2px solid var(--navy);\\n  padding: 2px 0 10px;\\n  margin-bottom: 14px;\\n}\\n.heading-accent {\\n  background: var(--gold);\\n  width: 48px;\\n  height: 3px;\\n  border-radius: 4px;\\n}\\n.title, .report-title {\\n  color: var(--navy);\\n  font-family: \"Libron\", Georgia, serif;\\n  font-size: 22px;\\n  font-weight: 800;\\n}\\n\\n.data-table-wrap {\\n  margin-bottom: 12px;\\n}\\n.data-table {\\n  border: 1px solid var(--border);\\n  border-radius: 8px;\\n  font-size: 8.5pt;\\n  line-height: 1.3;\\n}\\n.data-table thead th {\\n  background: var(--table-head-bg);\\n  color: var(--table-head-text);\\n  border-bottom: 2px solid var(--gold);\\n  padding: 6px 7px;\\n  font-size: 8pt;\\n  font-weight: 700;\\n  text-transform: uppercase;\\n  letter-spacing: 0.03em;\\n}\\n.data-table tbody td {\\n  padding: 5px 7px;\\n  border-bottom: 1px solid var(--border-light);\\n  color: var(--text);\\n  font-variant-numeric: tabular-nums;\\n  word-break: break-word;\\n}\\n.data-table tbody tr:nth-child(even) {\\n  background: var(--row-alt);\\n}\\n.data-table tbody tr:hover {\\n  background: #f1f5f9;\\n}\\n\\n.report-footer {\\n  border-top: 1px solid var(--border-light);\\n  color: var(--muted);\\n  font-size: 7.5pt;\\n  padding-top: 8px;\\n  margin-top: 10px;\\n}',
+  'executive': `/* ==========================================================================
+   🏢 EXECUTIVE SLATE — Complete Style Template
+   Inspired by Document_Template.html — High Data Density & Clean Elegance
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --screen-bg: #e7ebf0;
+  --navy: #0f172a;
+  --navy-light: #1e293b;
+  --gold: #b7791f;
+  --accent: #b7791f;
+  --text: #111827;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #0f172a;
+  --table-head-text: #ffffff;
+  --header-bg: #f8fafc;
+  --data-font-weight: 400;
+}
 
-  'minimal': '/* ==========================================================================\\n   📰 FINANCIAL MINIMAL — Complete Style Template\\n   High-Clarity Monospace Tabular Design with Crisp Borders\\n   ========================================================================== */\\n:root {\\n  --paper: #ffffff;\\n  --navy: #1e293b;\\n  --navy-light: #334155;\\n  --gold: #64748b;\\n  --accent: #64748b;\\n  --text: #0f172a;\\n  --muted: #64748b;\\n  --border: #cbd5e1;\\n  --border-light: #e2e8f0;\\n  --border-dark: #94a3b8;\\n  --row-alt: #f8fafc;\\n  --table-head-bg: #f1f5f9;\\n  --table-head-text: #0f172a;\\n  --header-bg: #ffffff;\\n  --data-font-weight: 400;\\n}\\n\\n.pdf-page-sheet, .page {\\n  background: var(--paper);\\n  color: var(--text);\\n  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\\n}\\n.document-frame {\\n  border: 1px solid #cbd5e1;\\n}\\n.document-frame::after {\\n  display: none;\\n}\\n\\n.school-header, .masthead {\\n  background: var(--header-bg);\\n  border: 1px solid var(--border);\\n  border-top: 3px solid var(--navy);\\n  border-radius: 6px;\\n  padding: 10px 18px;\\n  margin-bottom: 12px;\\n}\\n.school-info h2, .org-title {\\n  color: var(--navy);\\n  font-size: 19px;\\n  font-weight: 700;\\n  letter-spacing: -0.02em;\\n}\\n.document-heading {\\n  border-bottom: 1.5px solid var(--border);\\n  padding: 2px 0 8px;\\n  margin-bottom: 12px;\\n}\\n.heading-accent {\\n  background: var(--navy);\\n  width: 36px;\\n  height: 2px;\\n}\\n.title, .report-title {\\n  color: var(--navy);\\n  font-size: 20px;\\n  font-weight: 700;\\n}\\n\\n.data-table-wrap {\\n  margin-bottom: 12px;\\n}\\n.data-table {\\n  border: 1px solid var(--border);\\n  border-radius: 4px;\\n  font-size: 8pt;\\n  line-height: 1.35;\\n}\\n.data-table thead th {\\n  background: var(--table-head-bg);\\n  color: var(--table-head-text);\\n  border-bottom: 2px solid #94a3b8;\\n  padding: 5.5px 7px;\\n  font-size: 7.5pt;\\n  font-weight: 700;\\n  text-transform: uppercase;\\n  letter-spacing: 0.04em;\\n}\\n.data-table tbody td {\\n  padding: 4.5px 7px;\\n  border-bottom: 1px solid var(--border-light);\\n  color: var(--text);\\n  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;\\n  font-variant-numeric: tabular-nums;\\n  word-break: break-word;\\n}\\n.data-table tbody tr:nth-child(even) {\\n  background: #fafafa;\\n}\\n\\n.report-footer {\\n  border-top: 1px solid var(--border);\\n  color: var(--muted);\\n  font-size: 7pt;\\n  padding-top: 6px;\\n  margin-top: 8px;\\n  font-family: ui-monospace, monospace;\\n}',
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: "Libron", Georgia, serif;
+}
+.document-frame {
+  border: 1.2px solid #9ca8b7;
+}
+.document-frame::after {
+  border: 0.5px solid #e1e6eb;
+}
 
-  'emerald': '/* ==========================================================================\\n   🌲 EMERALD CORPORATE — Complete Style Template\\n   Prestigious Deep Forest Emerald with Mint Accents\\n   ========================================================================== */\\n:root {\\n  --paper: #ffffff;\\n  --navy: #064e3b;\\n  --navy-light: #065f46;\\n  --gold: #059669;\\n  --accent: #059669;\\n  --text: #062b21;\\n  --muted: #047857;\\n  --border: #a7f3d0;\\n  --border-light: #d1fae5;\\n  --border-dark: #6ee7b7;\\n  --row-alt: #f0fdf4;\\n  --table-head-bg: #064e3b;\\n  --table-head-text: #ffffff;\\n  --header-bg: #f0fdf4;\\n  --data-font-weight: 400;\\n}\\n\\n.pdf-page-sheet, .page {\\n  background: var(--paper);\\n  color: var(--text);\\n  font-family: \"Libron\", Georgia, serif;\\n}\\n.document-frame {\\n  border: 1.2px solid #6ee7b7;\\n}\\n.document-frame::after {\\n  border: 0.5px solid #a7f3d0;\\n}\\n\\n.school-header, .masthead {\\n  background: var(--header-bg);\\n  border: 1px solid var(--border);\\n  border-top: 3px solid #059669;\\n  border-radius: 10px;\\n  padding: 12px 20px;\\n  margin-bottom: 14px;\\n}\\n.school-info h2, .org-title {\\n  color: var(--navy);\\n  font-family: \"Libron\", Georgia, serif;\\n  font-size: 21px;\\n  font-weight: 800;\\n}\\n.document-heading {\\n  border-bottom: 2px solid var(--navy);\\n  padding: 2px 0 10px;\\n  margin-bottom: 14px;\\n}\\n.heading-accent {\\n  background: #059669;\\n  width: 48px;\\n  height: 3px;\\n  border-radius: 4px;\\n}\\n.title, .report-title {\\n  color: var(--navy);\\n  font-family: \"Libron\", Georgia, serif;\\n  font-size: 22px;\\n  font-weight: 800;\\n}\\n\\n.data-table-wrap {\\n  margin-bottom: 12px;\\n}\\n.data-table {\\n  border: 1px solid var(--border);\\n  border-radius: 8px;\\n  font-size: 8.5pt;\\n  line-height: 1.3;\\n}\\n.data-table thead th {\\n  background: var(--table-head-bg);\\n  color: var(--table-head-text);\\n  border-bottom: 2px solid #059669;\\n  padding: 6px 7px;\\n  font-size: 8pt;\\n  font-weight: 700;\\n  text-transform: uppercase;\\n}\\n.data-table tbody td {\\n  padding: 5px 7px;\\n  border-bottom: 1px solid var(--border-light);\\n  color: var(--text);\\n  font-variant-numeric: tabular-nums;\\n  word-break: break-word;\\n}\\n.data-table tbody tr:nth-child(even) {\\n  background: var(--row-alt);\\n}\\n.data-table tbody tr:hover {\\n  background: #e6fcf0;\\n}\\n\\n.report-footer {\\n  border-top: 1px solid var(--border);\\n  color: #065f46;\\n  font-size: 7.5pt;\\n  padding-top: 8px;\\n  margin-top: 10px;\\n}',
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-logo, .report-logo {
+  width: 60px;
+  height: 60px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
 
-  'tech': '/* ==========================================================================\\n   🟣 MODERN TECH — Complete Style Template\\n   Indigo & Violet Executive Theme Inspired by Stripe and Linear\\n   ========================================================================== */\\n:root {\\n  --paper: #ffffff;\\n  --navy: #312e81;\\n  --navy-light: #3730a3;\\n  --gold: #6366f1;\\n  --accent: #6366f1;\\n  --text: #1e1b4b;\\n  --muted: #6366f1;\\n  --border: #c7d2fe;\\n  --border-light: #e0e7ff;\\n  --border-dark: #a5b4fc;\\n  --row-alt: #f5f3ff;\\n  --table-head-bg: #312e81;\\n  --table-head-text: #ffffff;\\n  --header-bg: #f5f3ff;\\n  --data-font-weight: 400;\\n}\\n\\n.pdf-page-sheet, .page {\\n  background: var(--paper);\\n  color: var(--text);\\n  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\\n}\\n.document-frame {\\n  border: 1.2px solid #a5b4fc;\\n}\\n.document-frame::after {\\n  border: 0.5px solid #c7d2fe;\\n}\\n\\n.school-header, .masthead {\\n  background: var(--header-bg);\\n  border: 1px solid var(--border);\\n  border-top: 3px solid #6366f1;\\n  border-radius: 10px;\\n  padding: 12px 20px;\\n  margin-bottom: 14px;\\n}\\n.school-info h2, .org-title {\\n  color: var(--navy);\\n  font-size: 20px;\\n  font-weight: 800;\\n  letter-spacing: -0.02em;\\n}\\n.document-heading {\\n  border-bottom: 2px solid var(--navy);\\n  padding: 2px 0 10px;\\n  margin-bottom: 14px;\\n}\\n.heading-accent {\\n  background: #6366f1;\\n  width: 44px;\\n  height: 3px;\\n  border-radius: 4px;\\n}\\n.title, .report-title {\\n  color: var(--navy);\\n  font-size: 21px;\\n  font-weight: 800;\\n}\\n\\n.data-table-wrap {\\n  margin-bottom: 12px;\\n}\\n.data-table {\\n  border: 1px solid var(--border);\\n  border-radius: 8px;\\n  font-size: 8.5pt;\\n  line-height: 1.3;\\n}\\n.data-table thead th {\\n  background: var(--table-head-bg);\\n  color: var(--table-head-text);\\n  border-bottom: 2px solid #6366f1;\\n  padding: 6px 7px;\\n  font-size: 8pt;\\n  font-weight: 700;\\n  text-transform: uppercase;\\n}\\n.data-table tbody td {\\n  padding: 5px 7px;\\n  border-bottom: 1px solid var(--border-light);\\n  color: var(--text);\\n  font-variant-numeric: tabular-nums;\\n  word-break: break-word;\\n}\\n.data-table tbody tr:nth-child(even) {\\n  background: var(--row-alt);\\n}\\n.data-table tbody tr:hover {\\n  background: #ede9fe;\\n}\\n\\n.report-footer {\\n  border-top: 1px solid var(--border);\\n  color: #4338ca;\\n  font-size: 7.5pt;\\n  padding-top: 8px;\\n  margin-top: 10px;\\n}',
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: var(--gold);
+  width: 48px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 22px;
+  font-weight: 800;
+}
 
-  'compact': '/* ==========================================================================\\n   📏 DENSE COMPACT — Complete Style Template\\n   Engineered for Maximum Data Density (7-12 Columns on A4 Portrait)\\n   ========================================================================== */\\n:root {\\n  --paper: #ffffff;\\n  --navy: #0f172a;\\n  --navy-light: #1e293b;\\n  --gold: #b7791f;\\n  --accent: #b7791f;\\n  --text: #0f172a;\\n  --muted: #64748b;\\n  --border: #cbd5e1;\\n  --border-light: #e2e8f0;\\n  --border-dark: #94a3b8;\\n  --row-alt: #f8fafc;\\n  --table-head-bg: #0f172a;\\n  --table-head-text: #ffffff;\\n  --header-bg: #f8fafc;\\n  --data-font-weight: 400;\\n}\\n\\n.pdf-page-sheet, .page {\\n  background: var(--paper);\\n  color: var(--text);\\n  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\\n  padding: 8mm 10mm;\\n}\\n.document-frame {\\n  border: 1px solid #cbd5e1;\\n}\\n\\n.school-header, .masthead {\\n  background: var(--header-bg);\\n  border: 1px solid var(--border);\\n  border-top: 2.5px solid var(--gold);\\n  border-radius: 6px;\\n  padding: 8px 14px;\\n  margin-bottom: 8px;\\n}\\n.school-info h2, .org-title {\\n  color: var(--navy);\\n  font-size: 16px;\\n  font-weight: 700;\\n}\\n.document-heading {\\n  border-bottom: 1.5px solid var(--navy);\\n  padding: 1px 0 6px;\\n  margin-bottom: 8px;\\n}\\n.heading-accent {\\n  background: var(--gold);\\n  width: 36px;\\n  height: 2px;\\n}\\n.title, .report-title {\\n  color: var(--navy);\\n  font-size: 17px;\\n  font-weight: 700;\\n}\\n\\n.data-table-wrap {\\n  margin-bottom: 8px;\\n}\\n.data-table {\\n  border: 1px solid var(--border);\\n  border-radius: 4px;\\n  font-size: 8pt;\\n  line-height: 1.25;\\n}\\n.data-table thead th {\\n  background: var(--table-head-bg);\\n  color: var(--table-head-text);\\n  border-bottom: 1.5px solid var(--gold);\\n  padding: 4px 5px;\\n  font-size: 7.5pt;\\n  font-weight: 700;\\n  text-transform: uppercase;\\n}\\n.data-table tbody td {\\n  padding: 3.5px 5px;\\n  border-bottom: 1px solid var(--border-light);\\n  color: var(--text);\\n  font-variant-numeric: tabular-nums;\\n  word-break: break-word;\\n}\\n.data-table tbody tr:nth-child(even) {\\n  background: var(--row-alt);\\n}\\n\\n.report-footer {\\n  border-top: 1px solid var(--border-light);\\n  color: var(--muted);\\n  font-size: 7pt;\\n  padding-top: 5px;\\n  margin-top: 6px;\\n}'
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid var(--gold);
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border-light);
+  color: var(--muted);
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'minimal': `/* ==========================================================================
+   📰 FINANCIAL MINIMAL — Complete Style Template
+   High-Clarity Monospace Tabular Design with Crisp Borders
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #1e293b;
+  --navy-light: #334155;
+  --gold: #64748b;
+  --accent: #64748b;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #f1f5f9;
+  --table-head-text: #0f172a;
+  --header-bg: #ffffff;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.document-frame {
+  border: 1px solid #cbd5e1;
+}
+.document-frame::after {
+  display: none;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--navy);
+  border-radius: 6px;
+  padding: 10px 18px;
+  margin-bottom: 12px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.document-heading {
+  border-bottom: 1.5px solid var(--border);
+  padding: 2px 0 8px;
+  margin-bottom: 12px;
+}
+.heading-accent {
+  background: var(--navy);
+  width: 36px;
+  height: 2px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 8pt;
+  line-height: 1.35;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #94a3b8;
+  padding: 5.5px 7px;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.data-table tbody td {
+  padding: 4.5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: #fafafa;
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 7pt;
+  padding-top: 6px;
+  margin-top: 8px;
+  font-family: ui-monospace, monospace;
+}`,
+
+  'emerald': `/* ==========================================================================
+   🌲 EMERALD CORPORATE — Complete Style Template
+   Prestigious Deep Forest Emerald with Mint Accents
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #064e3b;
+  --navy-light: #065f46;
+  --gold: #059669;
+  --accent: #059669;
+  --text: #062b21;
+  --muted: #047857;
+  --border: #a7f3d0;
+  --border-light: #d1fae5;
+  --border-dark: #6ee7b7;
+  --row-alt: #f0fdf4;
+  --table-head-bg: #064e3b;
+  --table-head-text: #ffffff;
+  --header-bg: #f0fdf4;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: "Libron", Georgia, serif;
+}
+.document-frame {
+  border: 1.2px solid #6ee7b7;
+}
+.document-frame::after {
+  border: 0.5px solid #a7f3d0;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid #059669;
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 21px;
+  font-weight: 800;
+}
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: #059669;
+  width: 48px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #059669;
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #e6fcf0;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: #065f46;
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'tech': `/* ==========================================================================
+   🟣 MODERN TECH — Complete Style Template
+   Indigo & Violet Executive Theme Inspired by Stripe and Linear
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #312e81;
+  --navy-light: #3730a3;
+  --gold: #6366f1;
+  --accent: #6366f1;
+  --text: #1e1b4b;
+  --muted: #6366f1;
+  --border: #c7d2fe;
+  --border-light: #e0e7ff;
+  --border-dark: #a5b4fc;
+  --row-alt: #f5f3ff;
+  --table-head-bg: #312e81;
+  --table-head-text: #ffffff;
+  --header-bg: #f5f3ff;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.document-frame {
+  border: 1.2px solid #a5b4fc;
+}
+.document-frame::after {
+  border: 0.5px solid #c7d2fe;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid #6366f1;
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: #6366f1;
+  width: 44px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #6366f1;
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #ede9fe;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: #4338ca;
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'compact': `/* ==========================================================================
+   📏 DENSE COMPACT — Complete Style Template
+   Engineered for Maximum Data Density (7-12 Columns on A4 Portrait)
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #0f172a;
+  --navy-light: #1e293b;
+  --gold: #b7791f;
+  --accent: #b7791f;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #0f172a;
+  --table-head-text: #ffffff;
+  --header-bg: #f8fafc;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 8mm 10mm;
+}
+.document-frame {
+  border: 1px solid #cbd5e1;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 2.5px solid var(--gold);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 700;
+}
+.document-heading {
+  border-bottom: 1.5px solid var(--navy);
+  padding: 1px 0 6px;
+  margin-bottom: 8px;
+}
+.heading-accent {
+  background: var(--gold);
+  width: 36px;
+  height: 2px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.data-table-wrap {
+  margin-bottom: 8px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 8pt;
+  line-height: 1.25;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 1.5px solid var(--gold);
+  padding: 4px 5px;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 3.5px 5px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border-light);
+  color: var(--muted);
+  font-size: 7pt;
+  padding-top: 5px;
+  margin-top: 6px;
+}`
 };
 window.PDF_PRESETS = PDF_PRESETS;
 
 function applyPdfPreset(name) {
   if (!PDF_PRESETS[name]) return;
+  var cssText = PDF_PRESETS[name];
   var useHtml = document.getElementById('pdf-use-html');
   if (useHtml) useHtml.checked = true;
   var section = document.getElementById('pdf-css-section');
   if (section) section.classList.remove('hidden');
   var cssEl = document.getElementById('pdf-custom-css');
-  if (cssEl) cssEl.value = PDF_PRESETS[name];
+  if (cssEl) cssEl.value = cssText;
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = cssText;
+  _pdfCustomCss = cssText;
   toast('Applied complete preset: ' + name);
 }
 
@@ -2258,7 +2795,7 @@ function confirmExportPdf() {
     var cBold   = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
     var cGrid   = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
 
-    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   } else {

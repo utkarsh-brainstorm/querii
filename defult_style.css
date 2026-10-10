@@ -302,13 +302,14 @@ body {
   font-weight: var(--data-font-weight, 400);
   word-break: break-word;
   overflow-wrap: break-word;
+  background: #ffffff;
 }
 
-.data-table tbody tr:nth-child(even) {
+.data-table tbody tr:nth-child(even) td {
   background: var(--row-alt);
 }
 
-.data-table tbody tr:hover {
+.data-table tbody tr:hover td {
   background: #f1f5f9;
 }
 
