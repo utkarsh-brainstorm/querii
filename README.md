@@ -1,6 +1,10 @@
 # ⚡ Querii — Version 4.0
 
 <p align="center">
+  <img src="app_icon.png" alt="Querii Official Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);" />
+</p>
+
+<p align="center">
   <strong>Lightning-Fast, Local-First SQL Analytics Workstation & Executive PDF Studio</strong>
 </p>
 
@@ -37,15 +41,16 @@
 7. [AI Prompt Specification Generator](#-ai-prompt-specification-generator)
 8. [Cross-Platform Native Clipboard Integration](#-cross-platform-native-clipboard-integration)
 9. [Global Client-Side Search (Ctrl+F)](#-global-client-side-search-ctrlf)
-10. [SQL Workspace & Database Connectivity](#-sql-workspace--database-connectivity)
-11. [Project Directory Structure](#-project-directory-structure)
-12. [Developer Guide & Installation](#-developer-guide--installation)
+10. [Settings & Organization Branding](#-settings--organization-branding)
+11. [SQL Workspace & Database Connectivity](#-sql-workspace--database-connectivity)
+12. [Project Directory Structure](#-project-directory-structure)
+13. [Developer Guide & Installation](#-developer-guide--installation)
     - [Prerequisites](#prerequisites)
     - [Running from Source](#running-from-source)
     - [Rebuilding the Rust PDF Engine](#rebuilding-the-rust-pdf-engine)
     - [Building Standalone Executables](#building-standalone-executables)
-13. [Keyboard Shortcuts Reference](#-keyboard-shortcuts-reference)
-14. [Data Locations & Privacy](#-data-locations--privacy)
+14. [Keyboard Shortcuts Reference](#-keyboard-shortcuts-reference)
+15. [Data Locations & Privacy](#-data-locations--privacy)
 
 ---
 
@@ -54,6 +59,12 @@
 **Querii Version 4.0** is an uncompromising, local-first analytics workstation built for software engineers, data analysts, and executive teams who require immediate data manipulation, visual SQL query authoring, and publication-grade PDF reporting without cloud latency, subscription fees, or security compromises.
 
 Pairing a desktop UI powered by `pywebview` with high-performance database adapters (SQLite, PostgreSQL, MySQL) and a hybrid **dual-engine PDF compilation architecture**, Querii gives you instantaneous sub-second queries, live schema manipulation, and publication-ready financial and executive reports.
+
+<p align="center">
+  <img src="Main_interface_dark_mode.png" alt="Querii Main Interface (Dark Mode)" width="100%" />
+  <br>
+  <em><strong>Querii Main Interface (Dark Mode)</strong> — Visual Query Builder, Freeform SQL Editor, Dynamic Schema Drawer, and High-Performance Tabular Grid.</em>
+</p>
 
 ---
 
@@ -128,6 +139,12 @@ Querii solves the traditional trade-off between **compilation speed** and **visu
 ## 🎨 Ultra Dev Mode & Interactive PDF Studio
 
 The Ultra Dev Mode (`web/pdf_dev_mode.js`) is an interactive design environment tailored for crafting corporate report layouts.
+
+<p align="center">
+  <img src="PDF_editor1.png" alt="Querii Ultra Dev Mode PDF Studio" width="100%" />
+  <br>
+  <em><strong>Ultra Dev Mode PDF Studio</strong> — Real-page physical sheet preview (A4/A3/Letter), live CSS editor, column width drag handles, and instant rendering controls.</em>
+</p>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -300,6 +317,12 @@ Querii includes five pre-crafted presets accessible in both the PDF Export Modal
 4. **🟣 Tech:** Modern Indigo and Violet aesthetic inspired by Stripe and Linear.
 5. **📏 Compact:** Ultra-dense layout with 8px typography and 3px cell padding, built for wide datasets with 15+ columns.
 
+<p align="center">
+  <img src="PDF_editor2.png" alt="Querii Ultra Dev Mode (Custom Styling & Output Preview)" width="100%" />
+  <br>
+  <em><strong>Interactive PDF Custom Styling</strong> — Live style cascade override, custom corporate color schemes, bold typography, and dense data layouts.</em>
+</p>
+
 > **Tip:** Click `💾 Set as Default` in Ultra Dev Mode to persist your customized styling as the base template for all future PDF exports.
 
 ---
@@ -359,6 +382,26 @@ Querii features a browser-like client-side global search:
 - **Live Text Highlighting:** Highlights matching text in real time with `<mark class="search-highlight">`.
 - **Keyboard Navigation:** Press `Enter` to jump to the next match, or `Shift+Enter` for the previous match.
 - **Match Counter:** Displays current index and total occurrences (e.g., `Match 3 of 42`).
+
+---
+
+## ⚙️ Settings & Organization Branding
+
+Querii provides a centralized configuration panel accessible anytime via the **⚙️ Settings** icon in the primary navigation header:
+
+<p align="center">
+  <img src="settings_menu.png" alt="Querii Settings & Configuration Menu" width="100%" />
+  <br>
+  <em><strong>Querii Settings & Configuration Menu</strong> — Organization branding (logo upload & metadata), default PDF stylesheet persistence, theme preferences, and developer tools.</em>
+</p>
+
+### Key Configuration Capabilities
+
+- 🏢 **Organization Branding & Watermarks:** Configure your corporate or institutional name, subtitle/tagline, and upload a high-resolution logo (automatically base64-encoded and cached for watermarks, mastheads, and report footers).
+- 🎨 **Default PDF Style Persistence:** Paste or edit custom CSS directly into the *Default PDF Style* editor and click **💾 Save Changes**. This custom styling automatically becomes the default template for all standard and Ultra Dev exports.
+- 🌓 **Appearance & Theme Customization:** Toggle instantly between Dark Mode, Light Mode, and System OS preference.
+- 🛡️ **Dev Mode Guardrails:** Toggle *Developer Mode* to unlock DDL table destruction (`DROP TABLE`), inspect real-time system logs, and debug SQL execution timings.
+- 📖 **Offline-First Documentation:** The built-in *About* tab includes a comprehensive user guide covering database drivers, supported SQL dialects, DML/DDL rules, multi-engine export details, and keyboard shortcuts.
 
 ---
 
