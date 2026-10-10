@@ -509,61 +509,57 @@ class Api:
         source_label: str = "",
     ) -> dict:
         try:
-            def _do():
-                try:
-                    exporter.export_pdf(
-                        self._last_result_cols, self._last_result_rows, filepath,
-                        title=title,
-                        subtitle="",
-                        org_name=org_name,
-                        logo_b64=logo_b64,
-                        sql_display=sql_display,
-                        theme_colors=theme_colors,
-                        page_size=page_size,
-                        orientation=orientation,
-                        scale=scale,
-                        continuous=continuous,
-                        source_label=source_label,
-                    )
-                except Exception as ex:
-                    print(f"[PDF export error] {ex}")
-            threading.Thread(target=_do, daemon=True).start()
+            exporter.export_pdf(
+                self._last_result_cols, self._last_result_rows, filepath,
+                title=title,
+                subtitle="",
+                org_name=org_name,
+                logo_b64=logo_b64,
+                sql_display=sql_display,
+                theme_colors=theme_colors,
+                page_size=page_size,
+                orientation=orientation,
+                scale=scale,
+                continuous=continuous,
+                source_label=source_label,
+            )
             return _ok(filepath)
         except Exception as e:
             return _err(e)
 
     def export_pdf_html(
         self,
-        columns: list,
-        rows: list,
         filepath: str,
         title: str = "Query Results",
         org_name: str = "",
         logo_b64: str = "",
         sql_display: str = "",
+        source_label: str = "",
         custom_css: str = "",
         page_size: str = "A4",
         orientation: str = "portrait",
-        source_label: str = "",
+        col_widths: dict = None,
+        col_headers: dict = None,
+        col_visible: list = None,
+        full_override: bool = False,
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
-            def _do():
-                try:
-                    export_pdf_html(
-                        self._last_result_cols, self._last_result_rows, filepath,
-                        title=title,
-                        org_name=org_name,
-                        logo_b64=logo_b64,
-                        sql_display=sql_display,
-                        source_label=source_label,
-                        custom_css=custom_css,
-                        page_size=page_size,
-                        orientation=orientation,
-                    )
-                except Exception as ex:
-                    print(f"[PDF HTML export error] {ex}")
-            threading.Thread(target=_do, daemon=True).start()
+            export_pdf_html(
+                self._last_result_cols, self._last_result_rows, filepath,
+                title=title,
+                org_name=org_name,
+                logo_b64=logo_b64,
+                sql_display=sql_display,
+                source_label=source_label,
+                custom_css=custom_css,
+                page_size=page_size,
+                orientation=orientation,
+                col_widths=col_widths,
+                col_headers=col_headers,
+                col_visible=col_visible,
+                full_override=full_override,
+            )
             return _ok(filepath)
         except Exception as e:
             return _err(e)
@@ -579,6 +575,7 @@ class Api:
         col_widths: dict = None,
         col_headers: dict = None,
         col_visible: list = None,
+        full_override: bool = False,
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
@@ -589,7 +586,7 @@ class Api:
                 title=title, org_name=org_name, logo_b64=logo_b64,
                 custom_css=custom_css, page_size=page_size, orientation=orientation,
                 col_widths=col_widths or {}, col_headers=col_headers or {},
-                col_visible=col_visible,
+                col_visible=col_visible, full_override=full_override,
             )
             return _ok(html)
         except Exception as e:
@@ -604,6 +601,7 @@ class Api:
         org_name: str = "",
         page_size: str = "A4",
         orientation: str = "portrait",
+        full_override: bool = False,
     ) -> dict:
         """Write the three dev files and return their paths."""
         try:
@@ -615,6 +613,7 @@ class Api:
                 custom_css=custom_css, title=title, org_name=org_name,
                 page_size=page_size, orientation=orientation,
                 querii_path=os.path.dirname(os.path.abspath(__file__)),
+                full_override=full_override,
             )
             return _ok(paths)
         except Exception as e:

@@ -241,14 +241,12 @@ function useQueryLog(idx) {
   // 1) Paste into SQL editor
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
-  // 2) Copy to clipboard
-  try {
-    navigator.clipboard.writeText(sql).catch(function() {
-      var ta = document.createElement('textarea');
-      ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    });
-  } catch(e) { /* clipboard not critical */ }
+  // 2) Copy to clipboard (always fallback to avoid Qt setFeaturePermission crash)
+  var ta = document.createElement('textarea');
+  ta.value = sql; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select(); 
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
   // 3) Close modal
   closeModal();
   // 4) Switch to SQL tab if there's a tab switch mechanism
@@ -529,6 +527,7 @@ function onTableChange() {
   if (btd) btd.classList.remove('hidden');
   if (feh) feh.classList.add('hidden');
 
+  _selectedTables = [_activeTable]; // Update selected tables before rendering schema
   // Always re-render schema tree so it shows up even after relaunch
   var tableSchema = _allSchemaData.find(function(t) { return t.table === _activeTable; });
   if (tableSchema) {
@@ -548,7 +547,7 @@ function onTableChange() {
       rebuildSortDropdown();
       buildAggDropdowns();
       clearFilterGroups();
-      run_filter();
+      runFilter();
     })
     .catch(function(e) { console.error('get_table_columns error:', e); });
 }
@@ -623,12 +622,12 @@ function renderSchemaTree(schema, showAll) {
   }
 
   // Render sidebar with filtered tables
-  el.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema);
-  // Render SQL reference panel with ALL tables
-  if (cr) cr.innerHTML = _buildSchemaHtml(schema);
+  el.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema, false);
+  // Render SQL reference panel with FILTERED tables
+  if (cr) cr.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema, true);
 }
 
-function _buildSchemaHtml(schema) {
+function _buildSchemaHtml(schema, isEditor) {
   var html = '';
   schema.forEach(function(t) {
     var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
@@ -642,9 +641,13 @@ function _buildSchemaHtml(schema) {
     userCols.forEach(function(c) {
       var colors = { INTEGER: '#3b82f6', REAL: '#8b5cf6', DATE: '#10b981', TIME: '#f59e0b', TEXT: '#6b7280' };
       var color  = colors[c.type] || '#6b7280';
+      var clickHandler = isEditor ? 
+          'insertColIntoEditor(' + JSON.stringify(c.name) + ')' : 
+          'showColStats(' + JSON.stringify(t.table) + ',' + JSON.stringify(c.name) + ')';
+      var title = isEditor ? 'Click to insert into SQL Editor' : 'Click for column stats';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 8px;border-bottom:1px solid var(--border-light);cursor:pointer;transition:background 80ms" ' +
         'onmouseover="this.style.background=\'var(--bg-muted)\'" onmouseout="this.style.background=\'\'" ' +
-        'onclick="showColStats(' + JSON.stringify(t.table) + ',' + JSON.stringify(c.name) + ')" title="Click for column stats">' +
+        'onclick="' + clickHandler + '" title="' + title + '">' +
         '<span style="font-family:monospace;font-size:10px;color:var(--text-body)">' + esc(c.name) + '</span>' +
         '<span style="background:' + color + ';color:#fff;font-size:9px;font-family:monospace;font-weight:600;padding:0 4px;border-radius:2px">' + c.type + '</span></div>';
     });
@@ -661,6 +664,30 @@ function copySql(sql) {
   var ed = document.getElementById('sql-editor');
   if (ed) { ed.value = sql; syncSqlLines(); }
   toast('SQL copied to editor.');
+}
+
+function insertColIntoEditor(colName) {
+  var ed = document.getElementById('sql-editor');
+  if (!ed) return;
+  var colStr = '"' + colName + '"';
+  var val = ed.value;
+  var start = ed.selectionStart;
+  var end = ed.selectionEnd;
+  
+  // If not at the very beginning, and the preceding non-whitespace character isn't a comma, add one
+  var prefix = '';
+  if (start > 0) {
+    var preceding = val.substring(0, start).trimEnd();
+    if (preceding.length > 0 && !preceding.endsWith(',')) {
+      prefix = ', ';
+    }
+  }
+  
+  var insert = prefix + colStr;
+  ed.value = val.substring(0, start) + insert + val.substring(end);
+  ed.selectionStart = ed.selectionEnd = start + insert.length;
+  ed.focus();
+  syncSqlLines();
 }
 
 /* ── Copy Schema Text ────────────────────────────────────────────────── */
@@ -1472,9 +1499,14 @@ function renderResults(columns, firstPageRows, totalCount) {
   var csvBtn  = document.getElementById('btn-export-csv');
   var cpyCsvBtn = document.getElementById('btn-copy-csv');
   var pdfBtn  = document.getElementById('btn-export-pdf');
+  var rowSearch = document.getElementById('row-search-input');
   if (csvBtn)    csvBtn.disabled = !hasData;
   if (cpyCsvBtn) cpyCsvBtn.disabled = !hasData;
   if (pdfBtn)    pdfBtn.disabled = !hasData;
+  if (rowSearch) {
+    rowSearch.style.display = hasData ? 'inline-block' : 'none';
+    rowSearch.value = '';
+  }
 
   var head = document.getElementById('results-head');
   var body = document.getElementById('results-body');
@@ -1514,75 +1546,45 @@ function renderResults(columns, firstPageRows, totalCount) {
   renderPaginationBar(0, total);
 }
 
-/* Click a column header to sort — IN-MEMORY, no re-query */
+/* Click a column header to sort via SQL */
 function toggleColumnSort(col) {
-  if (_clientSortCol === col) {
-    _clientSortDir = _clientSortDir === 'ASC' ? 'DESC' : 'ASC';
+  var sortColEl = document.getElementById('sort-col');
+  var sortDirEl = document.getElementById('sort-dir');
+  if (!sortColEl || !sortDirEl) return;
+
+  if (sortColEl.value === col) {
+    sortDirEl.value = sortDirEl.value === 'ASC' ? 'DESC' : 'ASC';
   } else {
-    _clientSortCol = col;
-    _clientSortDir = 'ASC';
+    sortColEl.value = col;
+    sortDirEl.value = 'ASC';
   }
-  _sortCol = _clientSortCol;
-  _sortDir = _clientSortDir;
+  
+  _sortCol = col;
+  _sortDir = sortDirEl.value;
 
-  if (!_lastResults) return;
+  // Re-run the SQL query to sort properly
+  runFilter();
+}
 
-  // Collect ALL cached rows and sort them in memory
-  var allRows = [];
-  var pageKeys = Object.keys(_lastResults.cachedPages);
-  pageKeys.sort(function(a, b) { return Number(a) - Number(b); });
-  pageKeys.forEach(function(k) {
-    var pg = _lastResults.cachedPages[k];
-    if (pg) allRows = allRows.concat(pg);
-  });
-
-  var sortCol = _clientSortCol;
-  var sortDir = _clientSortDir;
-  allRows.sort(function(a, b) {
-    var va = a[sortCol]; var vb = b[sortCol];
-    if (va == null) va = ''; if (vb == null) vb = '';
-    // Try numeric sort first
-    var na = Number(va), nb = Number(vb);
-    if (!isNaN(na) && !isNaN(nb)) {
-      return sortDir === 'ASC' ? na - nb : nb - na;
+/* Fast client-side text filtering for rows in the active page */
+function filterResultRows(text) {
+  var tbody = document.getElementById('results-body');
+  if (!tbody) return;
+  var term = (text || '').toLowerCase();
+  var rows = tbody.getElementsByTagName('tr');
+  for (var i = 0; i < rows.length; i++) {
+    var tr = rows[i];
+    if (!term) {
+      tr.style.display = '';
+    } else {
+      var rowText = tr.textContent || tr.innerText;
+      if (rowText.toLowerCase().indexOf(term) > -1) {
+        tr.style.display = '';
+      } else {
+        tr.style.display = 'none';
+      }
     }
-    var sa = String(va).toLowerCase(), sb = String(vb).toLowerCase();
-    if (sa < sb) return sortDir === 'ASC' ? -1 :  1;
-    if (sa > sb) return sortDir === 'ASC' ?  1 : -1;
-    return 0;
-  });
-
-  // Rebuild cached pages from sorted array
-  _lastResults.cachedPages = {};
-  var ps = PAGE_SIZE;
-  for (var i = 0; i < allRows.length; i += ps) {
-    _lastResults.cachedPages[Math.floor(i / ps)] = allRows.slice(i, i + ps);
   }
-
-  // Re-render header (update sort indicators)
-  var head = document.getElementById('results-head');
-  if (head) {
-    var cols = _lastResults.columns;
-    var searchHtml = '';
-    if (cols.length > 12) {
-      searchHtml = '<tr><td colspan="' + cols.length + '" style="padding:3px 6px;background:var(--bg-muted);border-bottom:1px solid var(--border)">' +
-        '<input id="col-search-input" type="text" class="input-sm" style="width:220px;font-size:10px" ' +
-        'placeholder="🔍 Filter columns by name…" oninput="filterResultColumns(this.value)"></td></tr>';
-    }
-    head.innerHTML = searchHtml +
-      '<tr id="results-header-row">' + cols.map(function(c) {
-        var indicator = (_sortCol === c) ? (_sortDir === 'ASC' ? ' ▲' : ' ▼') : '';
-        return '<th class="tbl-head" data-col="' + esc(c) + '" ' +
-          'style="cursor:pointer;user-select:none" ' +
-          'onclick="toggleColumnSort(\'' + esc(c).replace(/'/g, "\\'") + '\')" ' +
-          'title="Click to sort by ' + esc(c) + '">' +
-          esc(c) + indicator + '</th>';
-      }).join('') + '</tr>';
-  }
-
-  renderPage(0);
-  renderPaginationBar(0, _lastResults.total);
-  toast('Sorted by ' + col + ' (' + _clientSortDir + ')');
 }
 
 /* Render a single page of rows using DocumentFragment (fast) */
@@ -1991,11 +1993,16 @@ function confirmExportPdf() {
 
   var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
   if (useHtml) {
-    apiCall('export_pdf_html', [], [], filepath, title, org, logo, sql, customCss, pageSize, orient, sourceLabel)
+    var visArr = (typeof _dev !== 'undefined' && _dev.colVisible) ? Array.from(_dev.colVisible) : null;
+    var cWidths = (typeof _dev !== 'undefined') ? _dev.colWidths : {};
+    var cHeads  = (typeof _dev !== 'undefined') ? _dev.colHeaders : {};
+    var cFullO  = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
+
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, cWidths, cHeads, visArr, cFullO)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   } else {
-    apiCall('export_pdf', [], [], filepath, title, org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
+    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   }
@@ -2238,7 +2245,7 @@ function enterJoinMode(tables) {
   rebuildSortDropdown();
   buildAggDropdowns();
   clearFilterGroups();
-  run_filter();
+  runFilter();
 }
 
 function sql_type_to_category_js(t) {
@@ -2617,8 +2624,8 @@ function dbRunSql() {
   if (resEl) resEl.textContent = 'Running…';
   apiCall('execute_raw_sql', sql)
     .then(function(r) {
-      if (!r || !r.result) { if (resEl) resEl.textContent = 'No response'; return; }
-      var d = r.result;
+      if (!r) { if (resEl) resEl.textContent = 'No response'; return; }
+      var d = r;
       if (d.message) {
         if (resEl) resEl.textContent = d.message;
         toast('✓ ' + d.message);
@@ -2644,7 +2651,7 @@ function dbDropAllTables() {
   if (!confirm('Drop ALL imported tables? This cannot be undone.')) return;
   apiCall('drop_all_tables')
     .then(function(r) {
-      var msg = (r && r.result) || 'Done';
+      var msg = r || 'Done';
       var resEl = document.getElementById('db-result');
       if (resEl) resEl.textContent = msg;
       toast('✓ ' + msg);
@@ -2657,7 +2664,7 @@ function dbVacuum() {
   apiCall('vacuum_database')
     .then(function(r) {
       var resEl = document.getElementById('db-result');
-      if (resEl) resEl.textContent = (r && r.result) || 'VACUUM complete';
+      if (resEl) resEl.textContent = r || 'VACUUM complete';
       toast('✓ VACUUM complete');
     })
     .catch(function(e) { toast(e.message, 'error'); });
@@ -2681,39 +2688,41 @@ function dbDeleteDatabase() {
   s.id = 'dev-mode-styles';
   s.textContent = [
     '#ultra-dev-overlay.hidden { display:none!important; }',
-    '.dev-field-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
-    '.dev-lbl{font-size:10px;font-weight:700;color:#64748b;min-width:82px;flex-shrink:0}',
-    '.dev-input,.dev-select{flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:4px 7px;font-size:11px}',
-    '.dev-input:focus,.dev-select:focus{outline:none;border-color:#3b82f6}',
+    '.dev-field-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}',
+    '.dev-lbl{font-size:11px;font-weight:700;color:#64748b;min-width:90px;flex-shrink:0}',
+    '.dev-input,.dev-select{flex:1;background:#f8fafc;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:12px;transition:all .15s}',
+    '.dev-input:focus,.dev-select:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.2);background:#fff}',
     '.dev-radio-group{display:flex;gap:8px}',
-    '.dev-radio{display:flex;align-items:center;gap:4px;font-size:11px;color:#94a3b8;cursor:pointer;padding:3px 8px;border-radius:5px;border:1px solid #334155}',
-    '.dev-radio.active{color:#3b82f6;border-color:#3b82f6;background:rgba(59,130,246,.1)}',
+    '.dev-radio{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#64748b;cursor:pointer;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;transition:all .15s}',
+    '.dev-radio.active{color:#4338ca;border-color:#6366f1;background:#e0e7ff}',
     '.dev-radio input[type=radio]{display:none}',
-    '.dev-cb{width:14px;height:14px;accent-color:#3b82f6;cursor:pointer}',
-    '.dev-col-list{display:flex;flex-direction:column;gap:5px}',
-    '.dev-col-row{background:#1e293b;border:1px solid #334155;border-radius:7px;padding:8px 10px;transition:opacity .15s}',
-    '.dev-col-row.dev-col-hidden{opacity:.4}',
-    '.dev-col-vis{display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:5px}',
-    '.dev-col-vis input[type=checkbox]{accent-color:#3b82f6;width:13px;height:13px;flex-shrink:0}',
-    '.dev-col-name{font-size:11px;font-weight:700;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}',
-    '.dev-col-hdr{width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 6px;font-size:10px;margin-bottom:5px;box-sizing:border-box}',
-    '.dev-col-hdr:focus{outline:none;border-color:#3b82f6}',
-    '.dev-col-width-wrap{display:flex;align-items:center;gap:6px}',
-    '.dev-slider{flex:1;accent-color:#3b82f6;cursor:pointer;height:4px}',
-    '.dev-width-lbl{font-size:10px;color:#64748b;min-width:34px;text-align:right;font-family:monospace}',
-    '.dev-empty{font-size:11px;color:#475569;padding:12px 4px;text-align:center}',
-    '.dev-btn{font-size:11px;padding:4px 10px;border-radius:5px;background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.3);cursor:pointer}',
-    '.dev-btn:hover{background:rgba(59,130,246,.2)}',
-    '.dev-btn-primary{background:#3b82f6;color:#fff;border-color:#3b82f6}',
-    '.dev-btn-primary:hover{background:#2563eb}',
-    '.dev-btn-sm{padding:3px 7px}',
-    '.dev-file-tabs{display:flex;gap:2px;margin-bottom:5px;border-bottom:1px solid #334155}',
-    '.dev-file-tab{font-size:10px;padding:4px 10px;background:transparent;color:#64748b;border:none;cursor:pointer;border-bottom:2px solid transparent;border-radius:4px 4px 0 0}',
-    '.dev-file-tab.active{color:#e2e8f0;border-bottom-color:#3b82f6;background:rgba(59,130,246,.1)}',
-    '.dev-file-area{width:100%;height:260px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:monospace;font-size:10px;resize:vertical;box-sizing:border-box}',
-    '.dev-file-area:focus{outline:none;border-color:#3b82f6}',
-    '.dev-file-actions{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}',
-    '.dev-dir-path{font-size:9px;color:#475569;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.dev-cb{width:16px;height:16px;accent-color:#6366f1;cursor:pointer}',
+    '.dev-col-list{display:flex;flex-direction:column;gap:8px}',
+    '.dev-col-row{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;transition:opacity .15s, box-shadow .15s}',
+    '.dev-col-row:hover{box-shadow:0 2px 4px rgba(0,0,0,.02)}',
+    '.dev-col-row.dev-col-hidden{opacity:.5;background:#f1f5f9}',
+    '.dev-col-vis{display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px}',
+    '.dev-col-vis input[type=checkbox]{accent-color:#6366f1;width:15px;height:15px;flex-shrink:0}',
+    '.dev-col-name{font-size:12px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}',
+    '.dev-col-hdr{width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;color:#334155;transition:border-color .15s}',
+    '.dev-col-hdr:focus{outline:none;border-color:#6366f1}',
+    '.dev-col-width-wrap{display:flex;align-items:center;gap:12px}',
+    '.dev-slider{flex:1;accent-color:#6366f1}',
+    '.dev-width-lbl{font-size:11px;font-family:"JetBrains Mono",monospace;color:#64748b;min-width:36px;text-align:right}',
+    '.dev-empty{font-size:11px;color:#94a3b8;font-style:italic;padding:12px;text-align:center}',
+    '.dev-btn{font-size:11px;font-weight:600;padding:5px 12px;border-radius:6px;background:#fff;color:#475569;border:1px solid #cbd5e1;cursor:pointer;transition:all .15s}',
+    '.dev-btn:hover{background:#f1f5f9;color:#0f172a}',
+    '.dev-btn-primary{background:#3b82f6;color:#fff;border-color:#2563eb}',
+    '.dev-btn-primary:hover{background:#2563eb;color:#fff}',
+    '.dev-btn-sm{padding:3px 8px;font-size:10px}',
+    '.dev-file-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #cbd5e1}',
+    '.dev-file-tab{padding:6px 14px;font-size:11px;font-weight:700;color:#64748b;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s}',
+    '.dev-file-tab.active{color:#4338ca;border-bottom-color:#6366f1}',
+    '.dev-file-tab:hover:not(.active){color:#334155;background:#f8fafc;border-radius:4px 4px 0 0}',
+    '.dev-file-area{width:100%;height:180px;background:#f8fafc;color:#1e293b;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:"JetBrains Mono",monospace;font-size:11px;resize:vertical;margin-bottom:12px}',
+    '.dev-file-area:focus{outline:none;border-color:#6366f1;box-shadow:inset 0 0 0 1px #6366f1}',
+    '.dev-file-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+    '.dev-dir-path{font-size:11px;color:#64748b;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#f8fafc;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0}',
     '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
     '#dev-preview-spinner:not(.hidden){display:inline-block;animation:spin 1s linear infinite}',
     'details summary::-webkit-details-marker{display:none}',

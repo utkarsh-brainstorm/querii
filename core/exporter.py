@@ -75,6 +75,7 @@ def _build_pdf_html(
     col_widths: Optional[Dict[str, float]] = None,   # col_name -> width%
     col_headers: Optional[Dict[str, str]]  = None,   # col_name -> display label
     col_visible: Optional[List[str]]       = None,   # list of visible col names (None = all)
+    full_override: bool = False,
 ) -> str:
     """
     Build a complete standalone HTML string optimised for WeasyPrint PDF output.
@@ -161,30 +162,425 @@ def _build_pdf_html(
   <meta charset="UTF-8">
   <title>{he(title)}</title>
   <style>
-    /* ── Reset ── */
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 10pt;
-      color: #111827;
-      background: #ffffff;
-    }}
+/* General Querii PDF CSS — reusable across organizations and reports.
+   No organization names, addresses, logos, or report titles are hardcoded.
+   Uses the generic class names from the general template. */
 
-    /* ── Page layout (WeasyPrint) ── */
-    @page {{
-      size: {css_page_size};
-      margin: 18mm 14mm 14mm 14mm;
-      @top-center {{
-        content: "{he(org_display)} — {he(title)}";
-        font-size: 8pt;
-        color: #64748b;
-      }}
-      @bottom-right {{
-        content: "Page " counter(page) " of " counter(pages);
-        font-size: 8pt;
-        color: #64748b;
-      }}
-    }}
+:root {{
+  --paper: #ffffff;
+  --screen-bg: #e7ebf0;
+  --navy: #334155;
+  --navy-soft: #475569;
+  --gold: #b7791f;
+  --text: #111827;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --row-alt: #f8fafc;
+  --table-head: #e9eef5;
+  --table-head-text: #243247;
+  --header-bg: #f8fafc;
+}}
+
+*,
+*::before,
+*::after {{
+  box-sizing: border-box;
+}}
+
+html,
+body {{
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}}
+
+/* Main content area. Use normal flow so long reports paginate cleanly. */
+.content {{
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 12mm 14mm;
+  color: var(--text);
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}}
+
+/* =========================
+   ORGANIZATION HEADER
+========================= */
+
+.school-header {{
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 88px;
+  margin: 0 0 16px;
+  padding: 13px 18px;
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid #c5a15a;
+  border-radius: 10px;
+  text-align: center;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}}
+
+.school-logo {{
+  display: inline-block;
+  vertical-align: middle;
+  width: 68px;
+  height: 68px;
+  margin: 0 18px 0 0;
+  object-fit: contain;
+}}
+
+.school-info {{
+  display: inline-block;
+  vertical-align: middle;
+  max-width: calc(100% - 100px);
+  text-align: center;
+  overflow-wrap: anywhere;
+}}
+
+.school-info h2 {{
+  margin: 0 0 5px;
+  color: #26364b;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 21px;
+  line-height: 1.25;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}}
+
+.address {{
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}}
+
+.school-meta {{
+  margin-top: 6px;
+  color: var(--navy-soft);
+  font-size: 9px;
+  line-height: 1.4;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}}
+
+.school-meta span {{
+  display: inline-block;
+  margin: 2px 8px;
+}}
+
+/* =========================
+   DOCUMENT HEADING
+========================= */
+
+.document-heading {{
+  width: 100%;
+  margin: 0 0 17px;
+  padding: 2px 0 12px;
+  text-align: center;
+  border-bottom: 2px solid var(--navy-soft);
+  page-break-inside: avoid;
+  break-inside: avoid;
+}}
+
+.heading-accent {{
+  width: 48px;
+  height: 3px;
+  margin: 0 auto 7px;
+  background: var(--gold);
+  border-radius: 4px;
+}}
+
+.title {{
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  color: #26364b;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  line-height: 1.25;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}}
+
+.gen-date {{
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}}
+
+/* =========================
+   DATA TABLE
+========================= */
+
+.data-table-wrap {{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 0 16px;
+  overflow: visible;
+}}
+
+.data-table {{
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 8px;
+  table-layout: auto;
+  background: #fff;
+  color: var(--text);
+  font-size: 9px;
+  line-height: 1.4;
+}}
+
+.data-table thead {{
+  display: table-header-group;
+}}
+
+.data-table tfoot {{
+  display: table-footer-group;
+}}
+
+.data-table tr {{
+  page-break-inside: avoid;
+  break-inside: avoid;
+}}
+
+.data-table th,
+.data-table td {{
+  min-width: 0;
+  max-width: 70mm;
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+}}
+
+.data-table th {{
+  background: var(--table-head);
+  color: var(--table-head-text);
+  font-size: 8.5px;
+  line-height: 1.35;
+  font-weight: 800;
+  border: 0;
+  border-bottom: 2px solid #c5a15a;
+}}
+
+.data-table th:first-child {{
+  border-top-left-radius: 7px;
+}}
+
+.data-table th:last-child {{
+  border-top-right-radius: 7px;
+}}
+
+.data-table td {{
+  color: var(--text);
+  border: 0;
+  border-bottom: 1px solid var(--border-light);
+}}
+
+.data-table tbody tr:nth-child(even) {{
+  background: var(--row-alt);
+}}
+
+.data-table tbody tr:nth-child(odd) {{
+  background: #fff;
+}}
+
+.data-table tbody tr:last-child td {{
+  border-bottom: 0;
+}}
+
+.data-table td a,
+.data-table th a,
+.data-table td code {{
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}}
+
+.data-table td img {{
+  max-width: 100%;
+  height: auto;
+}}
+
+/* =========================
+   FOOTER
+========================= */
+
+.footer {{
+  width: 100%;
+  margin: 15px 0 0;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+  text-align: center;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  overflow-wrap: anywhere;
+}}
+
+/* Support the alternate footer class used by some report layouts. */
+.report-footer {{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 7px 14px;
+  width: 100%;
+  margin: 15px 0 0;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}}
+
+.report-footer > * {{
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}}
+
+/* =========================
+   SQL BLOCK
+========================= */
+
+.sql-block {{
+  width: 100%;
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 10px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}}
+
+.sql-label {{
+  margin: 0;
+  padding: 7px 10px;
+  color: #243247;
+  background: var(--table-head);
+  border-bottom: 2px solid #c5a15a;
+  font-size: 9px;
+  font-weight: 800;
+}}
+
+.sql-block pre,
+.sql-pre {{
+  max-width: 100%;
+  margin: 0;
+  padding: 10px;
+  color: var(--text);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}}
+
+/* =========================
+   PRINT
+========================= */
+
+@page {{
+  size: {css_page_size};
+  margin: 12mm 14mm;
+}}
+
+@media print {{
+  html,
+  body {{
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: #fff !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }}
+
+  .content {{
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: #fff !important;
+  }}
+
+  .school-header,
+  .document-heading,
+  .footer,
+  .report-footer,
+  .sql-block {{
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }}
+
+  .data-table-wrap {{
+    overflow: visible !important;
+  }}
+
+  .data-table {{
+    width: 100%;
+    max-width: 100%;
+    font-size: 8.5px;
+  }}
+
+  .data-table thead {{
+    display: table-header-group;
+  }}
+
+  .data-table th {{
+    background: var(--table-head) !important;
+    color: var(--table-head-text) !important;
+  }}
+
+  .data-table tbody tr:nth-child(even) {{
+    background: var(--row-alt) !important;
+  }}
+
+  .data-table a {{
+    color: inherit;
+    text-decoration: none;
+  }}
+}}
 
     /* ── Watermark (CSS-only, no JS needed) ── */
     body::before {{
@@ -202,108 +598,19 @@ def _build_pdf_html(
       letter-spacing: 0.3em;
       word-spacing: 0.5em;
     }}
-
-    /* ── School Header ── */
-    .school-header {{
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      padding: 14px 20px;
-      background: #f8fafc;
-      border: 1.2px solid #cbd5e1;
-      border-radius: 12px;
-      margin-bottom: 18px;
-    }}
-    .school-logo {{
-      width: 68px;
-      height: 68px;
-      object-fit: contain;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }}
-    .school-info h2 {{
-      font-size: 18pt;
-      font-weight: 800;
-      color: #0f172a;
-      margin-bottom: 3px;
-    }}
-
-    /* ── Document Heading ── */
-    .document-heading {{
-      text-align: center;
-      border-bottom: 2px solid #0f172a;
-      padding-bottom: 10px;
-      margin-bottom: 20px;
-    }}
-    .heading-accent {{
-      width: 48px;
-      height: 3px;
-      background: #b7791f;
-      border-radius: 4px;
-      margin: 0 auto 8px;
-    }}
-    .title {{
-      font-size: 20pt;
-      font-weight: 800;
-      color: #0f172a;
-    }}
-    .gen-date {{
-      font-size: 8pt;
-      color: #64748b;
-      margin-top: 4px;
-    }}
-
-    /* ── Data Table ── */
-    .data-table-wrap {{ width: 100%; overflow: visible; margin-bottom: 12px; }}
-    .data-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 8pt;
-    }}
-    .data-table thead th {{
-      background: #0f172a;
-      color: #ffffff;
-      padding: 7px 9px;
-      font-weight: 700;
-      text-align: left;
-      border-bottom: 2.5px solid #b7791f;
-      font-size: 8pt;
-    }}
-    .data-table tbody td {{
-      padding: 5px 9px;
-      border-bottom: 1px solid #e2e8f0;
-      vertical-align: top;
-      word-break: break-word;
-    }}
-    .data-table tbody tr.even {{ background: #f8fafc; }}
-    .data-table tbody tr.odd  {{ background: #ffffff; }}
-    .data-table tbody tr:last-child td {{ border-bottom: none; }}
-
-    /* ── Footer ── */
-    .report-footer {{
-      text-align: center;
-      font-size: 8pt;
-      color: #64748b;
-      margin-top: 8px;
-      padding-top: 6px;
-      border-top: 1px solid #e2e8f0;
-    }}
-
-    /* ── SQL block ── */
-    .sql-block {{ margin-top: 14px; }}
-    .sql-label {{ font-size: 7pt; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }}
-    .sql-pre {{
-      background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 5px;
-      padding: 7px 9px; font-size: 7pt; font-family: monospace;
-      white-space: pre-wrap; word-break: break-all; color: #334155;
-    }}
-
     /* ── Page break helpers ── */
     thead {{ display: table-header-group; }}
     tr {{ page-break-inside: avoid; }}
 
     /* ── CUSTOM CSS (user-injected, overrides everything above) ── */
 {custom_css}
+{"" if full_override else f'''
+    /* Enforced Page Settings (Style Override Only) */
+    @page {{
+      size: {css_page_size} !important;
+      margin: 18mm 14mm 14mm 14mm !important;
+    }}
+'''}
   </style>
 </head>
 <body>
@@ -354,6 +661,10 @@ def export_pdf_html(
     custom_css: str = "",
     page_size: str = "A4",
     orientation: str = "portrait",
+    col_widths: Dict[str, float] = None,
+    col_headers: Dict[str, str] = None,
+    col_visible: List[str] = None,
+    full_override: bool = False,
 ) -> None:
     """
     Render query results to a styled PDF using WeasyPrint.
@@ -377,6 +688,8 @@ def export_pdf_html(
             columns=columns, rows=rows, title=title, org_name=org_name,
             logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
             custom_css=custom_css, page_size=page_size, orientation=orientation,
+            col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
+            full_override=full_override,
         )
         out_path = str(Path(filepath))
         import weasyprint as wp
@@ -418,6 +731,7 @@ def get_pdf_html_preview(
     col_widths: Optional[Dict[str, float]] = None,
     col_headers: Optional[Dict[str, str]]  = None,
     col_visible: Optional[List[str]]       = None,
+    full_override: bool = False,
 ) -> str:
     """Return the HTML string for in-app preview (iframe srcdoc)."""
     return _build_pdf_html(
@@ -425,6 +739,7 @@ def get_pdf_html_preview(
         logo_b64=logo_b64, sql_display=sql_display, source_label=source_label,
         custom_css=custom_css, page_size=page_size, orientation=orientation,
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
+        full_override=full_override,
     )
 
 
@@ -444,8 +759,9 @@ def write_dev_files(
     page_size: str = "A4",
     orientation: str = "portrait",
     querii_path: str = "",
+    full_override: bool = False,
 ) -> dict:
-    """Write data.csv, style.css, render.py to /tmp/querii_dev/."""
+    """Write data.csv, style.css, render.py to the temporary dev directory."""
     import csv as csv_mod
     _DEV_DIR.mkdir(parents=True, exist_ok=True)
     qpath = querii_path or str(Path(__file__).parent.parent)
@@ -495,7 +811,7 @@ with open(HERE / 'data.csv', encoding='utf-8-sig') as f:
     r = csv.DictReader(f); columns = list(r.fieldnames or []); rows = list(r)
 css = (HERE / 'style.css').read_text(encoding='utf-8')
 html = _build_pdf_html(columns=columns, rows=rows, title={title!r}, org_name={org_name!r},
-    custom_css=css, page_size={page_size!r}, orientation={orientation!r})
+    custom_css=css, page_size={page_size!r}, orientation={orientation!r}, full_override={full_override})
 logging.getLogger('weasyprint').setLevel(logging.ERROR)
 logging.getLogger('fontTools').setLevel(logging.ERROR)
 import weasyprint as wp

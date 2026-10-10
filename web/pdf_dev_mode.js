@@ -18,6 +18,7 @@ var _dev = {
   css:         '',
   inclSql:     false,
   inclSource:  false,
+  fullOverride:false,
   fileTab:     'style.css', // active file tab
   fileBuf:     {},          // name -> content (in-memory edits)
   devPaths:    {},          // {dir, csv, css, script}
@@ -88,10 +89,10 @@ function openUltraDevMode() {
   document.body.classList.add('overflow-hidden');
 
   // Write dev files in background
-  _dApi('open_dev_files', _dev.css, _dev.title, _dev.orgName, _dev.pageSize, _dev.orient)
+  _dApi('open_dev_files', _dev.css, _dev.title, _dev.orgName, _dev.pageSize, _dev.orient, _dev.fullOverride)
     .then(function(r) {
-      if (r && r.result) {
-        _dev.devPaths = r.result;
+      if (r) {
+        _dev.devPaths = r;
         _devLoadAllFiles();
       }
     }).catch(function(){});
@@ -154,6 +155,12 @@ function _devRenderDocControls() {
     '<div class="dev-field-row">' +
       '<label class="dev-lbl">Include SQL</label>' +
       '<input type="checkbox" id="dev-incl-sql" class="dev-cb"' + (_dev.inclSql?' checked':'') + ' onchange="window._devOnInclSql(this.checked)">' +
+    '</div>' +
+    '<div class="dev-field-row" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">' +
+      '<label class="dev-lbl" title="If checked, your Custom CSS fully controls page size. If unchecked, Querii enforces the selected size/orientation.">CSS Override</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer">' +
+        '<input type="checkbox" class="dev-cb" ' + (_dev.fullOverride?'checked':'') + ' onchange="window._devOnFullOverride(this.checked)"> Full Override (Allow CSS @page)' +
+      '</label>' +
     '</div>';
 }
 
@@ -230,6 +237,7 @@ window._devOnOrient      = function(v) {
   _devRefreshPreviewDebounced(200);
 };
 window._devOnInclSql     = function(v) { _dev.inclSql = v; _devRefreshPreviewDebounced(); };
+window._devOnFullOverride= function(v) { _dev.fullOverride = v; _devRefreshPreviewDebounced(200); };
 
 window._devToggleCol = function(col, vis) {
   if (_dev.colVisible === null) {
@@ -280,10 +288,10 @@ function _devRefreshPreview() {
   _dApi('get_pdf_html_preview',
     _dev.title, _dev.orgName, _dev.logo, _dev.css,
     _dev.pageSize, _dev.orient,
-    _dev.colWidths, _dev.colHeaders, visArr
+    _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride
   ).then(function(r) {
-    if (!r || !r.result) return;
-    var html = r.result;
+    if (!r) return;
+    var html = r;
     // Inject preview wrapper CSS for the iframe
     var previewStyle = '<style>' +
       'body{background:#dde3ec;margin:0;padding:16px}' +
@@ -307,8 +315,8 @@ function _devRefreshPreview() {
 function _devLoadAllFiles() {
   ['style.css', 'data.csv', 'render.py'].forEach(function(name) {
     _dApi('read_dev_file', name).then(function(r) {
-      if (r && r.result !== undefined) {
-        _dev.fileBuf[name] = r.result;
+      if (r !== undefined) {
+        _dev.fileBuf[name] = r;
         if (name === _dev.fileTab) _devRenderFilePanel();
       }
     }).catch(function(){});
@@ -356,14 +364,14 @@ window._devStartWatcher = function() {
   _dToast('👁 Watching style.css for changes…');
   _dev.watchTid = setInterval(function() {
     _dApi('read_dev_file', 'style.css').then(function(r) {
-      if (r && r.result !== undefined && r.result !== _dev.fileBuf['style.css']) {
-        _dev.fileBuf['style.css'] = r.result;
-        _dev.css = r.result;
+      if (r !== undefined && r !== _dev.fileBuf['style.css']) {
+        _dev.fileBuf['style.css'] = r;
+        _dev.css = r;
         if (_dev.fileTab === 'style.css') {
           var ta = document.getElementById('dev-file-editor');
-          if (ta && document.activeElement !== ta) ta.value = r.result;
+          if (ta && document.activeElement !== ta) ta.value = r;
           var cssEd = document.getElementById('dev-css-editor');
-          if (cssEd && document.activeElement !== cssEd) cssEd.value = r.result;
+          if (cssEd && document.activeElement !== cssEd) cssEd.value = r;
         }
         _devRefreshPreviewDebounced(200);
       }
@@ -384,18 +392,18 @@ function _devStopWatcher() {
 window._devExportPdf = function() {
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
   _dApi('save_pdf_dialog').then(function(r) {
-    if (!r || !r.result) return;
-    var filepath = r.result;
+    if (!r) return;
+    var filepath = r;
     var orgEl = document.getElementById('s-org-name');
     var org = (orgEl && orgEl.value) || _dev.orgName;
     return _dApi('export_pdf_html',
       filepath, _dev.title, org, _dev.logo,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
       '', _dev.css, _dev.pageSize, _dev.orient,
-      _dev.colWidths, _dev.colHeaders, visArr
+      _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride
     );
   }).then(function(r) {
-    if (r && r.result) _dToast('✓ PDF exported!');
+    if (r) _dToast('✓ PDF exported!');
   }).catch(function(e){ if (e) _dToast(e.message||'Export failed', 'error'); });
 };
 
@@ -472,11 +480,8 @@ window._devCopyAiRequirement = function() {
     '```',
   ].join('\n');
 
-  try {
-    navigator.clipboard.writeText(prompt).then(function() {
-      _dToast('✓ AI requirement copied (' + prompt.length + ' chars)');
-    }).catch(function() { _devFallbackCopy(prompt); });
-  } catch(e) { _devFallbackCopy(prompt); }
+  // Avoid navigator.clipboard because it triggers Qt setFeaturePermission crash
+  _devFallbackCopy(prompt);
 };
 
 function _devFallbackCopy(text) {
