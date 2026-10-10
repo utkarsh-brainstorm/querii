@@ -1566,25 +1566,45 @@ function toggleColumnSort(col) {
   runFilter();
 }
 
-/* Fast client-side text filtering for rows in the active page */
-function filterResultRows(text) {
-  var tbody = document.getElementById('results-body');
-  if (!tbody) return;
-  var term = (text || '').toLowerCase();
-  var rows = tbody.getElementsByTagName('tr');
-  for (var i = 0; i < rows.length; i++) {
-    var tr = rows[i];
-    if (!term) {
-      tr.style.display = '';
-    } else {
-      var rowText = tr.textContent || tr.innerText;
-      if (rowText.toLowerCase().indexOf(term) > -1) {
-        tr.style.display = '';
-      } else {
-        tr.style.display = 'none';
-      }
+var _rowSearchTerm = '';
+var _rowMatches = [];
+var _rowMatchIndex = -1;
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, function(m) {
+    switch (m) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#39;';
     }
+  });
+}
+
+function filterResultRows(text) {
+  _rowSearchTerm = (text || '').trim();
+  drawPage(_currentPage);
+}
+
+function nextResultRowMatch(event) {
+  if (event && event.key !== 'Enter') return;
+  if (!_rowMatches || !_rowMatches.length) return;
+  
+  if (_rowMatchIndex >= 0 && _rowMatchIndex < _rowMatches.length) {
+    _rowMatches[_rowMatchIndex].style.background = '#fde68a';
+    _rowMatches[_rowMatchIndex].style.color = '#000';
   }
+  
+  _rowMatchIndex = (_rowMatchIndex + 1) % _rowMatches.length;
+  
+  _rowMatches[_rowMatchIndex].style.background = '#f59e0b';
+  _rowMatches[_rowMatchIndex].style.color = '#fff';
+  _rowMatches[_rowMatchIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 /* Render a single page of rows using DocumentFragment (fast) */
@@ -1620,12 +1640,31 @@ function drawPage(page) {
 
   var end = rows.length;
 
+  _rowMatches = [];
+  _rowMatchIndex = -1;
+  var termReg = _rowSearchTerm ? new RegExp(escapeRegExp(_rowSearchTerm), 'gi') : null;
+
   // Use DocumentFragment — one DOM mutation instead of thousands
   var frag = document.createDocumentFragment();
   for (var i = 0; i < end; i++) {
     var row = rows[i];
     var tr  = document.createElement('tr');
     tr.className = 'tbl-row';
+    
+    var rowMatchesTerm = false;
+    if (_rowSearchTerm) {
+      for (var k = 0; k < visibleCols.length; k++) {
+        var cTest = visibleCols[k];
+        if (row[cTest] != null && String(row[cTest]).toLowerCase().indexOf(_rowSearchTerm.toLowerCase()) > -1) {
+          rowMatchesTerm = true;
+          break;
+        }
+      }
+      if (!rowMatchesTerm) {
+        tr.style.display = 'none';
+      }
+    }
+
     for (var j = 0; j < visibleCols.length; j++) {
       var c  = visibleCols[j];
       var v  = row[c];
@@ -1637,13 +1676,29 @@ function drawPage(page) {
         span.textContent = 'NULL';
         td.appendChild(span);
       } else {
-        td.textContent = String(v);
+        var strV = String(v);
+        if (_rowSearchTerm && rowMatchesTerm) {
+          var highlighted = escapeHtml(strV).replace(termReg, function(match) {
+            return '<mark class="row-match" style="background:#fde68a;color:#000;border-radius:2px;padding:0 2px">' + match + '</mark>';
+          });
+          td.innerHTML = highlighted;
+        } else {
+          td.textContent = strV;
+        }
       }
       tr.appendChild(td);
     }
     frag.appendChild(tr);
   }
   body.appendChild(frag);
+
+  if (_rowSearchTerm) {
+    var marks = body.querySelectorAll('mark.row-match');
+    for (var m = 0; m < marks.length; m++) {
+      _rowMatches.push(marks[m]);
+    }
+    if (_rowMatches.length > 0) nextResultRowMatch();
+  }
 
   // Update header visibility to match column filter
   if (_colSearch) {

@@ -172,9 +172,12 @@ function _devRenderColControls() {
     return;
   }
   var html = '<div class="dev-col-list">';
+  var visColsCount = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); }).length;
+  var avgWidth = visColsCount > 0 ? Math.floor(100 / visColsCount) : 20;
+
   _dev.cols.forEach(function(c) {
     var vis    = _dev.colVisible === null || _dev.colVisible.has(c);
-    var width  = _dev.colWidths[c]  || '';
+    var width  = _dev.colWidths[c] !== undefined ? _dev.colWidths[c] : avgWidth;
     var header = _dev.colHeaders[c] || '';
     html += '<div class="dev-col-row' + (vis?'':' dev-col-hidden') + '">' +
       '<label class="dev-col-vis" title="Show/hide column">' +
@@ -183,8 +186,8 @@ function _devRenderColControls() {
       '</label>' +
       '<input class="dev-col-hdr" placeholder="Label override…" value="' + _dEsc(header) + '" oninput="window._devSetHeader(\'' + _dEsc(c) + '\', this.value)" title="Custom column header">' +
       '<div class="dev-col-width-wrap">' +
-        '<input type="range" min="0" max="400" step="5" value="' + (width||0) + '" class="dev-slider" oninput="window._devSetWidth(\'' + _dEsc(c) + '\', this.value, this.nextElementSibling)">' +
-        '<span class="dev-width-lbl">' + (width ? width + '%' : 'auto') + '</span>' +
+        '<input type="range" min="1" max="100" step="1" value="' + width + '" class="dev-slider" oninput="window._devSetWidth(\'' + _dEsc(c) + '\', this.value, this.nextElementSibling)">' +
+        '<span class="dev-width-lbl">' + width + '%</span>' +
       '</div>' +
     '</div>';
   });
@@ -250,8 +253,8 @@ window._devToggleCol = function(col, vis) {
 
 window._devSetWidth = function(col, val, lbl) {
   var n = parseInt(val, 10);
-  _dev.colWidths[col] = n > 0 ? n : 0;
-  if (lbl) lbl.textContent = n > 0 ? n + '%' : 'auto';
+  _dev.colWidths[col] = n;
+  if (lbl) lbl.textContent = n + '%';
   _devRefreshPreviewDebounced();
 };
 
@@ -391,7 +394,7 @@ function _devStopWatcher() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devExportPdf = function() {
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
-  _dApi('save_pdf_dialog').then(function(r) {
+  _dApi('save_file_dialog', _dev.title || 'export', 'pdf').then(function(r) {
     if (!r) return;
     var filepath = r;
     var orgEl = document.getElementById('s-org-name');
