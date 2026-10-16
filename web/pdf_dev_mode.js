@@ -162,6 +162,7 @@ function openUltraDevMode() {
     }).catch(function(){});
 
   _devRenderAll();
+  if (typeof loadCustomStylesForDevMode === 'function') loadCustomStylesForDevMode();
   _devUpdatePaperBadge();
   window._devSetZoom(_dev.zoom || 'fit');
   _devRefreshPreviewDebounced(300);

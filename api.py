@@ -117,8 +117,9 @@ class Api:
                 webview.OPEN_DIALOG,
                 allow_multiple=False,
                 file_types=(
-                    "Supported Files (*.xls;*.xlsx;*.xlsm;*.csv)",
+                    "Supported Files (*.xls;*.xlsx;*.xlsm;*.ods;*.csv)",
                     "Excel Files (*.xls;*.xlsx;*.xlsm)",
+                    "ODS Files (*.ods)",
                     "CSV Files (*.csv)",
                     "All files (*.*)",
                 ),
@@ -793,3 +794,144 @@ class Api:
             pass
 
         return _err("Could not access system clipboard")
+
+    # ----------------------------------------------------------------
+    # CSV Editor
+    # ----------------------------------------------------------------
+
+    def get_table_as_csv(self, table_name: str) -> dict:
+        """Return full table data as {columns: [], rows: [[values]]} for the CSV editor."""
+        try:
+            cols_meta = db.get_table_column_meta(table_name)
+            cols = [c["name"] for c in cols_meta if not c["name"].startswith("_")]
+            if not cols:
+                return _err("No columns found")
+            col_list = ", ".join(f'"{c}"' for c in cols)
+            sql = f'SELECT {col_list} FROM "{table_name}"'
+            _, rows = db.execute_query(sql)
+            row_data = [[str(r.get(c, "") or "") for c in cols] for r in rows]
+            return _ok({"columns": cols, "rows": row_data})
+        except Exception as e:
+            return _err(str(e))
+
+    def save_csv_table(self, table_name: str, columns: list, rows: list) -> dict:
+        """Overwrite an existing table with the edited CSV data."""
+        try:
+            from core.schema import sanitise_identifier, sanitise_table_name, infer_type
+            from core.importer import ImportPreview
+            import core.schema as sch
+
+            if not table_name or not columns:
+                return _err("table_name and columns are required")
+
+            # Build ColumnInfo list
+            seen: set = set()
+            col_infos = []
+            for i, raw in enumerate(columns):
+                samples = [str(rows[r][i]) for r in range(min(200, len(rows))) if i < len(rows[r]) and rows[r][i]]
+                sql_type = infer_type(samples)
+                sqlite_name = sanitise_identifier(raw or f"col_{i+1}", existing=seen)
+                col_infos.append(sch.ColumnInfo(raw_name=raw, sqlite_name=sqlite_name, sql_type=sql_type, samples=samples[:5]))
+
+            preview = ImportPreview(
+                filename=f"{table_name}.csv",
+                columns=col_infos,
+                row_count=len(rows),
+                sample_rows=[r[:5] for r in rows[:5]],
+            )
+            # Pad/trim rows
+            ncols = len(columns)
+            cleaned = []
+            for r in rows:
+                padded = (list(r) + [""] * ncols)[:ncols]
+                cleaned.append(padded)
+
+            tname, inserted, skipped = db.import_sheet(
+                preview=preview,
+                filepath=None,
+                header_row_index=0,
+                overwrite=True,
+                custom_table_name=table_name,
+                raw_rows=cleaned,
+            )
+            return _ok({"table_name": tname, "inserted": inserted})
+        except Exception as e:
+            import traceback
+            return _err(traceback.format_exc())
+
+    def create_csv_table(self, table_name: str, columns: list, rows: list) -> dict:
+        """Create a new table from CSV editor data."""
+        try:
+            from core.schema import sanitise_table_name
+            safe_name = sanitise_table_name(table_name)
+            return self.save_csv_table(safe_name, columns, rows)
+        except Exception as e:
+            return _err(str(e))
+
+    # ----------------------------------------------------------------
+    # Custom PDF Styles (named user presets)
+    # ----------------------------------------------------------------
+
+    def get_pdf_styles(self) -> dict:
+        """Return all custom user-saved PDF styles: [{name, css}]"""
+        try:
+            import json
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            return _ok(styles)
+        except Exception as e:
+            return _err(str(e))
+
+    def save_pdf_style(self, name: str, css: str) -> dict:
+        """Save or update a named custom PDF style."""
+        try:
+            import json
+            name = str(name).strip()
+            if not name:
+                return _err("Style name cannot be empty")
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            # Update existing or append
+            found = False
+            for s in styles:
+                if s.get("name") == name:
+                    s["css"] = css
+                    found = True
+                    break
+            if not found:
+                styles.append({"name": name, "css": css})
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Saved")
+        except Exception as e:
+            return _err(str(e))
+
+    def delete_pdf_style(self, name: str) -> dict:
+        """Delete a named custom PDF style."""
+        try:
+            import json
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            styles = [s for s in styles if s.get("name") != name]
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Deleted")
+        except Exception as e:
+            return _err(str(e))
+
+    def rename_pdf_style(self, old_name: str, new_name: str) -> dict:
+        """Rename a saved custom PDF style."""
+        try:
+            import json
+            new_name = str(new_name).strip()
+            if not new_name:
+                return _err("New name cannot be empty")
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            for s in styles:
+                if s.get("name") == old_name:
+                    s["name"] = new_name
+                    break
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Renamed")
+        except Exception as e:
+            return _err(str(e))
+

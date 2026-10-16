@@ -4,6 +4,7 @@
 # Sheet reading
 xlrd>=2.0.1        # Read .xls files (legacy Excel)
 openpyxl>=3.1.0    # Read .xlsx / .xlsm files
+odfpy>=1.4.0       # Read .ods (LibreOffice Calc) files
 # csv is in Python stdlib — no extra package needed
 
 # PDF export

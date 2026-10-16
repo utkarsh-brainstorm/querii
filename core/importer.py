@@ -39,52 +39,168 @@ class ImportPreview:
 # Raw row readers
 # ---------------------------------------------------------------------------
 
+def _format_cell_val(val) -> str:
+    """Format an Excel cell value cleanly to a string."""
+    if val is None:
+        return ""
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    return str(val).strip()
+
+
 def _read_xls(filepath: str, header_row_index: int = 0) -> Tuple[List[str], List[List[str]]]:
-    """Read an old-style .xls file. Returns (headers, data_rows)."""
-    import xlrd
-    wb = xlrd.open_workbook(filepath)
-    ws = wb.sheets()[0]
+    """
+    Read and convert an .xls file.
+    Supports:
+      - Standard binary BIFF8 .xls (xlrd)
+      - XLSX files misnamed with .xls extension (openpyxl)
+      - HTML tables exported as .xls (common in ERP/academic portals)
+      - XML Spreadsheet 2003 (SpreadsheetML) exported as .xls
+      - CSV/TSV data saved with .xls extension
+    If data is complex or incompatible, raises ValueError with a clean message.
+    """
+    try:
+        with open(filepath, "rb") as f:
+            magic = f.read(4096)
+    except Exception as e:
+        raise ValueError(f"Cannot open file: {e}")
 
-    if ws.nrows == 0:
-        raise ValueError("The file appears to be empty.")
+    # 1. Check for XLSX (Zip archive PK\x03\x04)
+    if magic.startswith(b"PK\x03\x04"):
+        return _read_xlsx(filepath, header_row_index)
 
-    headers = []
-    for c in range(ws.ncols):
-        v = ws.cell_value(header_row_index, c)
-        headers.append(str(v).strip() if v != "" else f"col_{c+1}")
+    # 2. Check for XML Spreadsheet 2003
+    if b"<?xml" in magic or b"<Workbook" in magic or b"urn:schemas-microsoft-com:office:spreadsheet" in magic:
+        try:
+            import xml.etree.ElementTree as ET
+            tree = ET.parse(filepath)
+            root = tree.getroot()
+            table = root.find(".//{urn:schemas-microsoft-com:office:spreadsheet}Table")
+            if table is None:
+                table = root.find(".//Table")
+            if table is not None:
+                all_rows = []
+                row_els = table.findall(".//{urn:schemas-microsoft-com:office:spreadsheet}Row") or table.findall(".//Row")
+                for row_el in row_els:
+                    row_data = []
+                    curr_col = 0
+                    cell_els = row_el.findall(".//{urn:schemas-microsoft-com:office:spreadsheet}Cell") or row_el.findall(".//Cell")
+                    for cell_el in cell_els:
+                        idx_attr = cell_el.attrib.get("{urn:schemas-microsoft-com:office:spreadsheet}Index") or cell_el.attrib.get("Index")
+                        if idx_attr:
+                            target_col = int(idx_attr) - 1
+                            while curr_col < target_col:
+                                row_data.append("")
+                                curr_col += 1
+                        data_el = cell_el.find(".//{urn:schemas-microsoft-com:office:spreadsheet}Data") or cell_el.find(".//Data")
+                        val = data_el.text if data_el is not None and data_el.text else ""
+                        row_data.append(str(val).strip())
+                        curr_col += 1
+                    if any(c for c in row_data):
+                        all_rows.append(row_data)
+                if len(all_rows) > header_row_index:
+                    headers = [h or f"col_{i+1}" for i, h in enumerate(all_rows[header_row_index])]
+                    data_rows = all_rows[header_row_index + 1:]
+                    return headers, data_rows
+        except Exception:
+            pass
 
-    rows = []
-    for r in range(header_row_index + 1, ws.nrows):
-        row = []
+    # 3. Check for HTML tables misnamed as .xls
+    lower_magic = magic.lower()
+    if b"<html" in lower_magic or b"<!doctype" in lower_magic or b"<table" in lower_magic:
+        try:
+            from bs4 import BeautifulSoup
+            with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                soup = BeautifulSoup(f.read(), "html.parser")
+            all_rows = []
+            for tr in soup.find_all("tr"):
+                cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+                if any(c for c in cells):
+                    all_rows.append(cells)
+            if len(all_rows) > header_row_index:
+                headers = [h or f"col_{i+1}" for i, h in enumerate(all_rows[header_row_index])]
+                data_rows = all_rows[header_row_index + 1:]
+                return headers, data_rows
+        except Exception:
+            pass
+
+    # 4. Standard binary .xls via xlrd
+    try:
+        import xlrd
+        wb = xlrd.open_workbook(filepath)
+        ws = wb.sheets()[0]
+        if ws.nrows == 0:
+            raise ValueError("The file appears to be empty.")
+
+        headers = []
         for c in range(ws.ncols):
-            v = ws.cell_value(r, c)
-            row.append(str(v).strip() if v != "" else "")
-        rows.append(row)
+            v = ws.cell_value(header_row_index, c)
+            headers.append(_format_cell_val(v) or f"col_{c+1}")
 
-    return headers, rows
+        rows = []
+        for r in range(header_row_index + 1, ws.nrows):
+            row = []
+            for c in range(ws.ncols):
+                v = ws.cell_value(r, c)
+                row.append(_format_cell_val(v))
+            rows.append(row)
+        return headers, rows
+    except ValueError:
+        raise
+    except Exception:
+        # 5. Check if CSV / text
+        try:
+            return _read_csv(filepath, header_row_index)
+        except Exception:
+            pass
+
+        # 6. Fallback to pandas
+        try:
+            import pandas as pd
+            df = pd.read_excel(filepath, header=header_row_index)
+            headers = [str(c).strip() for c in df.columns]
+            data_rows = [[_format_cell_val(v) for v in row] for row in df.values]
+            return headers, data_rows
+        except Exception:
+            pass
+
+        raise ValueError("Data is not compatible. Please provide clean spreadsheet data.")
 
 
 def _read_xlsx(filepath: str, header_row_index: int = 0) -> Tuple[List[str], List[List[str]]]:
-    """Read an .xlsx / .xlsm file using openpyxl."""
-    import openpyxl
-    wb = openpyxl.load_workbook(filepath, data_only=True)
-    ws = wb.active
+    """Read an .xlsx / .xlsm file using openpyxl with fallback."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(filepath, data_only=True)
+        ws = wb.active
 
-    all_rows = []
-    for row in ws.iter_rows(values_only=True):
-        all_rows.append([str(c).strip() if c is not None else "" for c in row])
+        all_rows = []
+        for row in ws.iter_rows(values_only=True):
+            all_rows.append([_format_cell_val(c) for c in row])
 
-    if len(all_rows) <= header_row_index:
-        raise ValueError("The file appears to be empty or the header row index is out of range.")
+        if len(all_rows) <= header_row_index:
+            raise ValueError("The file appears to be empty or the header row index is out of range.")
 
-    headers = all_rows[header_row_index]
-    # Replace empty header cells
-    for i, h in enumerate(headers):
-        if not h or h.lower() in ("none", "nan", ""):
-            headers[i] = f"col_{i+1}"
+        headers = all_rows[header_row_index]
+        # Replace empty header cells
+        for i, h in enumerate(headers):
+            if not h or h.lower() in ("none", "nan", ""):
+                headers[i] = f"col_{i+1}"
 
-    data_rows = all_rows[header_row_index + 1:]
-    return headers, data_rows
+        data_rows = all_rows[header_row_index + 1:]
+        return headers, data_rows
+    except ValueError:
+        raise
+    except Exception:
+        try:
+            import pandas as pd
+            df = pd.read_excel(filepath, header=header_row_index)
+            headers = [str(c).strip() for c in df.columns]
+            data_rows = [[_format_cell_val(v) for v in row] for row in df.values]
+            return headers, data_rows
+        except Exception:
+            pass
+        raise ValueError("Data is not compatible. Please provide clean spreadsheet data.")
 
 
 def _read_csv(filepath: str, header_row_index: int = 0) -> Tuple[List[str], List[List[str]]]:
@@ -108,6 +224,58 @@ def _read_csv(filepath: str, header_row_index: int = 0) -> Tuple[List[str], List
     return headers, data_rows
 
 
+
+def _read_ods(filepath: str, header_row_index: int = 0) -> Tuple[List[str], List[List[str]]]:
+    """Read a LibreOffice ODS file. Returns (headers, data_rows)."""
+    try:
+        from odf.opendocument import load as ods_load
+        from odf.table import Table, TableRow, TableCell
+        from odf.text import P
+    except ImportError:
+        raise ValueError(
+            "The 'odfpy' package is required to import ODS files. "
+            "Run: pip install odfpy"
+        )
+
+    doc = ods_load(filepath)
+    sheets = doc.spreadsheet.getElementsByType(Table)
+    if not sheets:
+        raise ValueError("No sheets found in ODS file.")
+    sheet = sheets[0]
+
+    all_rows: List[List[str]] = []
+    for tr in sheet.getElementsByType(TableRow):
+        cells = tr.getElementsByType(TableCell)
+        row: List[str] = []
+        for cell in cells:
+            # Handle repeat attribute
+            repeat = int(cell.getAttribute("numbercolumnsrepeated") or 1)
+            ps = cell.getElementsByType(P)
+            val = " ".join(
+                "".join(str(t) for t in p.childNodes if hasattr(t, "data")) for p in ps
+            ).strip()
+            row.extend([val] * repeat)
+        # Trim trailing empties
+        while row and not row[-1].strip():
+            row.pop()
+        all_rows.append(row)
+
+    # Trim trailing empty rows
+    while all_rows and not any(c.strip() for c in all_rows[-1]):
+        all_rows.pop()
+
+    if len(all_rows) <= header_row_index:
+        raise ValueError("ODS file appears to be empty.")
+
+    headers = all_rows[header_row_index]
+    for i, h in enumerate(headers):
+        if not h.strip():
+            headers[i] = f"col_{i + 1}"
+
+    data_rows = all_rows[header_row_index + 1:]
+    return headers, data_rows
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -120,7 +288,7 @@ def preview_file(
     Read a file and return an ImportPreview with inferred column types
     and sample rows. Does NOT write anything to the database.
 
-    Supports: .xls, .xlsx, .xlsm, .csv
+    Supports: .xls, .xlsx, .xlsm, .ods, .csv
     Raises ValueError on unsupported format or read error.
     """
     filename = os.path.basename(filepath)
@@ -131,12 +299,14 @@ def preview_file(
             headers, data_rows = _read_xls(filepath, header_row_index)
         elif ext in (".xlsx", ".xlsm"):
             headers, data_rows = _read_xlsx(filepath, header_row_index)
+        elif ext == ".ods":
+            headers, data_rows = _read_ods(filepath, header_row_index)
         elif ext == ".csv":
             headers, data_rows = _read_csv(filepath, header_row_index)
         else:
             raise ValueError(
                 f"Unsupported file format '{ext}'. "
-                "Supported formats: .xls, .xlsx, .xlsm, .csv"
+                "Supported formats: .xls, .xlsx, .xlsm, .ods, .csv"
             )
     except ValueError:
         raise
@@ -201,6 +371,8 @@ def read_all_rows(
         _, rows = _read_xls(filepath, header_row_index)
     elif ext in (".xlsx", ".xlsm"):
         _, rows = _read_xlsx(filepath, header_row_index)
+    elif ext == ".ods":
+        _, rows = _read_ods(filepath, header_row_index)
     elif ext == ".csv":
         _, rows = _read_csv(filepath, header_row_index)
     else:

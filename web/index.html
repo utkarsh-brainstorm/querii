@@ -47,7 +47,7 @@
     <div class="flex items-center gap-2.5 shrink-0">
       <img src="app_icon.png" alt="Querii Icon" class="w-6 h-6 rounded-md shadow-sm object-cover border border-[var(--border)] shrink-0" />
       <span class="font-semibold text-[15px] text-nav-main tracking-tight">Querii</span>
-      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">Version 4.0</span>
+      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">Version 4.1</span>
     </div>
     <div class="flex-1 flex justify-center">
       <div id="org-name-display" class="text-[13px] font-semibold text-nav-main tracking-wide hidden"></div>
@@ -57,6 +57,7 @@
       <span>📋</span><span id="active-table-name"></span>
     </div>
     <div class="flex items-center gap-0.5 shrink-0">
+      <button onclick="openNewCsvEditor()" class="nav-btn font-medium" title="Add a new CSV table">+ Add CSV</button>
       <button onclick="adjustZoom(-0.1)" class="nav-icon-btn" title="Zoom Out (Ctrl+-)">−</button>
       <button onclick="resetZoom()" class="nav-icon-btn text-[10px] font-mono w-[52px]" id="zoom-label" title="Reset Zoom (Ctrl+0)">100%</button>
       <button onclick="adjustZoom(0.1)"  class="nav-icon-btn" title="Zoom In (Ctrl+=)">+</button>
@@ -78,7 +79,7 @@
       <span class="text-[15px]">📂</span>
       <div class="min-w-0">
         <div id="import-filename" class="text-[12px] font-medium text-[var(--text-body)] truncate">Drop a sheet here — or click to browse</div>
-        <div class="text-[10px] text-[var(--text-dim)]">XLS · XLSX · CSV — any rows &amp; columns</div>
+        <div class="text-[10px] text-[var(--text-dim)]">XLS · XLSX · ODS · CSV — any rows &amp; columns</div>
       </div>
     </div>
     <div class="flex items-center gap-2 shrink-0">
@@ -388,6 +389,7 @@
     <div class="px-4 py-3 space-y-3">
       <div class="flex items-center gap-3">
         <p class="text-[11px] text-[var(--text-dim)] flex-1">Check tables to <strong>work with multiple at once</strong> (JOIN mode). Single-check for normal use.</p>
+        <button class="btn-ghost text-[11px] px-3" onclick="openNewCsvEditor()">+ New CSV</button>
         <button id="btn-use-selected" class="btn-primary text-[11px] px-4" onclick="useSelectedTables()">Use Selected ▶</button>
       </div>
       <div class="overflow-auto border border-[var(--border)] rounded" style="max-height:55vh">
@@ -410,6 +412,35 @@
     </div>
     <div class="modal-footer"><button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button></div>
   </div>
+
+  <!-- CSV EDITOR MODAL -->
+  <div id="modal-csv-editor" class="modal hidden" style="width:92vw;max-width:1400px;height:88vh;display:flex;flex-direction:column">
+    <div class="modal-header" style="flex-shrink:0">
+      <div class="flex items-center gap-3 flex-1">
+        <span id="csv-editor-title">📝 CSV Editor</span>
+        <span class="text-[10px] text-[var(--text-dim)] font-mono" id="csv-editor-info"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn-ghost text-[11px]" onclick="csvEditorAddRow()">+ Row</button>
+        <button class="btn-ghost text-[11px]" onclick="csvEditorAddCol()">+ Column</button>
+        <button class="btn-primary text-[11px] px-4" onclick="csvEditorSave()">💾 Save to DB</button>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;min-height:0;padding:0">
+      <div id="csv-editor-wrap" style="min-width:100%;overflow:auto;height:100%">
+        <table id="csv-editor-table" style="border-collapse:collapse;font-size:12px;font-family:monospace;width:100%">
+          <thead id="csv-editor-thead"></thead>
+          <tbody id="csv-editor-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer" style="flex-shrink:0;gap:8px">
+      <span class="text-[10px] text-[var(--text-dim)]">Tab: next cell &nbsp;|&nbsp; Enter: down &nbsp;|&nbsp; Enter×2: next row col-1 &nbsp;|&nbsp; Del col: right-click header</span>
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+
 
   <!-- COLUMN STATS POPUP -->
   <div id="modal-colstats" class="modal hidden" style="width:380px">
@@ -539,20 +570,29 @@
             <button type="button" onclick="applyPdfPreset('emerald')" class="btn-ghost text-[10px] h-6 px-2">🌲 Emerald</button>
             <button type="button" onclick="applyPdfPreset('tech')" class="btn-ghost text-[10px] h-6 px-2">🟣 Tech</button>
             <button type="button" onclick="applyPdfPreset('compact')" class="btn-ghost text-[10px] h-6 px-2">📏 Compact</button>
+            <span style="font-size:10px;color:var(--text-dim);margin-left:6px;margin-right:2px">|</span>
+            <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">My Styles:</span>
+            <div id="custom-style-pills" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
           </div>
           <textarea id="s-pdf-custom-css"
             class="input-sm w-full font-mono text-[10px]"
-            style="height:200px;resize:vertical;line-height:1.5"
+            style="height:180px;resize:vertical;line-height:1.5"
             placeholder="/* Paste your custom CSS here. It will be injected into all PDF exports by default. */
 /* Variables: --navy, --gold, --text, --muted, --border, --border-light, --paper */
 /* Classes: .page, .school-header, .school-logo, .document-heading, .title */
 /* .data-table, .data-table thead th, .data-table tbody td, .report-footer */"></textarea>
           <div class="text-[10px] text-[var(--text-dim)] mt-1">This CSS is pre-filled in the PDF export dialog. Users can modify it per-export.</div>
+          <!-- Save as custom style -->
+          <div class="flex items-center gap-2 mt-2">
+            <input type="text" id="s-style-name" class="input-sm flex-1 text-[11px]" placeholder="Style name (e.g. My Dark Theme)" />
+            <button type="button" class="btn-ghost text-[11px]" onclick="saveCustomPdfStyle()">💾 Save as Style</button>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Theme -->
+
     <div id="tab-theme" class="settings-tab-body hidden">
       <p class="text-[11px] text-[var(--text-dim)] mb-3">Changes apply immediately.</p>
       <div class="grid grid-cols-2 gap-2" id="theme-grid"></div>
@@ -609,7 +649,7 @@ DROP TABLE old_data;"></textarea>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <h3 class="font-bold text-[var(--text-main)] text-[18px] tracking-tight">Querii</h3>
-              <span class="text-[10px] font-mono bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-dim)] px-2 py-0.5 rounded-full font-semibold">Version 4.0</span>
+              <span class="text-[10px] font-mono bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-dim)] px-2 py-0.5 rounded-full font-semibold">Version 4.1</span>
             </div>
             <p class="text-[11px] text-[var(--text-dim)] mt-0.5">Professional Local-First SQL Database Studio & Executive Report Engine</p>
           </div>
@@ -864,11 +904,12 @@ DROP TABLE old_data;"></textarea>
           <span style="font-size:11px;font-weight:700;color:var(--text-head)">📝 Custom CSS</span>
           <div class="flex items-center gap-1.5">
             <button type="button" onclick="savePdfCssAsDefault()" class="btn-ghost text-[10px] h-6 px-2" title="Save this CSS as your default PDF style in Settings">💾 Set as Default</button>
+            <button type="button" onclick="saveExportCssAsNewStyle()" class="btn-ghost text-[10px] h-6 px-2" title="Save as a new named style">⭐ Save as Style</button>
             <button type="button" onclick="resetPdfCustomCssToDefault()" class="btn-ghost text-[10px] h-6 px-2" title="Reset to Document_Template.html default style">↺ Reset</button>
             <button type="button" onclick="copyPdfRequirement()" class="btn-ghost text-[10px] h-6 px-2">📋 Copy AI Req</button>
           </div>
         </div>
-        <!-- 5 Presets for 1-click selection -->
+        <!-- 5 Presets for 1-click selection + Custom Styles -->
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
           <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">Presets:</span>
           <button type="button" onclick="applyPdfPreset('executive')" class="btn-ghost text-[10px] h-6 px-2">🏢 Slate</button>
@@ -876,6 +917,9 @@ DROP TABLE old_data;"></textarea>
           <button type="button" onclick="applyPdfPreset('emerald')" class="btn-ghost text-[10px] h-6 px-2">🌲 Emerald</button>
           <button type="button" onclick="applyPdfPreset('tech')" class="btn-ghost text-[10px] h-6 px-2">🟣 Tech</button>
           <button type="button" onclick="applyPdfPreset('compact')" class="btn-ghost text-[10px] h-6 px-2">📏 Compact</button>
+          <span style="font-size:10px;color:var(--text-dim);margin:0 4px">|</span>
+          <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">My Styles:</span>
+          <div id="export-custom-style-pills" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
         </div>
         <textarea id="pdf-custom-css"
           class="input-sm w-full font-mono text-[10px]"
@@ -958,7 +1002,13 @@ DROP TABLE old_data;"></textarea>
               <button type="button" onclick="window._devApplyPreset('compact')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Dense Compact preset">📏 Compact</button>
               <div style="flex:1"></div>
               <button type="button" onclick="window._devApplyPreset('executive')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #cbd5e1;color:#64748b;cursor:pointer;font-weight:600;transition:all .1s" title="Reset to Document_Template.html default executive style">↺ Reset</button>
-              <button type="button" onclick="window._devSaveCssAsDefault()" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #c7d2fe;color:#4338ca;cursor:pointer;font-weight:700;transition:all .1s" title="Save current CSS as default for all future exports">💾 Set as Default</button>
+              <button type="button" onclick="window._devSaveAsNewStyle()" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #c7d2fe;color:#4338ca;cursor:pointer;font-weight:700;transition:all .1s" title="Save current CSS as a new named style">⭐ Save as Style</button>
+              <button type="button" onclick="window._devSaveCssAsDefault()" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #cbd5e1;color:#334155;cursor:pointer;font-weight:700;transition:all .1s" title="Save current CSS as default for all future exports">💾 Set as Default</button>
+            </div>
+            <!-- Custom Saved Styles row in Dev Mode -->
+            <div id="dev-custom-styles-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
+              <span style="font-size:10px;font-weight:700;color:#64748b;margin-right:2px">My Styles:</span>
+              <div id="dev-custom-style-pills" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
             </div>
             <textarea id="dev-css-editor" spellcheck="false" oninput="window._devCssChanged(this.value)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();_dev.css=this.value;_devRefreshPreviewDebounced(100);_dToast('Preview refreshed')}" style="width:100%;height:220px;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)"></textarea>
           </div>
@@ -1002,5 +1052,6 @@ DROP TABLE old_data;"></textarea>
   <script src="themes.js"></script>
   <script src="app.js"></script>
   <script src="pdf_dev_mode.js"></script>
+  <script src="csv_editor.js"></script>
 </body>
 </html>

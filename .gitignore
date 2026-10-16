@@ -11,3 +11,31 @@ build/
 querii-linux-shiv
 target/
 core/rust_engine/target/
+
+# Private data files
+*.xls
+*.xlsx
+*.xlsm
+
+# Debug & development artifacts
+debug.log
+debug_dom.html
+debug_gui.js
+app.pid
+app_diff.txt
+querii_export.pdf
+defult_style.css
+
+# Patch scripts
+patch*.py
+
+# Test files
+test_*.py
+test-wrapper.sh
+test_puppeteer.js
+
+# Virtual envs
+my_venv*/
+
+# OS-generated
+Thumbs.db

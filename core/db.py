@@ -135,14 +135,16 @@ def get_existing_table_names() -> set:
 
 def import_sheet(
     preview: ImportPreview,
-    filepath: str,
+    filepath: Optional[str],
     header_row_index: int = 0,
     overwrite: bool = False,
     custom_table_name: Optional[str] = None,
+    raw_rows: Optional[List[List[str]]] = None,
 ) -> Tuple[str, int, int]:
     """
     Create (or replace) a table for the given sheet and insert all rows.
 
+    If raw_rows is provided, filepath is not used for data reading.
     Returns (table_name, rows_inserted, rows_skipped).
     """
     # --- Backup ---
@@ -181,12 +183,18 @@ def import_sheet(
         conn.execute(create_sql)
         conn.commit()
 
-        # Read all rows
-        all_rows = read_all_rows(filepath, header_row_index, ncols=len(preview.columns))
+        # Read all rows — either from raw_rows or from file
+        if raw_rows is not None:
+            all_rows = raw_rows
+        elif filepath:
+            all_rows = read_all_rows(filepath, header_row_index, ncols=len(preview.columns))
+        else:
+            all_rows = []
 
         # Insert
         col_names = ", ".join(f'"{c.sqlite_name}"' for c in preview.columns)
         placeholders = ", ".join("?" * len(preview.columns))
+        src = preview.filename or "csv_editor"
         insert_sql = f'INSERT INTO "{tname}" (_source, {col_names}) VALUES (?, {placeholders})'
 
         inserted = 0
@@ -213,7 +221,7 @@ def import_sheet(
                     else:
                         typed_row.append(val)
 
-                conn.execute(insert_sql, [preview.filename] + typed_row)
+                conn.execute(insert_sql, [src] + typed_row)
                 inserted += 1
             except Exception:
                 skipped += 1
@@ -229,11 +237,12 @@ def import_sheet(
                 1 if overwrite else 0,
             ),
         )
-        # Store last filepath
-        conn.execute(
-            "INSERT OR REPLACE INTO app_settings(key,value) VALUES ('last_import_filepath',?)",
-            (filepath,)
-        )
+        # Store last filepath only if we had a real file
+        if filepath:
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings(key,value) VALUES ('last_import_filepath',?)",
+                (filepath,)
+            )
         conn.commit()
         return tname, inserted, skipped
     finally:

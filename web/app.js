@@ -1883,6 +1883,7 @@ function exportPdf() {
   if (useHtmlEl) useHtmlEl.checked = true;
 
   openModal('modal-pdf-export');
+  if (typeof loadExportModalCustomStyles === 'function') loadExportModalCustomStyles();
 }
 
 /* ── PDF Presets & Default Style ─────────────────────────────────────── */
@@ -2906,6 +2907,11 @@ function openFileList() {
       var isSelected = _selectedTables.indexOf(t.table) !== -1;
       var tr = document.createElement('tr');
       tr.className = 'tbl-row' + (isSelected ? ' selected-row' : '');
+      var fname = (h.filename || '').toLowerCase();
+      var isCsv = fname.endsWith('.csv') || fname === 'csv_editor' || (!h.filename && !fname.endsWith('.xls') && !fname.endsWith('.xlsx') && !fname.endsWith('.ods'));
+      var editBtnHtml = isCsv
+        ? '<button onclick="openCsvEditorForTable(\'' + esc(t.table) + '\')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;text-decoration:underline;margin-right:6px" title="Edit CSV table in spreadsheet editor">✏️ Edit</button>'
+        : '';
       tr.innerHTML =
         '<td class="tbl-cell" style="text-align:center"><input type="checkbox" class="table-checkbox" data-table="' + esc(t.table) + '"' + (isSelected ? ' checked' : '') + '></td>' +
         '<td class="tbl-cell" style="font-family:monospace;font-size:11px;font-weight:600;color:var(--text-head)">' + esc(t.table) + '</td>' +
@@ -2914,6 +2920,7 @@ function openFileList() {
         '<td class="tbl-cell text-right">' + ((h.rows_imported || 0).toLocaleString()) + '</td>' +
         '<td class="tbl-cell text-right">' + userCols.length + '</td>' +
         '<td class="tbl-cell" style="text-align:center">' +
+          editBtnHtml +
           '<button onclick="fileListSelect(\'' + esc(t.table) + '\')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;text-decoration:underline;margin-right:6px" title="Use this table alone">Use</button>' +
           '<button onclick="fileListDrop(\'' + esc(t.table) + '\')" style="font-size:10px;color:var(--danger);background:none;border:none;cursor:pointer" title="Delete table">🗑</button>' +
         '</td>';

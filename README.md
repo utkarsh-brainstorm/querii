@@ -1,4 +1,4 @@
-# ⚡ Querii — Version 4.0
+# ⚡ Querii — Version 4.1
 
 <p align="center">
   <img src="app_icon.png" alt="Querii Official Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);" />
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.0-blue.svg?style=flat-square" alt="Version 4.0" />
+  <img src="https://img.shields.io/badge/version-4.1-blue.svg?style=flat-square" alt="Version 4.1" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License MIT" />
   <img src="https://img.shields.io/badge/platform-Linux%20|%20macOS%20|%20Windows-lightgrey.svg?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/rust_engine-%3C35ms%20vector%20PDF-orange.svg?style=flat-square" alt="Rust Engine" />
@@ -20,7 +20,7 @@
 ## 📖 Table of Contents
 
 1. [Executive Overview](#-executive-overview)
-2. [What's New in Version 4.0](#-whats-new-in-version-40)
+2. [What's New in Version 4.1](#-whats-new-in-version-41)
 3. [Core Highlights & Capabilities](#-core-highlights--capabilities)
 4. [Dual-Engine PDF Architecture](#-dual-engine-pdf-architecture)
    - [Engine 1: Native Rust Vector Engine (`<35ms`)](#engine-1-native-rust-vector-engine-35ms)
@@ -56,30 +56,28 @@
 
 ## 🌟 Executive Overview
 
-**Querii Version 4.0** is an uncompromising, local-first analytics workstation built for software engineers, data analysts, and executive teams who require immediate data manipulation, visual SQL query authoring, and publication-grade PDF reporting without cloud latency, subscription fees, or security compromises.
+**Querii Version 4.1** is an uncompromising, local-first analytics workstation built for software engineers, data analysts, and executive teams who require immediate data manipulation, visual SQL query authoring, and publication-grade PDF reporting without cloud latency, subscription fees, or security compromises.
 
 Pairing a desktop UI powered by `pywebview` with high-performance database adapters (SQLite, PostgreSQL, MySQL) and a hybrid **dual-engine PDF compilation architecture**, Querii gives you instantaneous sub-second queries, live schema manipulation, and publication-ready financial and executive reports.
 
 <p align="center">
-  <img src="Main_interface_dark_mode.png" alt="Querii Main Interface (Dark Mode)" width="100%" />
+  <img src="Main_Interface_light_mode.png" alt="Querii Main Interface (Light Mode)" width="100%" />
   <br>
   <em><strong>Querii Main Interface (Dark Mode)</strong> — Visual Query Builder, Freeform SQL Editor, Dynamic Schema Drawer, and High-Performance Tabular Grid.</em>
 </p>
 
 ---
 
-## 🚀 What's New in Version 4.0
+## 🚀 What's New in Version 4.1
 
-- ⚡ **Official Version 4.0 Release:** Milestone production release; completely updated branding, APIs, and packaging.
-- 📐 **Authentic Physical Page Geometry:** Ultra Dev Mode renders documents in true physical proportions (`A4: 210×297mm`, `A3: 297×420mm`, `Letter: 216×279mm`) inside a dark studio canvas with realistic paper shadows and authentic page boundaries.
-- 🖱️ **Interactive Mouse Drag Column Resizing:** Drag vertical column dividers directly on the table header with the mouse. Adjacent columns resize simultaneously to strictly conserve 100% total table geometry.
-- ⌨️ **Numeric Keyboard Width Inputs:** Sliders are accompanied by direct numeric percentage input fields for exact keyboard adjustments.
-- 🎨 **100% Custom CSS Freedom:** Injected CSS operates without restrictive `!important` locks, giving users full creative control over typography, element positioning, margins, and headers.
-- 🔠 **Bundled Libron Executive Typography:** Ships with pre-installed `Libron` serif webfont weights alongside system fallbacks.
-- 🎚️ **Bold Data & Vertical Grid Line Toggles:** 1-click controls to toggle bold body text and vertical column grid separators in the final PDF.
-- 📋 **Native OS Clipboard Engine:** Multi-layer clipboard engine (`pyperclip` → `PyQt6` → `wl-copy`/`xclip` → DOM fallback) eliminates browser sandbox errors and Qt permission crashes across Linux, macOS, and Windows.
-- 🤖 **Context-Aware AI Requirement Generator:** 1-click prompt generator exporting complete HTML schemas, CSS variables, active column layouts, and the **6 Hard Exceptions** for zero-error AI styling.
-- 🔍 **Client-Side Global Search (Ctrl+F):** Real-time text search highlighting all occurrences across every cell with instant Enter traversal.
+- 📝 **Integrated Spreadsheet CSV Editor:** Full-featured desktop spreadsheet studio for creating new CSV tables and editing existing ones directly from the Files panel.
+  - **Keyboard Navigation:** `Tab` moves to next column, `Enter` advances to the next row in the same column, and rapid **Double-Enter** jumps directly to column 1 of the next row.
+  - **Direct Clipboard Ingestion:** Paste tabular data (tab-separated or comma-separated) directly into cells or onto empty grids to instantly construct complete multi-column tables.
+  - **Header Pinning:** Top row is locked as the table header with inline column renaming and right-click column deletion.
+  - **Scoped Editing:** The "Edit" action is strictly reserved for CSV-backed tables to preserve data integrity.
+- 📂 **Universal Excel & Spreadsheet Ingestion Layer:** Robust conversion layer supporting `.xls` (legacy BIFF8 binary, XML Spreadsheet 2003, HTML table dumps, and misnamed CSV/TSV files), `.xlsx`, `.xlsm`, and `.ods` formats. Handles complex structures with user-friendly diagnostics requesting clean tabular data.
+- 🎨 **User-Defined Custom PDF Styles:** Save, name, apply, and delete custom CSS PDF styles directly from Settings, Ultra Dev Mode, and the Export Modal alongside the 5 built-in executive presets.
+- 🧹 **Repository Hardening & Privacy Enforcement:** Cleaned history by purging private test files, hardening `.gitignore`, and removing dev build artifacts.
 
 ---
 
@@ -537,4 +535,4 @@ Querii is **100% local-first**. Your queries, database credentials, and exported
 
 ## 📄 License
 
-Querii Version 4.0 is licensed under the [MIT License](LICENSE).
+Querii Version 4.1 is licensed under the [MIT License](LICENSE).
