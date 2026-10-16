@@ -388,11 +388,18 @@ function csvEditorSave() {
   });
 }
 
+function closeCsvEditor() {
+  var el = document.getElementById('modal-csv-editor');
+  if (el) el.classList.add('hidden');
+  if (typeof closeModal === 'function') closeModal();
+}
+window.closeCsvEditor = closeCsvEditor;
+
 /* ─── Helper: open modal ────────────────────────────────────────────────── */
 function _openModal(id) {
   if (typeof openModal === 'function') { openModal(id); return; }
   document.querySelectorAll('.modal').forEach(function(m) { m.classList.add('hidden'); });
-  var overlay = document.getElementById('modal-overlay');
+  var overlay = document.getElementById('modal-backdrop');
   if (overlay) overlay.classList.remove('hidden');
   var el = document.getElementById(id);
   if (el) el.classList.remove('hidden');

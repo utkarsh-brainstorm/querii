@@ -414,7 +414,7 @@
   </div>
 
   <!-- CSV EDITOR MODAL -->
-  <div id="modal-csv-editor" class="modal hidden" style="width:92vw;max-width:1400px;height:88vh;display:flex;flex-direction:column">
+  <div id="modal-csv-editor" class="modal hidden" style="width:92vw;max-width:1400px;height:88vh">
     <div class="modal-header" style="flex-shrink:0">
       <div class="flex items-center gap-3 flex-1">
         <span id="csv-editor-title">📝 CSV Editor</span>
@@ -424,7 +424,7 @@
         <button class="btn-ghost text-[11px]" onclick="csvEditorAddRow()">+ Row</button>
         <button class="btn-ghost text-[11px]" onclick="csvEditorAddCol()">+ Column</button>
         <button class="btn-primary text-[11px] px-4" onclick="csvEditorSave()">💾 Save to DB</button>
-        <button class="modal-close" onclick="closeModal()">✕</button>
+        <button class="modal-close" onclick="closeCsvEditor()">✕</button>
       </div>
     </div>
     <div style="flex:1;overflow:auto;min-height:0;padding:0">
@@ -437,7 +437,7 @@
     </div>
     <div class="modal-footer" style="flex-shrink:0;gap:8px">
       <span class="text-[10px] text-[var(--text-dim)]">Tab: next cell &nbsp;|&nbsp; Enter: down &nbsp;|&nbsp; Enter×2: next row col-1 &nbsp;|&nbsp; Del col: right-click header</span>
-      <button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button>
+      <button class="btn-ghost text-[12px]" onclick="closeCsvEditor()">Close</button>
     </div>
   </div>
 

@@ -169,6 +169,7 @@ function closeModal() {
     if (m) m.classList.add('hidden');
     _activeModal = null;
   }
+  document.querySelectorAll('.modal').forEach(function(m) { m.classList.add('hidden'); });
   var bd = document.getElementById('modal-backdrop');
   if (bd) bd.classList.add('hidden');
 }
