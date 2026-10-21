@@ -26,7 +26,7 @@ else:
 sys.path.insert(0, ROOT)
 
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
-    "--proxy-server='direct://' --proxy-bypass-list=*"
+    "--proxy-server=direct:// --proxy-bypass-list=*"
 )
 
 
@@ -53,7 +53,7 @@ import core.db as db   # noqa: E402
 from api import Api     # noqa: E402
 
 
-def main() -> None:
+def _run_app() -> None:
     # ── Set persistent user-data directory before init_db ──────────────
     data_dir = _get_user_data_dir()
     os.makedirs(data_dir, exist_ok=True)
@@ -71,9 +71,17 @@ def main() -> None:
             "Ensure the 'web/' directory is present alongside main.py."
         )
 
-    icon_path = os.path.join(ROOT, "app_icon.png")
-    if not os.path.exists(icon_path):
-        icon_path = os.path.join(ROOT, "web", "app_icon.png")
+    # ── Resolve Icon (.ico on Windows, .png on Linux/macOS) ──────────────────
+    if sys.platform == "win32":
+        icon_path = os.path.join(ROOT, "app_icon.ico")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(ROOT, "web", "app_icon.ico")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(ROOT, "web", "favicon.ico")
+    else:
+        icon_path = os.path.join(ROOT, "app_icon.png")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(ROOT, "web", "app_icon.png")
 
     window = webview.create_window(
         title            = "Querii Version 4.3 — Sheet to SQL",
@@ -94,11 +102,52 @@ def main() -> None:
     # which is notoriously broken on many Linux setups and causes severe rendering lag.
     if sys.platform == "linux":
         os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
-        
-    webview.start(
-        debug="--debug" in sys.argv,
-        icon=icon_path if os.path.exists(icon_path) else None,
-    )
+
+    start_kwargs: dict = {
+        "debug": "--debug" in sys.argv,
+    }
+    # On Windows, pywebview strictly requires .ico file format for WinForms Icon
+    if icon_path and os.path.exists(icon_path):
+        if sys.platform == "win32":
+            if icon_path.lower().endswith(".ico"):
+                start_kwargs["icon"] = icon_path
+        else:
+            start_kwargs["icon"] = icon_path
+
+    webview.start(**start_kwargs)
+
+
+def main() -> None:
+    try:
+        _run_app()
+    except Exception as exc:
+        import traceback
+        from datetime import datetime
+        err_msg = traceback.format_exc()
+
+        try:
+            data_dir = _get_user_data_dir()
+            os.makedirs(data_dir, exist_ok=True)
+            crash_path = os.path.join(data_dir, "crash.log")
+            with open(crash_path, "a", encoding="utf-8") as f:
+                f.write(f"\n--- Crash on {datetime.now().isoformat()} ---\n{err_msg}\n")
+        except Exception:
+            pass
+
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(
+                    0,
+                    f"Querii failed to start:\n\n{exc}\n\n"
+                    f"A crash log has been saved to:\n%APPDATA%\\Querii\\crash.log",
+                    "Querii - Startup Error",
+                    0x10,  # MB_ICONERROR
+                )
+            except Exception:
+                pass
+        print(err_msg, file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

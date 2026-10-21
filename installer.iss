@@ -16,16 +16,18 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 ; App data lives in %APPDATA%\Querii — no installer access needed
-UninstallDisplayIcon={app}\querii-windows.exe
+SetupIconFile=app_icon.ico
+UninstallDisplayIcon={app}\app_icon.ico
 CreateUninstallRegKey=yes
 
 [Files]
 Source: "dist\querii-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Querii"; Filename: "{app}\querii-windows.exe"
-Name: "{group}\Uninstall Querii"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Querii"; Filename: "{app}\querii-windows.exe"; Tasks: desktopicon
+Name: "{group}\Querii"; Filename: "{app}\querii-windows.exe"; IconFilename: "{app}\app_icon.ico"
+Name: "{group}\Uninstall Querii"; Filename: "{uninstallexe}"; IconFilename: "{app}\app_icon.ico"
+Name: "{autodesktop}\Querii"; Filename: "{app}\querii-windows.exe"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
