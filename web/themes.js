@@ -39,6 +39,7 @@ const THEMES = {
       '--diff-bg':       '#FFFBEB',
       '--diff-border':   '#FCD34D',
       '--diff-text':     '#92400E',
+      '--table-row-alt': '#F2F2F4',
     }
   },
   professional: {
@@ -73,6 +74,7 @@ const THEMES = {
       '--diff-bg':       'rgba(251,191,36,0.1)',
       '--diff-border':   '#fbbf24',
       '--diff-text':     '#fde68a',
+      '--table-row-alt': '#172233',
     }
   },
   dark: {
@@ -107,6 +109,7 @@ const THEMES = {
       '--diff-bg':       'rgba(227,179,65,0.08)',
       '--diff-border':   '#e3b341',
       '--diff-text':     '#e3b341',
+      '--table-row-alt': '#12161d',
     }
   },
   light: {
@@ -141,6 +144,7 @@ const THEMES = {
       '--diff-bg':       '#fffbeb',
       '--diff-border':   '#fcd34d',
       '--diff-text':     '#92400e',
+      '--table-row-alt': '#f1f5fa',
     }
   },
   minimal: {
@@ -175,6 +179,7 @@ const THEMES = {
       '--diff-bg':       '#fffbeb',
       '--diff-border':   '#d97706',
       '--diff-text':     '#92400e',
+      '--table-row-alt': '#f9fafb',
     }
   },
 
@@ -210,6 +215,7 @@ const THEMES = {
       '--diff-bg':       '#fff5e6',
       '--diff-border':   '#ff9f0a',
       '--diff-text':     '#995c00',
+      '--table-row-alt': '#f0f0f3',
     }
   },
   accessible: {
@@ -244,6 +250,7 @@ const THEMES = {
       '--diff-bg':       '#fef9c3',
       '--diff-border':   '#d97706',
       '--diff-text':     '#78350f',
+      '--table-row-alt': '#f3f4f6',
     }
   },
 };

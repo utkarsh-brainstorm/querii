@@ -64,34 +64,36 @@ function _devComputeDefaultSpecs(cols, rows, shortenHeaders) {
   if (shortenHeaders === undefined) shortenHeaders = true;
 
   cols.forEach(function(c) {
-    var hStr = String(c);
-    var hLen = hStr.length;
-    var maxFirstStrLen = 0;
+    var cleanHeader = String(c).replace(/_/g, ' ').trim();
+    var hLen = cleanHeader.length;
+    var maxTokenLen = 0;
     if (rows && rows.length) {
       for (var i = 0; i < rows.length; i++) {
         var val = rows[i][c];
         if (val !== undefined && val !== null) {
           var sVal = String(val).trim();
           if (sVal) {
-            var firstToken = sVal.split(/\s+/)[0];
-            if (firstToken.length > maxFirstStrLen) {
-              maxFirstStrLen = firstToken.length;
+            var tokens = sVal.split(/\s+/);
+            for (var k = 0; k < tokens.length; k++) {
+              if (tokens[k].length > maxTokenLen) {
+                maxTokenLen = tokens[k].length;
+              }
             }
           }
         }
       }
     }
 
-    // Base width is determined by the size of the largest first string in the column
-    var effW = maxFirstStrLen > 0 ? Math.max(maxFirstStrLen, 4) : Math.max(hLen, 4);
-    var dispName = hStr;
+    // Base width is determined by the longest continuous substring in values (excluding attribute name)
+    var effW = maxTokenLen > 0 ? Math.max(maxTokenLen, 4) : Math.max(hLen, 4);
+    var dispName = cleanHeader;
 
-    // Check if column name fits in header; if not and shortening enabled, truncate
+    // Check if column name fits in header; if not and shortening enabled, truncate to fit
     if (shortenHeaders && hLen > effW) {
-      var truncLen = Math.max(3, effW - 2);
-      dispName = hStr.substring(0, truncLen) + '..';
+      var truncLen = Math.max(2, effW - 2);
+      dispName = cleanHeader.substring(0, truncLen).replace(/\s+$/, '') + '..';
     } else {
-      dispName = hStr;
+      dispName = cleanHeader;
     }
 
     weights[c] = { w: effW, name: dispName };
@@ -320,7 +322,7 @@ function _devRenderColControls() {
     html += '<div class="dev-col-row' + (vis?'':' dev-col-hidden') + '">' +
       '<label class="dev-col-vis" title="Show/hide column">' +
         '<input type="checkbox" ' + (vis?'checked':'') + ' onchange="window._devToggleCol(\'' + _dEsc(c) + '\', this.checked)">' +
-        '<span class="dev-col-name" title="' + _dEsc(c) + '">' + _dEsc(c) + (isExtra ? ' <span style="font-size:9px;color:#3b82f6;font-weight:700">[extra]</span>' : '') + '</span>' +
+        '<span class="dev-col-name" title="' + _dEsc(c) + '">' + _dEsc(c.replace(/_/g, ' ')) + (isExtra ? ' <span style="font-size:9px;color:#3b82f6;font-weight:700">[extra]</span>' : '') + '</span>' +
       '</label>' +
       '<input class="dev-col-hdr" placeholder="Label override…" value="' + _dEsc(header) + '" oninput="window._devSetHeader(\'' + _dEsc(c) + '\', this.value)" title="Custom column header">' +
       '<div class="dev-col-width-wrap" style="display:flex;align-items:center;gap:6px">' +
@@ -375,7 +377,7 @@ window._devAddExtraColumn = function() {
   if (_dev.cols.indexOf(name) !== -1) { _dToast('Column "' + name + '" already exists', 'warn'); return; }
   _dev.extraCols.push(name);
   _dev.cols.push(name);
-  _dev.colHeaders[name] = name;
+  _dev.colHeaders[name] = name.replace(/_/g, ' ');
   if (_dev.colVisible) _dev.colVisible.add(name);
 
   var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];

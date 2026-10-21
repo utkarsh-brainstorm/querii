@@ -114,33 +114,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v4.2
-          name: Querii Version 4.2
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v4.3' }}
+          name: Querii Version 4.3
           fail_on_unmatched_files: false
           body: |
-            ## ⚡ Querii Version 4.2 (Official Release)
+            ## ⚡ Querii Version 4.3 (Official Release)
 
-            **Querii Version 4.2** delivers major enhancements across spreadsheet creation, multi-platform binary compilation (native macOS Apple Silicon arm64 & Intel x86_64), intelligent column sizing, and executive PDF reporting workflows.
+            **Querii Version 4.3** introduces intelligent continuous substring token column auto-sizing, frictionless reddish deletion animations in CSV Studio, accessible alternating row striping across all 7 UI themes, and complete 4-platform compilation (Linux, macOS ARM64, macOS x86_64, Windows Setup with uninstaller).
 
             ---
 
-            ### 🚀 What's New in Version 4.2
+            ### 🚀 What's New in Version 4.3
 
-            #### 1. 📊 Next-Gen Spreadsheet CSV Studio
-            - **Batch Row & Column Additions**: Numeric counter inputs (`N`) alongside `+ Row(s)` and `+ Col(s)` allow instant creation of large tables.
-            - **Accessible Row & Column Deletion**: Dedicated `🗑 Del Row` and `🗑 Del Col` toolbar controls, plus direct inline `×` removal buttons on row numbers and column headers.
-            - **Spreadsheet Clipboard Integration**: Direct copy-paste of tabular data directly into cells, respecting headers, tabs, and commas.
+            #### 1. 📐 Continuous Substring Column Auto-Sizing & Header Cleanliness
+            - **Longest Substring Token Width Calculation**: Column widths are now determined by the longest continuous non-whitespace substring across all cell values (excluding attribute name), ensuring that long surnames, identifiers, and large numeric values fit without breaking.
+            - **Smart Header Truncation**: When header names exceed content capacity, headers are gracefully truncated (`abcd..`) to perfectly fit the column width.
+            - **Automatic Underscore Replacement**: Attribute names containing `_` are automatically cleaned into spaced labels across PDF and Ultra Dev mode.
+            - **Preserved User Overrides**: Auto-sizing computes once upon export or entering Ultra Dev Mode; manual slider and header edits are strictly preserved without retriggering recalculation.
 
-            #### 2. 🎨 Executive PDF Studio & Smart Layout
-            - **Token-Aware Column Auto-Width & Smart Header Shortening**: Column widths are calculated from the longest first token across rows. When column headers exceed content widths, a single-click checkbox gracefully truncates names (`abcd..`), immediately reflected in the column sliders.
-            - **Export-Only Rows & Columns**: Inject blank rows (for physical signatures/forms) and add custom columns without mutating the underlying SQLite database.
-            - **Organisation & Watermark Priority**: Live custom organisation updates seamlessly synchronize with export metadata and dense anti-tamper watermark text.
-            - **Logo Inclusion Toggle**: Checkbox to toggle branding logos on/off across both the header masthead and repeating watermarks.
+            #### 2. 🎬 Non-Blocking Reddish Vanishing Deletion in CSV Studio
+            - **Zero Confirmation Dialogs**: Instant row and column deletion with zero annoying popup interruptions.
+            - **Smooth Vanishing Animation**: Fast (160ms) soft-red fade-out and collapse transition (`.ce-row-vanishing`, `.ce-col-vanishing`) providing immediate visual feedback as rows and columns snap smoothly into place.
 
-            #### 3. 🍎 Multi-Architecture macOS & Windows Packaging
-            - **Native macOS Apple Silicon (arm64)**: Built for M1, M2, M3, and M4 Macs with native performance.
-            - **Native macOS Intel (x86_64)**: Dedicated native binaries for legacy Intel-based Macs.
-            - **Windows Uninstaller**: Start Menu and Add/Remove Programs uninstaller shortcut registered via Inno Setup.
+            #### 3. 🎨 Accessible Alternating Contrast Rows in All Themes
+            - **Zebra Row Contrast**: Meticulously calibrated `--table-row-alt` subtle contrast across all 7 built-in themes (`Mono`, `Professional`, `Dark`, `Light Blue`, `Minimal`, `Apple Minimal`, `Accessible High-Contrast`), ensuring easy horizontal row-following across wide datasets.
+
+            #### 4. 📦 Complete 4-Platform Native Compilations
+            - **Linux (x86_64)**: Lightweight pure-Python ZipApp with zero system GTK conflicts.
+            - **macOS Apple Silicon (arm64)**: Native compilation for Apple Silicon M1, M2, M3, and M4 Macs.
+            - **macOS Intel (x86_64)**: Native compilation for Intel-based Macs.
+            - **Windows (x64)**: Inno Setup executable installer with Start Menu, Desktop shortcuts, and full uninstaller.
 
             ---
 

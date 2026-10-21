@@ -184,42 +184,42 @@ def compute_default_col_specs(
 ) -> tuple[Dict[str, float], Dict[str, str]]:
     """
     Compute default column widths and header labels:
-    1. Base width is determined by the size of the largest first string (first token before
-       whitespace) present in that column across all rows.
-    2. Check if the column name can fit in the header column (h_len <= effective_w):
-       - If yes (or shorten_headers is False): keep full name.
-       - If no: truncate header to fit ('abcd..').
-    3. Calculate proportional percentage column widths.
+    1. Base width is determined by the size of the longest continuous substring (token)
+       present in that column across all rows (excluding the attribute name).
+    2. Column header names have underscores '_' replaced with spaces ' ' for readability.
+    3. If shorten_headers is True and len(clean_header) > effective_w, truncate header
+       to fit within the column width without breaking (e.g. 'abcd..').
+    4. Calculate proportional percentage column widths.
     """
     col_widths: Dict[str, float] = {}
     col_headers: Dict[str, str] = {}
     char_weights: Dict[str, tuple[float, str]] = {}
 
     for c in columns:
-        h_str = str(c)
-        h_len = len(h_str)
-        max_first_str_len = 0
+        clean_header = str(c).replace("_", " ").strip()
+        h_len = len(clean_header)
+        max_token_len = 0
         if rows:
             for r in rows:
                 val = r.get(c, "")
                 if val is not None:
                     s_val = str(val).strip()
                     if s_val:
-                        first_token = s_val.split()[0]
-                        if len(first_token) > max_first_str_len:
-                            max_first_str_len = len(first_token)
+                        for token in s_val.split():
+                            if len(token) > max_token_len:
+                                max_token_len = len(token)
 
-        # Base width is the length of largest first string in column
-        if max_first_str_len > 0:
-            effective_w = max(max_first_str_len, 4)
+        # Base width is decided by the longest continuous substring in values
+        if max_token_len > 0:
+            effective_w = max(max_token_len, 4)
         else:
             effective_w = max(h_len, 4)
 
         if shorten_headers and h_len > effective_w:
-            trunc_len = max(3, effective_w - 2)
-            display_name = h_str[:trunc_len] + ".."
+            trunc_len = max(2, effective_w - 2)
+            display_name = clean_header[:trunc_len].rstrip() + ".."
         else:
-            display_name = h_str
+            display_name = clean_header
 
         char_weights[c] = (effective_w, display_name)
 
@@ -288,7 +288,7 @@ def _build_pdf_html(
         col_headers = dict(col_headers)
         for c in columns:
             if c not in col_headers:
-                col_headers[c] = default_headers.get(c, c)
+                col_headers[c] = default_headers.get(c, str(c).replace("_", " ").strip())
 
     total_records = len(rows)
 
@@ -330,7 +330,7 @@ def _build_pdf_html(
 
     # ── table cells HTML ──────────────────────────────────────────────────────
     def _th(idx: int, c: str) -> str:
-        label = col_headers.get(c, c)
+        label = col_headers.get(c, str(c).replace("_", " ").strip())
         w = col_widths.get(c)
         style = f' style="width:{w}%"' if w else ""
         handle = (
@@ -1452,7 +1452,7 @@ def export_pdf(
 
     headers_dict = col_headers or {}
     header_row = [
-        Paragraph(f"<b>{he(headers_dict.get(col, col))}</b>", hdr_cell_style)
+        Paragraph(f"<b>{he(headers_dict.get(col, str(col).replace('_', ' ').strip()))}</b>", hdr_cell_style)
         for col in active_cols
     ]
     data = [header_row]

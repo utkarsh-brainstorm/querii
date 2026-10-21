@@ -367,8 +367,11 @@ window.csvEditorAddCol = csvEditorAddCol;
 window.csvEditorAddRowsN = csvEditorAddRowsN;
 window.csvEditorAddColsN = csvEditorAddColsN;
 
-/* ─── Delete row / column ───────────────────────────────────────────────── */
+/* ─── Delete row / column with smooth fast reddish vanishing animation ───── */
+var _csvEdDeleting = false;
+
 function _csvEdDelRow(ri) {
+  if (_csvEdDeleting) return;
   if (_csvEd.rows.length <= 1) {
     _csvEd.rows = [_csvEd.cols.map(function() { return ''; })];
     _csvEdRender();
@@ -376,27 +379,59 @@ function _csvEdDelRow(ri) {
     return;
   }
   _csvEdSyncAll();
-  _csvEd.rows.splice(ri, 1);
-  if (_csvEd.activeRow >= _csvEd.rows.length) _csvEd.activeRow = _csvEd.rows.length - 1;
-  _csvEdRender();
-  var info = document.getElementById('csv-editor-info');
-  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+
+  var tbody = document.getElementById('csv-editor-tbody');
+  var tr = tbody && tbody.children[ri];
+  if (tr) {
+    _csvEdDeleting = true;
+    tr.classList.add('ce-row-vanishing');
+    setTimeout(function() {
+      _csvEd.rows.splice(ri, 1);
+      if (_csvEd.activeRow >= _csvEd.rows.length) _csvEd.activeRow = _csvEd.rows.length - 1;
+      _csvEdDeleting = false;
+      _csvEdRender();
+      var info = document.getElementById('csv-editor-info');
+      if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+    }, 160);
+  } else {
+    _csvEd.rows.splice(ri, 1);
+    if (_csvEd.activeRow >= _csvEd.rows.length) _csvEd.activeRow = _csvEd.rows.length - 1;
+    _csvEdRender();
+    var info = document.getElementById('csv-editor-info');
+    if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+  }
 }
 window._csvEdDelRow = _csvEdDelRow;
 
 function _csvEdDelColDirect(ci) {
+  if (_csvEdDeleting) return;
   if (_csvEd.cols.length <= 1) {
     if (typeof toast === 'function') toast('Must have at least 1 column.', 'warn');
     return;
   }
-  if (!confirm('Delete column "' + _csvEd.cols[ci] + '"?')) return;
   _csvEdSyncAll();
-  _csvEd.cols.splice(ci, 1);
-  _csvEd.rows.forEach(function(r) { r.splice(ci, 1); });
-  if (_csvEd.activeCol >= _csvEd.cols.length) _csvEd.activeCol = _csvEd.cols.length - 1;
-  _csvEdRender();
-  var info = document.getElementById('csv-editor-info');
-  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+
+  var thead = document.getElementById('csv-editor-thead');
+  var tbody = document.getElementById('csv-editor-tbody');
+  var th = thead ? thead.querySelectorAll('th')[ci + 1] : null;
+  var tds = tbody ? tbody.querySelectorAll('[data-ce-col-i="' + ci + '"]') : [];
+
+  _csvEdDeleting = true;
+  if (th) th.classList.add('ce-col-vanishing');
+  for (var i = 0; i < tds.length; i++) {
+    var parentTd = tds[i].closest('td');
+    if (parentTd) parentTd.classList.add('ce-col-vanishing');
+  }
+
+  setTimeout(function() {
+    _csvEd.cols.splice(ci, 1);
+    _csvEd.rows.forEach(function(r) { r.splice(ci, 1); });
+    if (_csvEd.activeCol >= _csvEd.cols.length) _csvEd.activeCol = _csvEd.cols.length - 1;
+    _csvEdDeleting = false;
+    _csvEdRender();
+    var info = document.getElementById('csv-editor-info');
+    if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+  }, 160);
 }
 window._csvEdDelColDirect = _csvEdDelColDirect;
 

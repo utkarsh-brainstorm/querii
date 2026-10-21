@@ -1,4 +1,4 @@
-# ⚡ Querii — Version 4.2
+# ⚡ Querii — Version 4.3
 
 <p align="center">
   <img src="app_icon.png" alt="Querii Official Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);" />
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.2-blue.svg?style=flat-square" alt="Version 4.2" />
+  <img src="https://img.shields.io/badge/version-4.3-blue.svg?style=flat-square" alt="Version 4.3" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License MIT" />
   <img src="https://img.shields.io/badge/platform-Linux%20|%20macOS%20(ARM%20&%20x64)%20|%20Windows-lightgrey.svg?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/rust_engine-%3C35ms%20vector%20PDF-orange.svg?style=flat-square" alt="Rust Engine" />
@@ -21,7 +21,7 @@
 ## 📖 Table of Contents
 
 1. [Executive Overview & Systems Architecture](#-executive-overview--systems-architecture)
-2. [What's New in Version 4.2](#-whats-new-in-version-42)
+2. [What's New in Version 4.3](#-whats-new-in-version-43)
 3. [Engineering Highlights & Technical Pillars](#-engineering-highlights--technical-pillars)
 4. [Dual-Engine PDF Architecture](#-dual-engine-pdf-architecture)
    - [Engine 1: Native Rust Vector Engine (`<35ms`)](#engine-1-native-rust-vector-engine-35ms)
@@ -63,7 +63,7 @@
 
 ## 🌟 Executive Overview & Systems Architecture
 
-**Querii Version 4.2** is an engineered-from-the-ground-up, local-first analytics workstation designed for software engineers, data architects, and executive teams requiring immediate data exploration, visual and freeform SQL query execution, spreadsheet authoring, and audit-grade PDF report compilation without cloud latency, third-party data transmission, or vendor lock-in.
+**Querii Version 4.3** is an engineered-from-the-ground-up, local-first analytics workstation designed for software engineers, data architects, and executive teams requiring immediate data exploration, visual and freeform SQL query execution, spreadsheet authoring, and audit-grade PDF report compilation without cloud latency, third-party data transmission, or vendor lock-in.
 
 Built with a modular IPC bridge over native OS webviews (`pywebview`), high-performance database adapters (SQLite, PostgreSQL, MySQL), an interactive spreadsheet state machine, and a **hybrid dual-engine compilation pipeline**, Querii bridges low-level systems performance (sub-35ms native Rust vector rendering) with publication-quality CSS Paged Media standards.
 
@@ -75,25 +75,23 @@ Built with a modular IPC bridge over native OS webviews (`pywebview`), high-perf
 
 ---
 
-## 🚀 What's New in Version 4.2
+## 🚀 What's New in Version 4.3
 
-- 📊 **Next-Gen Spreadsheet CSV Studio:**
-  - **Batch Numeric Row & Column Creation:** Dedicated numeric counters (`N`) next to `+ Row(s)` and `+ Col(s)` allow analysts to append arbitrary blocks of rows/columns with a single click.
-  - **Accessible Row & Column Deletions:** Quick-action `🗑 Del Row` and `🗑 Del Col` toolbar buttons operating on active selection, paired with individual inline `×` removal buttons on each row number and column header cell.
-  - **Spreadsheet Clipboard Integration:** Sub-millisecond copy-paste ingestion for raw CSV and TSV matrices, preserving column boundaries, quote escaping, and automatic header recognition.
-- 📐 **Token-Aware Column Auto-Layout & Intelligent Header Shortening:**
-  - **First-Token Heuristic:** Computes proportional baseline column widths from the largest first whitespace-delimited token (`str.split(/\s+/)[0]`) across column rows, preventing long multi-word strings from distorting layout proportions.
-  - **Smart Name Shortening:** An interactive checkbox (`Auto-shorten column names if exceeding width`) automatically shortens headers exceeding content bounds (`abcd..`). Computed percentage widths immediately bind to sidebar sliders and numeric percentage inputs.
-- 📄 **Virtual Export Rows & Columns (Non-Mutating):**
-  - **Extra Blank Rows:** Injects `N` empty signature/handwriting rows into exported PDF sheets without altering underlying SQLite tables.
-  - **Custom Export Columns:** Allows appending ad-hoc columns (e.g. *Signature*, *Approval*, *Notes*) exclusively to the publication document.
-- 🏢 **Dynamic Branding & Watermark Synchronization:**
-  - Changing the organization in Ultra Dev Mode or the export dialog immediately synchronizes document headings and dense anti-tamper watermark patterns.
-  - Added dedicated **Include Logo** toggle controlling branding across both the masthead and background watermarks.
-- 🍎 **Universal Multi-Architecture macOS & Windows Packaging:**
-  - **Native Apple Silicon (`arm64`):** Compiled natively on macOS 14 runners for M1, M2, M3, and M4 Apple Silicon architectures.
-  - **Native Intel (`x86_64`):** Compiled on macOS 13 runners for legacy Intel Mac machines.
-  - **Windows Uninstaller Registration:** Updated Inno Setup installer script with dedicated Start Menu and system uninstaller shortcuts (`{uninstallexe}`).
+- 📐 **Intelligent Continuous Substring Column Auto-Sizing & Clean Header Formatting:**
+  - **Continuous Substring Token Heuristic:** Base column widths are dynamically computed from the longest continuous non-whitespace substring across all column cell values (excluding attribute names). Wide names (e.g. *Lakshminarayan*) or long numerical figures (e.g. *30000000*) fit comfortably without line breaking.
+  - **Graceful Header Truncation:** When column attributes exceed the content-determined column width, headers are elegantly truncated (`abcd..`) to fit the allocated column width without breaking words.
+  - **Automatic Underscore Cleansing:** All column header labels automatically replace underscore `_` characters with clean whitespace for publication-grade readability.
+  - **Immutable Manual Overrides:** Auto-sizing is computed once upon export or entering Ultra Dev Mode; manual slider adjustments and header overrides are strictly preserved without recomputing.
+- 🎬 **Non-Blocking Reddish Vanishing Deletion in CSV Studio:**
+  - **Zero Confirmation Dialogs:** Eliminates intrusive confirm dialogs when deleting rows or columns.
+  - **Smooth Vanishing Animation:** Fast (160ms) soft-red fade-out and collapse transition (`.ce-row-vanishing`, `.ce-col-vanishing`) providing immediate visual feedback as rows and columns snap smoothly into place.
+- 🎨 **Accessible Alternating Contrast Rows in All Themes:**
+  - **Subtle Zebra Striping:** Meticulously calibrated `--table-row-alt` subtle contrast across all 7 built-in themes (`Mono`, `Professional`, `Dark`, `Light Blue`, `Minimal`, `Apple Minimal`, `Accessible High-Contrast`), ensuring easy horizontal row-following across wide datasets.
+- 📦 **Quad-Platform Native Compilations:**
+  - **Linux (`x86_64`):** Pure-Python ZipApp with zero system GTK conflicts.
+  - **macOS Apple Silicon (`arm64`):** Native compilation on macOS 14 for Apple Silicon M1, M2, M3, and M4 Macs.
+  - **macOS Intel (`x86_64`):** Native compilation on macOS 13 for legacy Intel-based Macs.
+  - **Windows (`x64`):** Inno Setup executable installer with Start Menu, Desktop shortcuts, and full uninstaller registration (`{uninstallexe}`).
 
 ---
 
@@ -552,4 +550,4 @@ Querii is **100% local-first**. Your queries, database credentials, and exported
 
 ## 📄 License
 
-Querii Version 4.2 is licensed under the [MIT License](LICENSE).
+Querii Version 4.3 is licensed under the [MIT License](LICENSE).
