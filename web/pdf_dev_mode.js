@@ -117,6 +117,23 @@ function _devComputeDefaultSpecs(cols, rows, shortenHeaders) {
   return { widths: widths, headers: headers };
 }
 
+function _devGetResultRows() {
+  if (typeof _lastResults !== 'undefined' && _lastResults) {
+    if (_lastResults.rows && _lastResults.rows.length) return _lastResults.rows;
+    if (_lastResults.cachedPages) {
+      var all = [];
+      Object.keys(_lastResults.cachedPages).sort(function(a,b){ return Number(a) - Number(b); }).forEach(function(k) {
+        if (_lastResults.cachedPages[k]) all = all.concat(_lastResults.cachedPages[k]);
+      });
+      if (all.length) return all;
+    }
+  }
+  if (typeof _lastResultRows !== 'undefined' && _lastResultRows && _lastResultRows.length) {
+    return _lastResultRows;
+  }
+  return [];
+}
+
 function openUltraDevMode() {
   // Seed state from export dialog if open
   var titleEl = document.getElementById('pdf-title');
@@ -153,7 +170,7 @@ function openUltraDevMode() {
       if (_dev.cols.indexOf(ec) < 0) _dev.cols.push(ec);
     });
   }
-  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var resultRows = _devGetResultRows();
 
   // Reset col state only if cols changed or empty
   var needReset = !_dev.colVisible || Object.keys(_dev.colWidths).length === 0 || Object.keys(_dev.colWidths).some(function(k){ return _dev.cols.indexOf(k) < 0; });
@@ -162,6 +179,15 @@ function openUltraDevMode() {
     _dev.colWidths  = defaultSpecs.widths;
     _dev.colHeaders = defaultSpecs.headers;
     _dev.colVisible = null;
+
+    _dApi('get_default_col_specs', _dev.shortenHeaders !== false).then(function(specs) {
+      if (specs && specs.widths && Object.keys(specs.widths).length) {
+        _dev.colWidths  = specs.widths;
+        _dev.colHeaders = specs.headers;
+        _devRenderColControls();
+        _devRefreshPreviewDebounced(50);
+      }
+    }).catch(function(){});
   }
 
   // Show overlay
@@ -361,12 +387,21 @@ window._devSetExtraBlankRows = function(v) {
 
 window._devToggleShortenHeaders = function(v) {
   _dev.shortenHeaders = v;
-  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var resultRows = _devGetResultRows();
   var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
   _dev.colHeaders = defaultSpecs.headers;
   _dev.colWidths  = defaultSpecs.widths;
   _devRenderColControls();
-  _devRefreshPreviewDebounced(150);
+  _devRefreshPreviewDebounced(100);
+
+  _dApi('get_default_col_specs', _dev.shortenHeaders !== false).then(function(specs) {
+    if (specs && specs.widths && Object.keys(specs.widths).length) {
+      _dev.colWidths  = specs.widths;
+      _dev.colHeaders = specs.headers;
+      _devRenderColControls();
+      _devRefreshPreviewDebounced(50);
+    }
+  }).catch(function(){});
 };
 
 window._devAddExtraColumn = function() {
@@ -380,7 +415,7 @@ window._devAddExtraColumn = function() {
   _dev.colHeaders[name] = name.replace(/_/g, ' ');
   if (_dev.colVisible) _dev.colVisible.add(name);
 
-  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var resultRows = _devGetResultRows();
   var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
   _dev.colWidths = defaultSpecs.widths;
   inp.value = '';
@@ -398,7 +433,7 @@ window._devRemoveExtraColumn = function(name) {
   delete _dev.colHeaders[name];
   if (_dev.colVisible) _dev.colVisible.delete(name);
 
-  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var resultRows = _devGetResultRows();
   var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
   _dev.colWidths = defaultSpecs.widths;
   _devRenderColControls();
@@ -424,13 +459,22 @@ window._devOnScale = function(val) {
 };
 
 window._devResetColumns = function() {
-  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var resultRows = _devGetResultRows();
   var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
   _dev.colWidths  = defaultSpecs.widths;
   _dev.colHeaders = defaultSpecs.headers;
   _dev.colVisible = null;
   _devRenderColControls();
-  _devRefreshPreviewDebounced(150);
+  _devRefreshPreviewDebounced(100);
+
+  _dApi('get_default_col_specs', _dev.shortenHeaders !== false).then(function(specs) {
+    if (specs && specs.widths && Object.keys(specs.widths).length) {
+      _dev.colWidths  = specs.widths;
+      _dev.colHeaders = specs.headers;
+      _devRenderColControls();
+      _devRefreshPreviewDebounced(50);
+    }
+  }).catch(function(){});
   _dToast('Column widths and headers reset');
 };
 

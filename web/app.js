@@ -1531,7 +1531,22 @@ function useTemplate(i) {
 /* ── Results table ──────────────────────────────────────────────────── */
 /* ── Results rendering — paginated + DocumentFragment ───────────────── */
 function renderResults(columns, firstPageRows, totalCount) {
-  _lastResults  = { columns: columns, cachedPages: { 0: firstPageRows || [] }, total: totalCount || 0 };
+  _lastResults  = {
+    columns: columns,
+    cachedPages: { 0: firstPageRows || [] },
+    total: totalCount || 0,
+    rows: (firstPageRows || []).slice()
+  };
+  window._lastResultRows = (firstPageRows || []).slice();
+  window._lastResultCols = (columns || []).slice();
+  if (typeof _dev !== 'undefined') {
+    _dev.cols = (columns || []).slice();
+    _dev.colWidths = {};
+    _dev.colHeaders = {};
+    _dev.colVisible = null;
+    _dev.extraCols = [];
+    _dev.extraBlankRows = 0;
+  }
   _currentPage  = 0;
   _colSearch    = '';
 
@@ -1659,6 +1674,10 @@ function renderPage(page) {
     if (body) body.innerHTML = '<tr><td colspan="100" style="text-align:center;padding:20px;color:var(--text-dim)">Loading page...</td></tr>';
     apiCall('get_result_page', page, PAGE_SIZE).then(function(rows) {
       _lastResults.cachedPages[page] = rows || [];
+      if (rows && rows.length && _lastResults.rows) {
+        _lastResults.rows = _lastResults.rows.concat(rows);
+        window._lastResultRows = _lastResults.rows;
+      }
       drawPage(page);
     }).catch(function(e) { toast('Error loading page: ' + e.message, 'error'); });
   } else {
@@ -1976,9 +1995,14 @@ var PDF_PRESETS = {
   margin-bottom: 12px;
 }
 .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed !important;
   background: var(--paper, #ffffff);
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
   font-size: 8.5pt;
   line-height: 1.3;
 }
@@ -1991,13 +2015,35 @@ var PDF_PRESETS = {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.data-table thead th .th-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.data-table tbody tr {
+  min-height: 26px;
+  height: 26px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .data-table tbody td {
+  min-height: 26px;
+  height: 26px;
   padding: 5px 7px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text);
   font-variant-numeric: tabular-nums;
   word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
@@ -2083,9 +2129,14 @@ var PDF_PRESETS = {
   margin-bottom: 12px;
 }
 .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed !important;
   background: var(--paper, #ffffff);
   border: 1px solid var(--border);
   border-radius: 4px;
+  overflow: hidden;
   font-size: 8pt;
   line-height: 1.35;
 }
@@ -2098,14 +2149,36 @@ var PDF_PRESETS = {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.data-table thead th .th-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.data-table tbody tr {
+  min-height: 26px;
+  height: 26px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .data-table tbody td {
+  min-height: 26px;
+  height: 26px;
   padding: 4.5px 7px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-variant-numeric: tabular-nums;
   word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
@@ -2194,9 +2267,14 @@ var PDF_PRESETS = {
   margin-bottom: 12px;
 }
 .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed !important;
   background: var(--paper, #ffffff);
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
   font-size: 8.5pt;
   line-height: 1.3;
 }
@@ -2208,13 +2286,35 @@ var PDF_PRESETS = {
   font-size: 8pt;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.data-table thead th .th-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.data-table tbody tr {
+  min-height: 26px;
+  height: 26px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .data-table tbody td {
+  min-height: 26px;
+  height: 26px;
   padding: 5px 7px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text);
   font-variant-numeric: tabular-nums;
   word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
@@ -2301,9 +2401,14 @@ var PDF_PRESETS = {
   margin-bottom: 12px;
 }
 .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed !important;
   background: var(--paper, #ffffff);
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
   font-size: 8.5pt;
   line-height: 1.3;
 }
@@ -2315,13 +2420,35 @@ var PDF_PRESETS = {
   font-size: 8pt;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.data-table thead th .th-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.data-table tbody tr {
+  min-height: 26px;
+  height: 26px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .data-table tbody td {
+  min-height: 26px;
+  height: 26px;
   padding: 5px 7px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text);
   font-variant-numeric: tabular-nums;
   word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
@@ -2404,9 +2531,14 @@ var PDF_PRESETS = {
   margin-bottom: 8px;
 }
 .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed !important;
   background: var(--paper, #ffffff);
   border: 1px solid var(--border);
   border-radius: 4px;
+  overflow: hidden;
   font-size: 8pt;
   line-height: 1.25;
 }
@@ -2418,13 +2550,35 @@ var PDF_PRESETS = {
   font-size: 7.5pt;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.data-table thead th .th-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.data-table tbody tr {
+  min-height: 26px;
+  height: 26px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .data-table tbody td {
+  min-height: 26px;
+  height: 26px;
   padding: 3.5px 5px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text);
   font-variant-numeric: tabular-nums;
   word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
@@ -2811,24 +2965,26 @@ function confirmExportPdf() {
   var boldData  = boldEl ? boldEl.checked : false;
   var gridLines = gridEl ? gridEl.checked : false;
 
+  var cBlankRows = (typeof _dev !== 'undefined' && _dev.extraBlankRows) ? _dev.extraBlankRows : 0;
+  var cExtraCols = (typeof _dev !== 'undefined' && _dev.extraCols) ? _dev.extraCols : [];
+  var visArr     = (typeof _dev !== 'undefined' && _dev.colVisible) ? Array.from(_dev.colVisible) : null;
+  var cWidths    = (typeof _dev !== 'undefined') ? _dev.colWidths : {};
+  var cHeads     = (typeof _dev !== 'undefined') ? _dev.colHeaders : {};
+  var cFullO     = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
+  var cBold      = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
+  var cGrid      = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
+
   closeModal();
   showProgress(true);
   toast('⚡ Generating PDF…', 'info');
 
   var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
   if (useHtml) {
-    var visArr = (typeof _dev !== 'undefined' && _dev.colVisible) ? Array.from(_dev.colVisible) : null;
-    var cWidths = (typeof _dev !== 'undefined') ? _dev.colWidths : {};
-    var cHeads  = (typeof _dev !== 'undefined') ? _dev.colHeaders : {};
-    var cFullO  = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
-    var cBold   = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
-    var cGrid   = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
-
-    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid, cBlankRows, cExtraCols)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   } else {
-    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
+    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel, cWidths, cHeads, visArr, cBlankRows, cExtraCols)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   }

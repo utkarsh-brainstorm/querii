@@ -525,6 +525,11 @@ class Api:
             scale = kwargs.get("scale", 1.0)
             continuous = kwargs.get("continuous", False)
             source_label = kwargs.get("source_label", "")
+            col_widths = kwargs.get("col_widths", None)
+            col_headers = kwargs.get("col_headers", None)
+            col_visible = kwargs.get("col_visible", None)
+            extra_blank_rows = kwargs.get("extra_blank_rows", 0)
+            extra_cols = kwargs.get("extra_cols", None)
 
             if args:
                 if isinstance(args[0], str):
@@ -540,6 +545,11 @@ class Api:
                     if len(args) > 9 and args[9]: scale = float(args[9])
                     if len(args) > 10 and args[10] is not None: continuous = bool(args[10])
                     if len(args) > 11 and args[11]: source_label = args[11]
+                    if len(args) > 12 and args[12]: col_widths = args[12]
+                    if len(args) > 13 and args[13]: col_headers = args[13]
+                    if len(args) > 14 and args[14]: col_visible = args[14]
+                    if len(args) > 15 and args[15] is not None: extra_blank_rows = args[15]
+                    if len(args) > 16 and args[16]: extra_cols = args[16]
                 elif isinstance(args[0], (list, tuple)) and len(args) >= 3:
                     # Signature: (columns, rows, filepath, ...)
                     cols = args[0] or cols
@@ -554,8 +564,6 @@ class Api:
             if not filepath:
                 return _err("No output filepath provided")
 
-            extra_blank_rows = kwargs.get("extra_blank_rows", 0)
-            extra_cols = kwargs.get("extra_cols", None)
             cols = list(cols or [])
             rows = [dict(r) for r in (rows or [])]
 
@@ -586,6 +594,9 @@ class Api:
                 scale=scale,
                 continuous=continuous,
                 source_label=source_label,
+                col_widths=col_widths,
+                col_headers=col_headers,
+                col_visible=col_visible,
             )
             return _ok(filepath)
         except Exception as e:
@@ -696,6 +707,17 @@ class Api:
                 bold_data=bold_data, show_grid_lines=show_grid_lines,
             )
             return _ok(html)
+        except Exception as e:
+            return _err(e)
+
+    def get_default_col_specs(self, shorten_headers: bool = True) -> dict:
+        """Compute default column widths and header labels from backend query results."""
+        try:
+            from core.exporter import compute_default_col_specs
+            cols = list(self._last_result_cols or [])
+            rows = self._last_result_rows or []
+            widths, headers = compute_default_col_specs(cols, rows, shorten_headers=shorten_headers)
+            return _ok({"widths": widths, "headers": headers, "cols": cols})
         except Exception as e:
             return _err(e)
 

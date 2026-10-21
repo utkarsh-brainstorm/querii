@@ -177,6 +177,17 @@ def _find_chromium() -> Optional[str]:
     return None
 
 
+def he(s: str) -> str:
+    """HTML / XML escape utility."""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 def compute_default_col_specs(
     columns: List[str],
     rows: List[Dict],
@@ -295,7 +306,18 @@ def _build_pdf_html(
     # In live dev preview: render page 1 only so it's super responsive and doesn't lag
     if is_preview:
         max_preview_rows = 18 if orientation == "landscape" else 26
-        rows = rows[:max_preview_rows]
+        if len(rows) > max_preview_rows:
+            trailing_blanks = 0
+            for r in reversed(rows):
+                if all(not str(r.get(c, "")).strip() for c in columns):
+                    trailing_blanks += 1
+                else:
+                    break
+            if trailing_blanks > 0:
+                kept_data = max(1, max_preview_rows - trailing_blanks)
+                rows = rows[:kept_data] + rows[len(rows) - trailing_blanks:]
+            else:
+                rows = rows[:max_preview_rows]
 
     # ── page dimensions for true paper geometry ──────────────────────────────
     dim_map = {
@@ -344,6 +366,8 @@ def _build_pdf_html(
         val = row.get(c, "")
         if val is None:
             text = '<span class="cell-null">—</span>'
+        elif not str(val).strip():
+            text = "&nbsp;"
         else:
             text = he(str(val))
         w = col_widths.get(c)
@@ -789,7 +813,7 @@ def _build_pdf_html(
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
-      table-layout: auto;
+      table-layout: fixed !important;
     }}
     .data-table thead {{
       display: table-header-group;
@@ -808,15 +832,28 @@ def _build_pdf_html(
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      box-sizing: border-box;
+    }}
+    .data-table thead th .th-content {{
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
     }}
     .data-table thead th:first-child {{ border-top-left-radius: 7px; }}
     .data-table thead th:last-child  {{ border-top-right-radius: 7px; }}
 
     .data-table tbody tr {{
+      min-height: 26px;
+      height: 26px;
       break-inside: avoid;
       page-break-inside: avoid;
     }}
     .data-table tbody td {{
+      min-height: 26px;
+      height: 26px;
       padding: 5px 7px;
       border-bottom: 1px solid var(--border-light);
       color: var(--text);
@@ -825,6 +862,7 @@ def _build_pdf_html(
       font-weight: var(--data-font-weight);
       word-break: break-word;
       overflow-wrap: break-word;
+      box-sizing: border-box;
       background: #ffffff;
     }}
     .data-table tbody tr:nth-child(even) td {{
@@ -993,6 +1031,29 @@ def _build_pdf_html(
       width: {pw if is_preview else "100%"} !important;
       max-width: {pw if is_preview else "100%"} !important;
       {"height: " + ph + " !important; max-height: " + ph + " !important;" if is_preview else ""}
+    }}
+    .data-table {{
+      table-layout: fixed !important;
+      width: 100% !important;
+    }}
+    .data-table thead th {{
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      box-sizing: border-box !important;
+    }}
+    .data-table thead th .th-content {{
+      display: inline-block !important;
+      max-width: 100% !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      vertical-align: middle !important;
+    }}
+    .data-table tbody tr, .data-table tbody td {{
+      min-height: 26px !important;
+      height: 26px !important;
+      box-sizing: border-box !important;
     }}
 '''}
   </style>
@@ -1307,6 +1368,29 @@ def export_pdf(
     First tries the ultra-fast native Rust engine (<50ms).
     Falls back to ReportLab classic renderer if Rust engine is unavailable.
     """
+    # Prepare column specs and active columns
+    active_cols = list(columns)
+    if col_visible:
+        vis_set = set(col_visible)
+        active_cols = [c for c in columns if c in vis_set]
+
+    default_widths, default_headers = compute_default_col_specs(active_cols, rows)
+    if not col_widths:
+        col_widths = default_widths
+    else:
+        col_widths = dict(col_widths)
+        for c in active_cols:
+            if c not in col_widths:
+                col_widths[c] = default_widths.get(c, round(100.0 / max(len(active_cols), 1), 1))
+
+    if not col_headers:
+        col_headers = default_headers
+    else:
+        col_headers = dict(col_headers)
+        for c in active_cols:
+            if c not in col_headers:
+                col_headers[c] = default_headers.get(c, str(c).replace("_", " ").strip())
+
     # 1. Try Rust native engine
     if export_pdf_rust(
         columns=columns,
@@ -1444,12 +1528,6 @@ def export_pdf(
         doc.build(story)
         return
 
-    # Filter columns
-    active_cols = columns
-    if col_visible:
-        vis_set = set(col_visible)
-        active_cols = [c for c in columns if c in vis_set]
-
     headers_dict = col_headers or {}
     header_row = [
         Paragraph(f"<b>{he(headers_dict.get(col, str(col).replace('_', ' ').strip()))}</b>", hdr_cell_style)
@@ -1457,14 +1535,23 @@ def export_pdf(
     ]
     data = [header_row]
     for row in rows:
-        data.append([
-            Paragraph(he(str(row.get(col, "") if row.get(col) is not None else "—")), cell_style)
-            for col in active_cols
-        ])
+        row_cells = []
+        for col in active_cols:
+            val = row.get(col, "")
+            if val is None:
+                text = "—"
+            elif not str(val).strip():
+                text = "&nbsp;"
+            else:
+                text = he(str(val))
+            row_cells.append(Paragraph(text, cell_style))
+        data.append(row_cells)
 
     avail_w = pagesize[0] - 2 * h_margin
-    col_w = avail_w / max(len(active_cols), 1)
-    col_widths_list = [col_w] * len(active_cols)
+    col_widths_list = []
+    for col in active_cols:
+        pct = col_widths.get(col, default_widths.get(col, 100.0 / max(len(active_cols), 1)))
+        col_widths_list.append((pct / 100.0) * avail_w)
     pad = int(4 * scale)
 
     table = Table(data, colWidths=col_widths_list, repeatRows=1)
