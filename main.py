@@ -29,6 +29,10 @@ os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     "--proxy-server=direct:// --proxy-bypass-list=*"
 )
 
+if getattr(sys, "frozen", False) and sys.platform == "linux":
+    os.environ.setdefault("PYWEBVIEW_GUI", "qt")
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+
 
 def _get_user_data_dir() -> str:
     """
@@ -82,6 +86,10 @@ def _run_app() -> None:
         icon_path = os.path.join(ROOT, "app_icon.png")
         if not os.path.exists(icon_path):
             icon_path = os.path.join(ROOT, "web", "app_icon.png")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(ROOT, "app_icon.ico")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(ROOT, "web", "app_icon.ico")
 
     window = webview.create_window(
         title            = "Querii Version 4.3 — Sheet to SQL",
@@ -114,7 +122,20 @@ def _run_app() -> None:
         else:
             start_kwargs["icon"] = icon_path
 
-    webview.start(**start_kwargs)
+    def _on_started() -> None:
+        if sys.platform == "linux":
+            try:
+                from PyQt6.QtGui import QIcon
+                from PyQt6.QtWidgets import QApplication
+                qapp = QApplication.instance()
+                if qapp:
+                    qapp.setDesktopFileName("querii")
+                    if icon_path and os.path.exists(icon_path):
+                        qapp.setWindowIcon(QIcon(icon_path))
+            except Exception:
+                pass
+
+    webview.start(_on_started, **start_kwargs)
 
 
 def main() -> None:

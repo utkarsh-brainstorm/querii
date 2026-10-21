@@ -160,7 +160,8 @@ jobs:
 
             | Platform | Architecture | File | Notes |
             |---|---|---|---|
-            | 🐧 Linux | x86_64 | `querii-Linux.tar.gz` | Extract and run `querii-linux` (zero system GTK conflict) |
+            | 🐧 Linux (AppImage) | x86_64 | `Querii-x86_64.AppImage` | Universal zero-dependency standalone bundle (runs on any distro) |
+            | 🐧 Linux (ZipApp) | x86_64 | `querii-Linux.tar.gz` | Lightweight pure-Python ZipApp |
             | 🍎 macOS | Apple Silicon (M1/M2/M3/M4) | `querii-macOS-arm64.tar.gz` | Extract and run `querii-macOS-arm64` |
             | 🍎 macOS | Intel (x86_64) | `querii-macOS-x86_64.tar.gz` | Extract and run `querii-macOS-x86_64` |
             | 🪟 Windows | x64 | `querii-windows-setup.exe` | Windows Installer with Start Menu, Desktop & Uninstall shortcuts |
@@ -171,5 +172,6 @@ jobs:
             > - macOS: `~/Library/Application Support/Querii/`
           files: |
             binaries/*.tar.gz
+            binaries/*.AppImage
             binaries/querii-windows-setup.exe
 

@@ -12,6 +12,13 @@ querii-linux-shiv
 target/
 core/rust_engine/target/
 
+# AppImage build artifacts
+*.AppImage
+*.appimage
+AppDir/
+appimagetool*
+squashfs-root/
+
 # Private data files
 *.xls
 *.xlsx
