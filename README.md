@@ -1,64 +1,71 @@
-# ⚡ Querii — Version 4.1
+# ⚡ Querii — Version 4.2
 
 <p align="center">
   <img src="app_icon.png" alt="Querii Official Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);" />
 </p>
 
 <p align="center">
-  <strong>Lightning-Fast, Local-First SQL Analytics Workstation & Executive PDF Studio</strong>
+  <strong>High-Velocity, Local-First SQL Analytics Workstation & Executive PDF Studio</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.1-blue.svg?style=flat-square" alt="Version 4.1" />
+  <img src="https://img.shields.io/badge/version-4.2-blue.svg?style=flat-square" alt="Version 4.2" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License MIT" />
-  <img src="https://img.shields.io/badge/platform-Linux%20|%20macOS%20|%20Windows-lightgrey.svg?style=flat-square" alt="Platforms" />
+  <img src="https://img.shields.io/badge/platform-Linux%20|%20macOS%20(ARM%20&%20x64)%20|%20Windows-lightgrey.svg?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/rust_engine-%3C35ms%20vector%20PDF-orange.svg?style=flat-square" alt="Rust Engine" />
+  <img src="https://img.shields.io/badge/architecture-Local--First%20Zero--Trust-purple.svg?style=flat-square" alt="Architecture" />
 </p>
 
 ---
 
 ## 📖 Table of Contents
 
-1. [Executive Overview](#-executive-overview)
-2. [What's New in Version 4.1](#-whats-new-in-version-41)
-3. [Core Highlights & Capabilities](#-core-highlights--capabilities)
+1. [Executive Overview & Systems Architecture](#-executive-overview--systems-architecture)
+2. [What's New in Version 4.2](#-whats-new-in-version-42)
+3. [Engineering Highlights & Technical Pillars](#-engineering-highlights--technical-pillars)
 4. [Dual-Engine PDF Architecture](#-dual-engine-pdf-architecture)
    - [Engine 1: Native Rust Vector Engine (`<35ms`)](#engine-1-native-rust-vector-engine-35ms)
    - [Engine 2: Executive Headless Chromium Studio](#engine-2-executive-headless-chromium-studio)
    - [Engine 3: Universal Fallback Guarantee (ReportLab)](#engine-3-universal-fallback-guarantee-reportlab)
-5. [Ultra Dev Mode & Interactive PDF Studio](#-ultra-dev-mode--interactive-pdf-studio)
+5. [Interactive Spreadsheet CSV Studio](#-interactive-spreadsheet-csv-studio)
+   - [Batch Numeric Row & Column Mutation](#batch-numeric-row--column-mutation)
+   - [Accessible Inline & Toolbar Deletions](#accessible-inline--toolbar-deletions)
+   - [Direct Clipboard Matrix Ingestion](#direct-clipboard-matrix-ingestion)
+6. [Ultra Dev Mode & Executive PDF Studio](#-ultra-dev-mode--executive-pdf-studio)
+   - [Token-Aware Auto-Width & Header Shortening Heuristic](#token-aware-auto-width--header-shortening-heuristic)
+   - [Virtual Export Rows & Columns (Non-Mutating)](#virtual-export-rows--columns-non-mutating)
    - [Physical Sheet Geometry & Zoom Presets](#physical-sheet-geometry--zoom-presets)
    - [Interactive Mouse Drag Column Resizing](#interactive-mouse-drag-column-resizing)
    - [Numeric Keyboard Width Inputs](#numeric-keyboard-width-inputs)
-   - [Bold Data & Vertical Grid Line Toggles](#bold-data--vertical-grid-line-toggles)
+   - [Branding Synchronization & Logo Toggle](#branding-synchronization--logo-toggle)
    - [Executive Typography: Libron Font](#executive-typography-libron-font)
-6. [Custom CSS Architecture & Style Cascade](#-custom-css-architecture--style-cascade)
+7. [Custom CSS Architecture & Style Cascade](#-custom-css-architecture--style-cascade)
    - [Full Design Freedom Policy](#full-design-freedom-policy)
    - [Complete HTML Template Hierarchy](#complete-html-template-hierarchy)
    - [CSS Variables Reference (`:root`)](#css-variables-reference-root)
    - [5 Built-in Executive Presets](#5-built-in-executive-presets)
    - [The 6 Critical Hard Exceptions for Custom CSS](#the-6-critical-hard-exceptions-for-custom-css)
-7. [AI Prompt Specification Generator](#-ai-prompt-specification-generator)
-8. [Cross-Platform Native Clipboard Integration](#-cross-platform-native-clipboard-integration)
-9. [Global Client-Side Search (Ctrl+F)](#-global-client-side-search-ctrlf)
-10. [Settings & Organization Branding](#-settings--organization-branding)
-11. [SQL Workspace & Database Connectivity](#-sql-workspace--database-connectivity)
-12. [Project Directory Structure](#-project-directory-structure)
-13. [Developer Guide & Installation](#-developer-guide--installation)
+8. [AI Prompt Specification Generator](#-ai-prompt-specification-generator)
+9. [Cross-Platform Native Clipboard Integration](#-cross-platform-native-clipboard-integration)
+10. [Global Client-Side Search (Ctrl+F)](#-global-client-side-search-ctrlf)
+11. [Settings & Organization Branding](#-settings--organization-branding)
+12. [SQL Workspace & Database Connectivity](#-sql-workspace--database-connectivity)
+13. [Project Directory Structure](#-project-directory-structure)
+14. [Developer Guide, Compilation & Multi-Arch CI/CD](#-developer-guide-compilation--multi-arch-cicd)
     - [Prerequisites](#prerequisites)
     - [Running from Source](#running-from-source)
     - [Rebuilding the Rust PDF Engine](#rebuilding-the-rust-pdf-engine)
-    - [Building Standalone Executables](#building-standalone-executables)
-14. [Keyboard Shortcuts Reference](#-keyboard-shortcuts-reference)
-15. [Data Locations & Privacy](#-data-locations--privacy)
+    - [Multi-Platform Packaging (macOS ARM/x64, Linux, Windows)](#multi-platform-packaging-macos-armx64-linux-windows)
+15. [Keyboard Shortcuts Reference](#-keyboard-shortcuts-reference)
+16. [Data Locations & Privacy](#-data-locations--privacy)
 
 ---
 
-## 🌟 Executive Overview
+## 🌟 Executive Overview & Systems Architecture
 
-**Querii Version 4.1** is an uncompromising, local-first analytics workstation built for software engineers, data analysts, and executive teams who require immediate data manipulation, visual SQL query authoring, and publication-grade PDF reporting without cloud latency, subscription fees, or security compromises.
+**Querii Version 4.2** is an engineered-from-the-ground-up, local-first analytics workstation designed for software engineers, data architects, and executive teams requiring immediate data exploration, visual and freeform SQL query execution, spreadsheet authoring, and audit-grade PDF report compilation without cloud latency, third-party data transmission, or vendor lock-in.
 
-Pairing a desktop UI powered by `pywebview` with high-performance database adapters (SQLite, PostgreSQL, MySQL) and a hybrid **dual-engine PDF compilation architecture**, Querii gives you instantaneous sub-second queries, live schema manipulation, and publication-ready financial and executive reports.
+Built with a modular IPC bridge over native OS webviews (`pywebview`), high-performance database adapters (SQLite, PostgreSQL, MySQL), an interactive spreadsheet state machine, and a **hybrid dual-engine compilation pipeline**, Querii bridges low-level systems performance (sub-35ms native Rust vector rendering) with publication-quality CSS Paged Media standards.
 
 <p align="center">
   <img src="Main_Interface_light_mode.png" alt="Querii Main Interface (Light Mode)" width="100%" />
@@ -68,16 +75,25 @@ Pairing a desktop UI powered by `pywebview` with high-performance database adapt
 
 ---
 
-## 🚀 What's New in Version 4.1
+## 🚀 What's New in Version 4.2
 
-- 📝 **Integrated Spreadsheet CSV Editor:** Full-featured desktop spreadsheet studio for creating new CSV tables and editing existing ones directly from the Files panel.
-  - **Keyboard Navigation:** `Tab` moves to next column, `Enter` advances to the next row in the same column, and rapid **Double-Enter** jumps directly to column 1 of the next row.
-  - **Direct Clipboard Ingestion:** Paste tabular data (tab-separated or comma-separated) directly into cells or onto empty grids to instantly construct complete multi-column tables.
-  - **Header Pinning:** Top row is locked as the table header with inline column renaming and right-click column deletion.
-  - **Scoped Editing:** The "Edit" action is strictly reserved for CSV-backed tables to preserve data integrity.
-- 📂 **Universal Excel & Spreadsheet Ingestion Layer:** Robust conversion layer supporting `.xls` (legacy BIFF8 binary, XML Spreadsheet 2003, HTML table dumps, and misnamed CSV/TSV files), `.xlsx`, `.xlsm`, and `.ods` formats. Handles complex structures with user-friendly diagnostics requesting clean tabular data.
-- 🎨 **User-Defined Custom PDF Styles:** Save, name, apply, and delete custom CSS PDF styles directly from Settings, Ultra Dev Mode, and the Export Modal alongside the 5 built-in executive presets.
-- 🧹 **Repository Hardening & Privacy Enforcement:** Cleaned history by purging private test files, hardening `.gitignore`, and removing dev build artifacts.
+- 📊 **Next-Gen Spreadsheet CSV Studio:**
+  - **Batch Numeric Row & Column Creation:** Dedicated numeric counters (`N`) next to `+ Row(s)` and `+ Col(s)` allow analysts to append arbitrary blocks of rows/columns with a single click.
+  - **Accessible Row & Column Deletions:** Quick-action `🗑 Del Row` and `🗑 Del Col` toolbar buttons operating on active selection, paired with individual inline `×` removal buttons on each row number and column header cell.
+  - **Spreadsheet Clipboard Integration:** Sub-millisecond copy-paste ingestion for raw CSV and TSV matrices, preserving column boundaries, quote escaping, and automatic header recognition.
+- 📐 **Token-Aware Column Auto-Layout & Intelligent Header Shortening:**
+  - **First-Token Heuristic:** Computes proportional baseline column widths from the largest first whitespace-delimited token (`str.split(/\s+/)[0]`) across column rows, preventing long multi-word strings from distorting layout proportions.
+  - **Smart Name Shortening:** An interactive checkbox (`Auto-shorten column names if exceeding width`) automatically shortens headers exceeding content bounds (`abcd..`). Computed percentage widths immediately bind to sidebar sliders and numeric percentage inputs.
+- 📄 **Virtual Export Rows & Columns (Non-Mutating):**
+  - **Extra Blank Rows:** Injects `N` empty signature/handwriting rows into exported PDF sheets without altering underlying SQLite tables.
+  - **Custom Export Columns:** Allows appending ad-hoc columns (e.g. *Signature*, *Approval*, *Notes*) exclusively to the publication document.
+- 🏢 **Dynamic Branding & Watermark Synchronization:**
+  - Changing the organization in Ultra Dev Mode or the export dialog immediately synchronizes document headings and dense anti-tamper watermark patterns.
+  - Added dedicated **Include Logo** toggle controlling branding across both the masthead and background watermarks.
+- 🍎 **Universal Multi-Architecture macOS & Windows Packaging:**
+  - **Native Apple Silicon (`arm64`):** Compiled natively on macOS 14 runners for M1, M2, M3, and M4 Apple Silicon architectures.
+  - **Native Intel (`x86_64`):** Compiled on macOS 13 runners for legacy Intel Mac machines.
+  - **Windows Uninstaller Registration:** Updated Inno Setup installer script with dedicated Start Menu and system uninstaller shortcuts (`{uninstallexe}`).
 
 ---
 
@@ -486,23 +502,24 @@ mkdir dist
 shiv -p '/usr/bin/python3' -o dist/querii-linux pywebview reportlab openpyxl xlrd pyperclip --site-packages . -e main:main
 ```
 
-#### macOS (PyInstaller)
+#### macOS (Native ARM64 Apple Silicon & x86_64 Intel)
 ```bash
 pip install pyinstaller
+ARCH=$(uname -m) # arm64 or x86_64
 pyinstaller --noconfirm --onedir --windowed \
   --add-data "web:web" \
-  --name querii-macOS \
+  --name "querii-macOS-${ARCH}" \
   main.py
 ```
 
-#### Windows (PyInstaller + Inno Setup)
+#### Windows (PyInstaller + Inno Setup with Uninstaller)
 ```powershell
 pyinstaller --noconfirm --onedir --windowed `
   --add-data "web;web" `
   --name querii-windows `
   main.py
 
-# Compile installer
+# Compile installer (automatically generates Start Menu & Add/Remove Programs uninstaller)
 iscc installer.iss
 ```
 
@@ -535,4 +552,4 @@ Querii is **100% local-first**. Your queries, database credentials, and exported
 
 ## 📄 License
 
-Querii Version 4.1 is licensed under the [MIT License](LICENSE).
+Querii Version 4.2 is licensed under the [MIT License](LICENSE).

@@ -554,6 +554,23 @@ class Api:
             if not filepath:
                 return _err("No output filepath provided")
 
+            extra_blank_rows = kwargs.get("extra_blank_rows", 0)
+            extra_cols = kwargs.get("extra_cols", None)
+            cols = list(cols or [])
+            rows = [dict(r) for r in (rows or [])]
+
+            if extra_cols:
+                for ec in extra_cols:
+                    ec_name = str(ec).strip()
+                    if ec_name and ec_name not in cols:
+                        cols.append(ec_name)
+                        for r in rows:
+                            r[ec_name] = ""
+
+            if extra_blank_rows and int(extra_blank_rows) > 0:
+                for _ in range(int(extra_blank_rows)):
+                    rows.append({c: "" for c in cols})
+
             exporter.export_pdf(
                 columns=cols,
                 rows=rows,
@@ -592,11 +609,28 @@ class Api:
         full_override: bool = False,
         bold_data: bool = False,
         show_grid_lines: bool = False,
+        extra_blank_rows: int = 0,
+        extra_cols: list = None,
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
+            cols = list(self._last_result_cols or [])
+            rows = [dict(r) for r in (self._last_result_rows or [])]
+
+            if extra_cols:
+                for ec in extra_cols:
+                    ec_name = str(ec).strip()
+                    if ec_name and ec_name not in cols:
+                        cols.append(ec_name)
+                        for r in rows:
+                            r[ec_name] = ""
+
+            if extra_blank_rows and int(extra_blank_rows) > 0:
+                for _ in range(int(extra_blank_rows)):
+                    rows.append({c: "" for c in cols})
+
             export_pdf_html(
-                self._last_result_cols, self._last_result_rows, filepath,
+                cols, rows, filepath,
                 title=title,
                 org_name=org_name,
                 logo_b64=logo_b64,
@@ -632,11 +666,26 @@ class Api:
         full_override: bool = False,
         bold_data: bool = False,
         show_grid_lines: bool = False,
+        extra_blank_rows: int = 0,
+        extra_cols: list = None,
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
-            cols = self._last_result_cols or []
-            rows = self._last_result_rows or []
+            cols = list(self._last_result_cols or [])
+            rows = [dict(r) for r in (self._last_result_rows or [])]
+
+            if extra_cols:
+                for ec in extra_cols:
+                    ec_name = str(ec).strip()
+                    if ec_name and ec_name not in cols:
+                        cols.append(ec_name)
+                        for r in rows:
+                            r[ec_name] = ""
+
+            if extra_blank_rows and int(extra_blank_rows) > 0:
+                for _ in range(int(extra_blank_rows)):
+                    rows.append({c: "" for c in cols})
+
             html = get_pdf_html_preview(
                 columns=cols, rows=rows,
                 title=title, org_name=org_name, logo_b64=logo_b64,

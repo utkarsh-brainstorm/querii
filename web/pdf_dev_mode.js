@@ -5,31 +5,35 @@
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 var _dev = {
-  open:        false,
-  cols:        [],          // original column names from last result
-  colWidths:   {},          // col -> width% (0 = auto)
-  colHeaders:  {},          // col -> custom label
-  colVisible:  null,        // null = all visible; Set = visible cols
-  title:       'Query Results',
-  orgName:     '',
-  logo:        '',
-  pageSize:    'A4',
-  orient:      'portrait',
-  css:         '',
-  inclSql:     false,
-  inclSource:  false,
-  fullOverride:false,
-  boldData:    false,
-  showGridLines:false,
-  fileTab:     'style.css', // active file tab
-  fileBuf:     {},          // name -> content (in-memory edits)
-  devPaths:    {},          // {dir, csv, css, script}
-  watching:    false,
-  watchTid:    null,
-  prevTid:     null,        // debounce timer
-  previewPage: 1,
-  previewTotal:1,
-  zoom:        'fit',       // 'fit' | '75' | '100'
+  open:           false,
+  cols:           [],          // original column names from last result
+  colWidths:      {},          // col -> width% (0 = auto)
+  colHeaders:     {},          // col -> custom label
+  colVisible:     null,        // null = all visible; Set = visible cols
+  title:          'Query Results',
+  orgName:        '',
+  logo:           '',
+  inclLogo:       true,        // toggle logo in masthead & watermark
+  pageSize:       'A4',
+  orient:         'portrait',
+  css:            '',
+  inclSql:        false,
+  inclSource:     false,
+  fullOverride:   false,
+  boldData:       false,
+  showGridLines:  false,
+  extraBlankRows: 0,           // extra blank rows appended for export
+  extraCols:      [],          // extra column names added for export
+  shortenHeaders: true,        // auto-shorten headers checkbox
+  fileTab:        'style.css', // active file tab
+  fileBuf:        {},          // name -> content (in-memory edits)
+  devPaths:       {},          // {dir, csv, css, script}
+  watching:       false,
+  watchTid:       null,
+  prevTid:        null,        // debounce timer
+  previewPage:    1,
+  previewTotal:   1,
+  zoom:           'fit',       // 'fit' | '75' | '100'
 };
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -53,37 +57,43 @@ function _dApi(method) {
 /* ══════════════════════════════════════════════════════════════════════════
    OPEN / CLOSE
    ══════════════════════════════════════════════════════════════════════════ */
-function _devComputeDefaultSpecs(cols, rows) {
+function _devComputeDefaultSpecs(cols, rows, shortenHeaders) {
   var widths = {};
   var headers = {};
   var weights = {};
+  if (shortenHeaders === undefined) shortenHeaders = true;
+
   cols.forEach(function(c) {
     var hStr = String(c);
     var hLen = hStr.length;
-    var maxContentLen = 0;
+    var maxFirstStrLen = 0;
     if (rows && rows.length) {
       for (var i = 0; i < rows.length; i++) {
         var val = rows[i][c];
         if (val !== undefined && val !== null) {
-          var sLen = String(val).length;
-          if (sLen > maxContentLen) maxContentLen = sLen;
+          var sVal = String(val).trim();
+          if (sVal) {
+            var firstToken = sVal.split(/\s+/)[0];
+            if (firstToken.length > maxFirstStrLen) {
+              maxFirstStrLen = firstToken.length;
+            }
+          }
         }
       }
     }
 
+    // Base width is determined by the size of the largest first string in the column
+    var effW = maxFirstStrLen > 0 ? Math.max(maxFirstStrLen, 4) : Math.max(hLen, 4);
     var dispName = hStr;
-    var effW = 3;
-    if (hLen < 5 && maxContentLen < 5) {
-      dispName = hStr;
-      effW = Math.max(hLen, maxContentLen, 3);
-    } else if (maxContentLen < hLen && hLen > 5) {
-      var truncLen = Math.max(3, Math.min(hLen - 2, Math.max(4, maxContentLen)));
+
+    // Check if column name fits in header; if not and shortening enabled, truncate
+    if (shortenHeaders && hLen > effW) {
+      var truncLen = Math.max(3, effW - 2);
       dispName = hStr.substring(0, truncLen) + '..';
-      effW = Math.max(dispName.length, maxContentLen, 3);
     } else {
       dispName = hStr;
-      effW = Math.max(maxContentLen, 3);
     }
+
     weights[c] = { w: effW, name: dispName };
   });
 
@@ -114,31 +124,39 @@ function openUltraDevMode() {
   var sqEl    = document.getElementById('logo-sq-img');
   var imgEl   = document.getElementById('logo-img');
   var orgEl   = document.getElementById('s-org-name');
+  var pdfOrgEl= document.getElementById('pdf-org-name');
   var cssEl   = document.getElementById('s-pdf-custom-css');
   var devCssEl= document.getElementById('pdf-custom-css-input');
   var boldEl  = document.getElementById('pdf-bold-data');
   var gridEl  = document.getElementById('pdf-grid-lines');
+  var logoCb  = document.getElementById('pdf-include-logo');
 
   _dev.title   = (titleEl && titleEl.value) || 'Query Results';
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
   _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
   _dev.scale   = scaleEl ? (parseFloat(scaleEl.value) || 1.0) : 1.0;
-  _dev.orgName = (orgEl   && orgEl.value)   || '';
+  _dev.orgName = (pdfOrgEl && pdfOrgEl.value) || (orgEl && orgEl.value) || '';
   _dev.css     = (devCssEl && devCssEl.value) || (cssEl && cssEl.value) || (typeof _pdfCustomCss !== 'undefined' ? _pdfCustomCss : '');
   _dev.boldData= boldEl ? boldEl.checked : false;
   _dev.showGridLines = gridEl ? gridEl.checked : false;
+  _dev.inclLogo = logoCb ? logoCb.checked : true;
   _dev.logo    = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
                  (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
 
   // Columns from last result
   _dev.cols = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.columns) ? _lastResults.columns.slice() : [];
   if (!_dev.cols.length && typeof _lastResultCols !== 'undefined') _dev.cols = (_lastResultCols || []).slice();
+  if (_dev.extraCols && _dev.extraCols.length) {
+    _dev.extraCols.forEach(function(ec) {
+      if (_dev.cols.indexOf(ec) < 0) _dev.cols.push(ec);
+    });
+  }
   var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
 
   // Reset col state only if cols changed or empty
   var needReset = !_dev.colVisible || Object.keys(_dev.colWidths).length === 0 || Object.keys(_dev.colWidths).some(function(k){ return _dev.cols.indexOf(k) < 0; });
   if (needReset) {
-    var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows);
+    var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
     _dev.colWidths  = defaultSpecs.widths;
     _dev.colHeaders = defaultSpecs.headers;
     _dev.colVisible = null;
@@ -207,6 +225,13 @@ function _devRenderDocControls() {
       '<input id="dev-orgname" class="dev-input" value="' + _dEsc(_dev.orgName) + '" oninput="window._devOnOrgChange(this.value)">' +
     '</div>' +
     '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Logo</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-incl-logo" class="dev-cb"' + (_dev.inclLogo !== false ? ' checked' : '') + ' onchange="window._devOnLogoToggle(this.checked)">' +
+        ' Include Logo in Masthead &amp; Watermark' +
+      '</label>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
       '<label class="dev-lbl">Page size</label>' +
       '<select id="dev-page-size" class="dev-select" onchange="window._devOnPageSize(this.value)">' +
         ['A4','A3','Letter'].map(function(s){ return '<option' + (s===_dev.pageSize?' selected':'') + '>' + s + '</option>'; }).join('') +
@@ -242,6 +267,13 @@ function _devRenderDocControls() {
       '</label>' +
     '</div>' +
     '<div class="dev-field-row">' +
+      '<label class="dev-lbl" title="Append empty blank rows at the end of the table for physical handwriting/signing">Extra Blank Rows</label>' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+        '<input type="number" id="dev-extra-rows" min="0" max="200" class="dev-input" style="width:65px;height:26px" value="' + (_dev.extraBlankRows || 0) + '" oninput="window._devSetExtraBlankRows(this.value)">' +
+        '<span style="font-size:10.5px;color:#64748b">rows (export-only)</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
       '<label class="dev-lbl">Include SQL</label>' +
       '<input type="checkbox" id="dev-incl-sql" class="dev-cb"' + (_dev.inclSql?' checked':'') + ' onchange="window._devOnInclSql(this.checked)">' +
     '</div>' +
@@ -263,6 +295,13 @@ function _devRenderColControls() {
   var visColsCount = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); }).length;
   var avgWidth = visColsCount > 0 ? Math.floor(100 / visColsCount) : 20;
 
+  var shortenCb = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px 8px;background:#f1f5f9;border-radius:6px;border:1px solid #e2e8f0">' +
+    '<input type="checkbox" id="dev-shorten-headers" class="dev-cb"' + (_dev.shortenHeaders !== false ? ' checked' : '') + ' onchange="window._devToggleShortenHeaders(this.checked)">' +
+    '<label for="dev-shorten-headers" style="font-size:10.5px;font-weight:600;color:#334155;cursor:pointer">' +
+      'Auto-shorten column names if exceeding width' +
+    '</label>' +
+  '</div>';
+
   var toolbar = '<div style="display:flex;gap:6px;margin-bottom:8px">' +
     '<button class="dev-btn dev-btn-sm" onclick="window._devDistributeEvenly()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#334155" title="Distribute widths equally across all visible columns">⚖ Equal Widths</button>' +
     '<button class="dev-btn dev-btn-sm" onclick="window._devResetColumns()" style="flex:1;background:#f8fafc;border:1px solid #cbd5e1;padding:5px 8px;border-radius:6px;cursor:pointer;font-weight:600;font-size:10px;color:#64748b" title="Reset all custom widths and headers">↺ Reset All</button>' +
@@ -271,15 +310,17 @@ function _devRenderColControls() {
     '💡 <em>Tip: You can also hover &amp; drag vertical column borders directly on the table header with your mouse!</em>' +
   '</div>';
 
-  var html = toolbar + '<div class="dev-col-list">';
+  var html = shortenCb + toolbar + '<div class="dev-col-list">';
   _dev.cols.forEach(function(c) {
     var vis    = _dev.colVisible === null || _dev.colVisible.has(c);
     var width  = _dev.colWidths[c] !== undefined ? _dev.colWidths[c] : avgWidth;
     var header = _dev.colHeaders[c] || '';
+    var isExtra = _dev.extraCols && _dev.extraCols.indexOf(c) !== -1;
+
     html += '<div class="dev-col-row' + (vis?'':' dev-col-hidden') + '">' +
       '<label class="dev-col-vis" title="Show/hide column">' +
         '<input type="checkbox" ' + (vis?'checked':'') + ' onchange="window._devToggleCol(\'' + _dEsc(c) + '\', this.checked)">' +
-        '<span class="dev-col-name" title="' + _dEsc(c) + '">' + _dEsc(c) + '</span>' +
+        '<span class="dev-col-name" title="' + _dEsc(c) + '">' + _dEsc(c) + (isExtra ? ' <span style="font-size:9px;color:#3b82f6;font-weight:700">[extra]</span>' : '') + '</span>' +
       '</label>' +
       '<input class="dev-col-hdr" placeholder="Label override…" value="' + _dEsc(header) + '" oninput="window._devSetHeader(\'' + _dEsc(c) + '\', this.value)" title="Custom column header">' +
       '<div class="dev-col-width-wrap" style="display:flex;align-items:center;gap:6px">' +
@@ -288,12 +329,80 @@ function _devRenderColControls() {
           '<input type="number" min="1" max="100" step="1" value="' + width + '" class="dev-width-input" id="input-' + _dEsc(c) + '" style="width:44px;height:22px;text-align:right;font-size:11px;font-weight:700;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;color:#0f172a;background:#fff" oninput="window._devSetWidthInput(\'' + _dEsc(c) + '\', this.value)">' +
           '<span style="font-size:10px;font-weight:600;color:#64748b">%</span>' +
         '</div>' +
+        (isExtra ? '<button onclick="window._devRemoveExtraColumn(\'' + _dEsc(c) + '\')" style="border:none;background:none;color:#ef4444;cursor:pointer;font-size:13px;padding:0 2px;line-height:1" title="Remove extra column">×</button>' : '') +
       '</div>' +
     '</div>';
   });
   html += '</div>';
+
+  /* Extra Column Form */
+  html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">' +
+    '<div style="font-size:10.5px;font-weight:700;color:#334155;margin-bottom:6px">➕ Add Extra Column (Export Only)</div>' +
+    '<div style="display:flex;gap:6px;align-items:center">' +
+      '<input id="dev-new-col-name" class="dev-input" placeholder="e.g. Signature, Remarks…" style="flex:1;font-size:11px;height:26px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();window._devAddExtraColumn();}">' +
+      '<button type="button" class="dev-btn dev-btn-sm" onclick="window._devAddExtraColumn()" style="font-weight:600;font-size:10px;padding:4px 10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">+ Add</button>' +
+    '</div>' +
+  '</div>';
+
   el.innerHTML = html;
 }
+
+window._devOnLogoToggle = function(v) {
+  _dev.inclLogo = v;
+  _devRefreshPreviewDebounced(150);
+};
+
+window._devSetExtraBlankRows = function(v) {
+  _dev.extraBlankRows = Math.max(0, parseInt(v, 10) || 0);
+  _devRefreshPreviewDebounced(200);
+};
+
+window._devToggleShortenHeaders = function(v) {
+  _dev.shortenHeaders = v;
+  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
+  _dev.colHeaders = defaultSpecs.headers;
+  _dev.colWidths  = defaultSpecs.widths;
+  _devRenderColControls();
+  _devRefreshPreviewDebounced(150);
+};
+
+window._devAddExtraColumn = function() {
+  var inp = document.getElementById('dev-new-col-name');
+  if (!inp) return;
+  var name = inp.value.trim();
+  if (!name) { _dToast('Enter a column name', 'warn'); return; }
+  if (_dev.cols.indexOf(name) !== -1) { _dToast('Column "' + name + '" already exists', 'warn'); return; }
+  _dev.extraCols.push(name);
+  _dev.cols.push(name);
+  _dev.colHeaders[name] = name;
+  if (_dev.colVisible) _dev.colVisible.add(name);
+
+  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
+  _dev.colWidths = defaultSpecs.widths;
+  inp.value = '';
+  _devRenderColControls();
+  _devRefreshPreviewDebounced(150);
+  _dToast('Added export column: ' + name);
+};
+
+window._devRemoveExtraColumn = function(name) {
+  var idx = _dev.extraCols.indexOf(name);
+  if (idx !== -1) _dev.extraCols.splice(idx, 1);
+  var cIdx = _dev.cols.indexOf(name);
+  if (cIdx !== -1) _dev.cols.splice(cIdx, 1);
+  delete _dev.colWidths[name];
+  delete _dev.colHeaders[name];
+  if (_dev.colVisible) _dev.colVisible.delete(name);
+
+  var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
+  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
+  _dev.colWidths = defaultSpecs.widths;
+  _devRenderColControls();
+  _devRefreshPreviewDebounced(150);
+  _dToast('Removed column: ' + name);
+};
 
 window._devDistributeEvenly = function() {
   var visCols = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); });
@@ -314,7 +423,7 @@ window._devOnScale = function(val) {
 
 window._devResetColumns = function() {
   var resultRows = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.rows) ? _lastResults.rows : [];
-  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows);
+  var defaultSpecs = _devComputeDefaultSpecs(_dev.cols, resultRows, _dev.shortenHeaders);
   _dev.colWidths  = defaultSpecs.widths;
   _dev.colHeaders = defaultSpecs.headers;
   _dev.colVisible = null;
@@ -322,6 +431,7 @@ window._devResetColumns = function() {
   _devRefreshPreviewDebounced(150);
   _dToast('Column widths and headers reset');
 };
+
 
 function _devRenderCssEditor() {
   var el = document.getElementById('dev-css-editor');
@@ -671,6 +781,8 @@ function _devRefreshPreview() {
   var iframe = document.getElementById('dev-preview-frame');
   if (!iframe) return;
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
+  var logoData = (_dev.inclLogo !== false) ? _dev.logo : '';
+  var org = (_dev.orgName !== undefined && _dev.orgName !== '') ? _dev.orgName : ((document.getElementById('s-org-name') || {}).value || '');
 
   // Preserve scroll offset
   var scrollY = 0;
@@ -683,10 +795,11 @@ function _devRefreshPreview() {
   } catch (e) {}
 
   _dApi('get_pdf_html_preview',
-    _dev.title, _dev.orgName, _dev.logo, _dev.css,
+    _dev.title, org, logoData, _dev.css,
     _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
-    _dev.boldData, _dev.showGridLines
+    _dev.boldData, _dev.showGridLines,
+    _dev.extraBlankRows || 0, _dev.extraCols || []
   ).then(function(r) {
     if (!r) return;
     iframe.srcdoc = r;
@@ -794,18 +907,20 @@ function _devStopWatcher() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devExportPdf = function() {
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
+  var logoData = (_dev.inclLogo !== false) ? _dev.logo : '';
+  var org = (_dev.orgName !== undefined && _dev.orgName !== '') ? _dev.orgName : ((document.getElementById('s-org-name') || {}).value || '');
+
   _dApi('save_file_dialog', _dev.title || 'export', 'pdf').then(function(r) {
     if (!r) return;
     var filepath = r;
-    var orgEl = document.getElementById('s-org-name');
-    var org = (orgEl && orgEl.value) || _dev.orgName;
     _dToast('⚡ Generating PDF…', 'info');
     return _dApi('export_pdf_html',
-      filepath, _dev.title, org, _dev.logo,
+      filepath, _dev.title, org, logoData,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
       '', _dev.css, _dev.pageSize, _dev.orient, _dev.scale || 1.0,
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
-      _dev.boldData, _dev.showGridLines
+      _dev.boldData, _dev.showGridLines,
+      _dev.extraBlankRows || 0, _dev.extraCols || []
     );
   }).then(function(r) {
     if (r) _dToast('✓ PDF exported!');

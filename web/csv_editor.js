@@ -17,6 +17,8 @@ var _csvEd = {
   isNew:         true,
   cols:          [],        // ['col1', 'col2', ...]
   rows:          [],        // [['v1','v2',...], ...]
+  activeRow:     -1,        // last active/focused row
+  activeCol:     -1,        // last active/focused col
   lastEnterC:    -1,        // column index of last Enter press
   lastEnterTime: 0,         // timestamp of last Enter press (for double-Enter)
 };
@@ -46,6 +48,8 @@ function openNewCsvEditor() {
   _csvEd.isNew         = true;
   _csvEd.cols          = ['Column1', 'Column2', 'Column3'];
   _csvEd.rows          = [['', '', '']];
+  _csvEd.activeRow     = 0;
+  _csvEd.activeCol     = 0;
   _csvEd.lastEnterC    = -1;
   _csvEd.lastEnterTime = 0;
 
@@ -76,6 +80,8 @@ function openCsvEditorForTable(tableName) {
     _csvEd.isNew         = false;
     _csvEd.cols          = (data.columns && data.columns.length) ? data.columns.slice() : ['Column1'];
     _csvEd.rows          = (data.rows && data.rows.length) ? data.rows.map(function(r) { return r.slice(); }) : [['']];
+    _csvEd.activeRow     = 0;
+    _csvEd.activeCol     = 0;
     _csvEd.lastEnterC    = -1;
     _csvEd.lastEnterTime = 0;
 
@@ -96,16 +102,22 @@ function _csvEdRender() {
 
   /* Header row — locked/sticky, editable column name cells */
   var htr = '<tr>';
-  htr += '<th style="' + _ceThStyle(true) + 'width:38px;color:#94a3b8;font-weight:400;text-align:center;user-select:none">#</th>';
+  htr += '<th style="' + _ceThStyle(true) + 'width:44px;color:#94a3b8;font-weight:400;text-align:center;user-select:none">#</th>';
   _csvEd.cols.forEach(function(col, ci) {
-    htr += '<th style="' + _ceThStyle(false) + '" title="Header: Column name (right-click to delete)">' +
-      '<input type="text" value="' + _ceEsc(col) + '" ' +
-      'data-ce-col="' + ci + '" ' +
-      'onchange="_csvEdColRename(this,' + ci + ')" ' +
-      'oncontextmenu="_csvEdDelCol(event,' + ci + ')" ' +
-      'onpaste="_csvEdHandlePaste(event, null, ' + ci + ')" ' +
-      'style="border:none;background:transparent;width:100%;font-weight:700;font-size:11px;' +
-      'color:#f8fafc;outline:none;cursor:text;font-family:inherit;min-width:80px;" />' +
+    htr += '<th style="' + _ceThStyle(false) + '" title="Header: Column name">' +
+      '<div style="display:flex;align-items:center;gap:4px">' +
+        '<input type="text" value="' + _ceEsc(col) + '" ' +
+        'data-ce-col="' + ci + '" ' +
+        'onfocus="_csvEd.activeCol=' + ci + '" ' +
+        'onchange="_csvEdColRename(this,' + ci + ')" ' +
+        'oncontextmenu="_csvEdDelCol(event,' + ci + ')" ' +
+        'onpaste="_csvEdHandlePaste(event, null, ' + ci + ')" ' +
+        'style="border:none;background:transparent;width:100%;font-weight:700;font-size:11px;' +
+        'color:#f8fafc;outline:none;cursor:text;font-family:inherit;min-width:70px;" />' +
+        '<button type="button" onclick="_csvEdDelColDirect(' + ci + ')" title="Delete column ' + _ceEsc(col) + '" ' +
+        'style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:13px;font-weight:bold;padding:0 3px;line-height:1;transition:color .15s" ' +
+        'onmouseover="this.style.color=\'#ef4444\'" onmouseout="this.style.color=\'#94a3b8\'">×</button>' +
+      '</div>' +
       '</th>';
   });
   htr += '</tr>';
@@ -115,12 +127,19 @@ function _csvEdRender() {
   var html = '';
   _csvEd.rows.forEach(function(row, ri) {
     html += '<tr>';
-    html += '<td style="' + _ceTdStyle(true) + 'color:#94a3b8;text-align:center;user-select:none">' + (ri + 1) + '</td>';
+    html += '<td style="' + _ceTdStyle(true) + 'color:#94a3b8;text-align:center;user-select:none;position:relative" ' +
+      'onmouseenter="var b=this.querySelector(\'.ce-row-del\');if(b)b.style.opacity=\'1\';" ' +
+      'onmouseleave="var b=this.querySelector(\'.ce-row-del\');if(b)b.style.opacity=\'0\';">' +
+      '<span style="font-size:10px">' + (ri + 1) + '</span>' +
+      '<button type="button" class="ce-row-del" onclick="_csvEdDelRow(' + ri + ')" title="Delete row ' + (ri + 1) + '" ' +
+      'style="opacity:0;border:none;background:none;color:#ef4444;cursor:pointer;font-size:12px;font-weight:bold;line-height:1;padding:0 2px;margin-left:2px;transition:opacity .15s">×</button>' +
+      '</td>';
     _csvEd.cols.forEach(function(_, ci) {
       var val = (row[ci] !== undefined) ? row[ci] : '';
       html += '<td style="' + _ceTdStyle(false) + '">' +
         '<input type="text" value="' + _ceEsc(val) + '" ' +
         'data-ce-row="' + ri + '" data-ce-col-i="' + ci + '" ' +
+        'onfocus="_csvEd.activeRow=' + ri + ';_csvEd.activeCol=' + ci + '" ' +
         'onchange="_csvEdCellChange(this,' + ri + ',' + ci + ')" ' +
         'onkeydown="_csvEdKey(event,' + ri + ',' + ci + ')" ' +
         'onpaste="_csvEdHandlePaste(event,' + ri + ',' + ci + ')" ' +
@@ -309,30 +328,63 @@ function _csvEdFocus(ri, ci) {
   if (inp) { inp.focus(); inp.select(); }
 }
 
-/* ─── Add row / column ──────────────────────────────────────────────────── */
-function csvEditorAddRow() {
+/* ─── Add row / column (with N input support) ───────────────────────────── */
+function csvEditorAddRowsN() {
   _csvEdSyncAll();
-  _csvEd.rows.push(_csvEd.cols.map(function() { return ''; }));
+  var countEl = document.getElementById('csv-add-rows-count');
+  var n = Math.max(1, Math.min(500, parseInt(countEl ? countEl.value : 1, 10) || 1));
+  for (var i = 0; i < n; i++) {
+    _csvEd.rows.push(_csvEd.cols.map(function() { return ''; }));
+  }
   _csvEdRender();
   setTimeout(function() { _csvEdFocus(_csvEd.rows.length - 1, 0); }, 30);
   var info = document.getElementById('csv-editor-info');
-  if (info) info.textContent = _csvEd.rows.length + ' rows · ' + _csvEd.cols.length + ' cols';
+  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
 }
 
-function csvEditorAddCol() {
+function csvEditorAddColsN() {
   _csvEdSyncAll();
-  var newCol = 'Column' + (_csvEd.cols.length + 1);
-  _csvEd.cols.push(newCol);
-  _csvEd.rows.forEach(function(r) { r.push(''); });
+  var countEl = document.getElementById('csv-add-cols-count');
+  var n = Math.max(1, Math.min(50, parseInt(countEl ? countEl.value : 1, 10) || 1));
+  for (var i = 0; i < n; i++) {
+    var newCol = 'Column' + (_csvEd.cols.length + 1);
+    _csvEd.cols.push(newCol);
+    _csvEd.rows.forEach(function(r) { r.push(''); });
+  }
   _csvEdRender();
   setTimeout(function() {
     var inp = document.querySelector('[data-ce-col="' + (_csvEd.cols.length - 1) + '"]');
     if (inp) { inp.focus(); inp.select(); }
   }, 30);
+  var info = document.getElementById('csv-editor-info');
+  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
 }
 
-function _csvEdDelCol(e, ci) {
-  e.preventDefault();
+function csvEditorAddRow() { csvEditorAddRowsN(); }
+function csvEditorAddCol() { csvEditorAddColsN(); }
+window.csvEditorAddRow = csvEditorAddRow;
+window.csvEditorAddCol = csvEditorAddCol;
+window.csvEditorAddRowsN = csvEditorAddRowsN;
+window.csvEditorAddColsN = csvEditorAddColsN;
+
+/* ─── Delete row / column ───────────────────────────────────────────────── */
+function _csvEdDelRow(ri) {
+  if (_csvEd.rows.length <= 1) {
+    _csvEd.rows = [_csvEd.cols.map(function() { return ''; })];
+    _csvEdRender();
+    if (typeof toast === 'function') toast('Row cleared (table must have at least 1 row).', 'info');
+    return;
+  }
+  _csvEdSyncAll();
+  _csvEd.rows.splice(ri, 1);
+  if (_csvEd.activeRow >= _csvEd.rows.length) _csvEd.activeRow = _csvEd.rows.length - 1;
+  _csvEdRender();
+  var info = document.getElementById('csv-editor-info');
+  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
+}
+window._csvEdDelRow = _csvEdDelRow;
+
+function _csvEdDelColDirect(ci) {
   if (_csvEd.cols.length <= 1) {
     if (typeof toast === 'function') toast('Must have at least 1 column.', 'warn');
     return;
@@ -341,8 +393,29 @@ function _csvEdDelCol(e, ci) {
   _csvEdSyncAll();
   _csvEd.cols.splice(ci, 1);
   _csvEd.rows.forEach(function(r) { r.splice(ci, 1); });
+  if (_csvEd.activeCol >= _csvEd.cols.length) _csvEd.activeCol = _csvEd.cols.length - 1;
   _csvEdRender();
+  var info = document.getElementById('csv-editor-info');
+  if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
 }
+window._csvEdDelColDirect = _csvEdDelColDirect;
+
+function _csvEdDelCol(e, ci) {
+  e.preventDefault();
+  _csvEdDelColDirect(ci);
+}
+
+function csvEditorDelActiveRow() {
+  var ri = (_csvEd.activeRow >= 0 && _csvEd.activeRow < _csvEd.rows.length) ? _csvEd.activeRow : (_csvEd.rows.length - 1);
+  _csvEdDelRow(ri);
+}
+window.csvEditorDelActiveRow = csvEditorDelActiveRow;
+
+function csvEditorDelActiveCol() {
+  var ci = (_csvEd.activeCol >= 0 && _csvEd.activeCol < _csvEd.cols.length) ? _csvEd.activeCol : (_csvEd.cols.length - 1);
+  _csvEdDelColDirect(ci);
+}
+window.csvEditorDelActiveCol = csvEditorDelActiveCol;
 
 function _csvEdSyncAll() {
   document.querySelectorAll('[data-ce-row]').forEach(function(inp) {
@@ -391,6 +464,8 @@ function csvEditorSave() {
 function closeCsvEditor() {
   var el = document.getElementById('modal-csv-editor');
   if (el) el.classList.add('hidden');
+  var bd = document.getElementById('modal-backdrop');
+  if (bd) bd.classList.add('hidden');
   if (typeof closeModal === 'function') closeModal();
 }
 window.closeCsvEditor = closeCsvEditor;

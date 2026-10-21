@@ -180,15 +180,16 @@ def _find_chromium() -> Optional[str]:
 def compute_default_col_specs(
     columns: List[str],
     rows: List[Dict],
+    shorten_headers: bool = True,
 ) -> tuple[Dict[str, float], Dict[str, str]]:
     """
     Compute default column widths and header labels:
-    1. Base column width is decided by the longest string that column has (not the header).
-    2. If header has < 5 chars AND largest content is also < 5 chars:
-       Keep width according to header (label remains unchanged).
-    3. If content is smaller than header AND header is > 5 chars:
-       Name the header as abbreviated 'abcd..' so long headers don't bloat the column.
-    4. Otherwise: width is decided by largest content string.
+    1. Base width is determined by the size of the largest first string (first token before
+       whitespace) present in that column across all rows.
+    2. Check if the column name can fit in the header column (h_len <= effective_w):
+       - If yes (or shorten_headers is False): keep full name.
+       - If no: truncate header to fit ('abcd..').
+    3. Calculate proportional percentage column widths.
     """
     col_widths: Dict[str, float] = {}
     col_headers: Dict[str, str] = {}
@@ -197,28 +198,28 @@ def compute_default_col_specs(
     for c in columns:
         h_str = str(c)
         h_len = len(h_str)
-        max_content_len = 0
+        max_first_str_len = 0
         if rows:
             for r in rows:
                 val = r.get(c, "")
                 if val is not None:
-                    s_len = len(str(val))
-                    if s_len > max_content_len:
-                        max_content_len = s_len
+                    s_val = str(val).strip()
+                    if s_val:
+                        first_token = s_val.split()[0]
+                        if len(first_token) > max_first_str_len:
+                            max_first_str_len = len(first_token)
 
-        # Rule 1: header < 5 chars AND largest content < 5 chars -> keep width according to header
-        if h_len < 5 and max_content_len < 5:
-            display_name = h_str
-            effective_w = max(h_len, max_content_len, 3)
-        # Rule 2: content < header AND header > 5 chars -> name header as 'abcd..'
-        elif max_content_len < h_len and h_len > 5:
-            trunc_len = max(3, min(h_len - 2, max(4, max_content_len)))
+        # Base width is the length of largest first string in column
+        if max_first_str_len > 0:
+            effective_w = max(max_first_str_len, 4)
+        else:
+            effective_w = max(h_len, 4)
+
+        if shorten_headers and h_len > effective_w:
+            trunc_len = max(3, effective_w - 2)
             display_name = h_str[:trunc_len] + ".."
-            effective_w = max(len(display_name), max_content_len, 3)
-        # Rule 3: general case -> width according to longest string in content
         else:
             display_name = h_str
-            effective_w = max(max_content_len, 3)
 
         char_weights[c] = (effective_w, display_name)
 
@@ -236,6 +237,7 @@ def compute_default_col_specs(
         col_headers[c] = disp
 
     return col_widths, col_headers
+
 
 
 def _build_pdf_html(

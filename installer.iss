@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=Querii
-AppVersion=3.0-beta
+AppVersion=4.2
 AppPublisher=Heisenberg
 AppPublisherURL=https://github.com/utkarsh-brainstorm/querii
 DefaultDirName={autopf}\Querii
@@ -17,12 +17,14 @@ ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 ; App data lives in %APPDATA%\Querii — no installer access needed
 UninstallDisplayIcon={app}\querii-windows.exe
+CreateUninstallRegKey=yes
 
 [Files]
 Source: "dist\querii-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Querii"; Filename: "{app}\querii-windows.exe"
+Name: "{group}\Uninstall Querii"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Querii"; Filename: "{app}\querii-windows.exe"; Tasks: desktopicon
 
 [Tasks]

@@ -1879,6 +1879,16 @@ function exportPdf() {
   var cssSection = document.getElementById('pdf-css-section');
   if (cssSection) cssSection.classList.toggle('hidden', !_pdfDevMode);
 
+  // Pre-fill organisation name from settings
+  var orgInp = document.getElementById('pdf-org-name');
+  if (orgInp) {
+    orgInp.value = (document.getElementById('s-org-name') || {}).value || '';
+  }
+  var logoCb = document.getElementById('pdf-include-logo');
+  if (logoCb) {
+    logoCb.checked = true;
+  }
+
   // Default to HTML mode so rich templates, presets, and scaling are active
   var useHtmlEl = document.getElementById('pdf-use-html');
   if (useHtmlEl) useHtmlEl.checked = true;
@@ -2779,12 +2789,19 @@ function confirmExportPdf() {
   _pdfDefaultDir = saveDir;
   apiCall('save_settings', { ap_pdf_dir: saveDir }).catch(function() {});
 
-  var org   = (document.getElementById('s-org-name') || {}).value || '';
+  var orgInp = document.getElementById('pdf-org-name');
+  var org    = (orgInp && orgInp.value.trim()) ? orgInp.value.trim() : ((document.getElementById('s-org-name') || {}).value || '');
+  var logoCb = document.getElementById('pdf-include-logo');
+  var inclLogo = logoCb ? logoCb.checked : true;
+
   // Prefer square logo for PDF (it's used as the circular header logo)
   var sqEl  = document.getElementById('logo-sq-img');
   var imgEl = document.getElementById('logo-img');
-  var logo  = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
-              (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
+  var logo  = '';
+  if (inclLogo) {
+    logo = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
+           (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
+  }
   var sql   = inclQuery ? ((document.getElementById('sql-editor') || {}).value || '') : '';
   var sourceLabel = inclSource ? (_selectedTables.length > 1 ? _selectedTables.join(', ') : _activeTable) : '';
 
