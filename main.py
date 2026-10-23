@@ -29,6 +29,15 @@ os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     "--proxy-server=direct:// --proxy-bypass-list=*"
 )
 
+# ── Linux platform fixes (X11/XWayland + Full GPU Acceleration) ─────────────
+if sys.platform == "linux":
+    if os.environ.get("DISPLAY"):
+        os.environ["GDK_BACKEND"] = "x11"
+    # Remove any software-fallback flags so WebKitGTK uses full GPU acceleration
+    os.environ.pop("WEBKIT_DISABLE_COMPOSITING_MODE", None)
+    os.environ.pop("WEBKIT_DISABLE_DMABUF_RENDERER", None)
+    os.environ.pop("WEBKIT_DMABUF_RENDERER_FORCE_SHM", None)
+
 if getattr(sys, "frozen", False) and sys.platform == "linux":
     os.environ.setdefault("PYWEBVIEW_GUI", "qt")
     os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
@@ -106,11 +115,6 @@ def _run_app() -> None:
     window.events.closed += lambda: os._exit(0)
 
     # ── Start the event loop (picks best available native renderer) ─────────
-    # Fix for patchy/laggy UI on Linux: Disable WebKit2GTK hardware compositing
-    # which is notoriously broken on many Linux setups and causes severe rendering lag.
-    if sys.platform == "linux":
-        os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
-
     start_kwargs: dict = {
         "debug": "--debug" in sys.argv,
     }
@@ -124,6 +128,7 @@ def _run_app() -> None:
 
     def _on_started() -> None:
         if sys.platform == "linux":
+            # Qt icon & desktop setup
             try:
                 from PyQt6.QtGui import QIcon
                 from PyQt6.QtWidgets import QApplication
@@ -132,6 +137,17 @@ def _run_app() -> None:
                     qapp.setDesktopFileName("querii")
                     if icon_path and os.path.exists(icon_path):
                         qapp.setWindowIcon(QIcon(icon_path))
+            except Exception:
+                pass
+
+            # WebKitGTK full GPU hardware acceleration enforcement
+            try:
+                import webview.platforms.gtk as wv_gtk
+                from gi.repository import WebKit2
+                for uid, bv in getattr(wv_gtk.BrowserView, 'instances', {}).items():
+                    if hasattr(bv, 'webview'):
+                        ws = bv.webview.get_settings()
+                        ws.set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.ALWAYS)
             except Exception:
                 pass
 

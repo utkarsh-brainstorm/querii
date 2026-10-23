@@ -605,34 +605,38 @@ function rebuildSortDropdown() {
 
 /* ── Column search for filter dropdowns ─────────────────────────────── */
 /* Filters the field <select> inside every open condition row and aggregate/sort selects */
+var _colDropdownFilterTimer = null;
 function filterColumnDropdowns(term) {
-  term = (term || '').toLowerCase();
-  
-  // Find all condition field selects, plus the select/groupby/sort selects
-  var selects = Array.prototype.slice.call(document.querySelectorAll('[id^="ff-"]'));
-  var selectAdd = document.getElementById('select-add');
-  var groupbyAdd = document.getElementById('groupby-add');
-  var sortCol = document.getElementById('sort-col');
-  
-  if (selectAdd) selects.push(selectAdd);
-  if (groupbyAdd) selects.push(groupbyAdd);
-  if (sortCol) selects.push(sortCol);
+  clearTimeout(_colDropdownFilterTimer);
+  _colDropdownFilterTimer = setTimeout(function() {
+    term = (term || '').toLowerCase();
+    
+    // Find all condition field selects, plus the select/groupby/sort selects
+    var selects = Array.prototype.slice.call(document.querySelectorAll('[id^="ff-"]'));
+    var selectAdd = document.getElementById('select-add');
+    var groupbyAdd = document.getElementById('groupby-add');
+    var sortCol = document.getElementById('sort-col');
+    
+    if (selectAdd) selects.push(selectAdd);
+    if (groupbyAdd) selects.push(groupbyAdd);
+    if (sortCol) selects.push(sortCol);
 
-  selects.forEach(function(sel) {
-    Array.prototype.forEach.call(sel.options, function(opt) {
-      if (!opt.value) return; // skip placeholder
-      opt.style.display = (!term || opt.text.toLowerCase().indexOf(term) !== -1) ? '' : 'none';
-    });
-    // If current value is hidden, pick first visible
-    var cur = sel.value;
-    if (cur) {
-      var curOpt = sel.querySelector('option[value="' + cur.replace(/"/g, '\\"') + '"]');
-      if (curOpt && curOpt.style.display === 'none') {
-        var first = sel.querySelector('option:not([style*="none"]):not([value=""])');
-        if (first) { sel.value = first.value; sel.dispatchEvent(new Event('change')); }
+    selects.forEach(function(sel) {
+      Array.prototype.forEach.call(sel.options, function(opt) {
+        if (!opt.value) return; // skip placeholder
+        opt.style.display = (!term || opt.text.toLowerCase().indexOf(term) !== -1) ? '' : 'none';
+      });
+      // If current value is hidden, pick first visible
+      var cur = sel.value;
+      if (cur) {
+        var curOpt = sel.querySelector('option[value="' + cur.replace(/"/g, '\\"') + '"]');
+        if (curOpt && curOpt.style.display === 'none') {
+          var first = sel.querySelector('option:not([style*="none"]):not([value=""])');
+          if (first) { sel.value = first.value; sel.dispatchEvent(new Event('change')); }
+        }
       }
-    }
-  });
+    });
+  }, 150);
 }
 
 
@@ -1192,6 +1196,7 @@ function onCondOpChange(gid, iid, opVal) {
   cond.value = ''; cond.value2 = '';
   renderCondValue(cond, gid);
 }
+var _filterSqlDebounceTimer = null;
 function onCondValueChange(gid, iid, which, val) {
   var group = findGroup(_filterGroups, gid);
   if (!group) return;
@@ -1199,6 +1204,101 @@ function onCondValueChange(gid, iid, which, val) {
   if (!cond) return;
   if (which === 'val1') cond.value  = val;
   else                  cond.value2 = val;
+
+  // Debounce typing in filter fields so SQL text generation doesn't re-trigger on every microsecond backspace
+  clearTimeout(_filterSqlDebounceTimer);
+  _filterSqlDebounceTimer = setTimeout(function() {
+    generateSqlPreview();
+  }, 200);
+}
+
+function generateSqlPreview() {
+  if (!_activeTable) return;
+  syncFilterState();
+
+  var selPart = _selectPills.length ? _selectPills.map(function(p) { return p.expr; }).join(', ') : '*';
+  var sql = 'SELECT ' + selPart + '\nFROM "' + _activeTable + '"';
+
+  if (_selectedTables.length > 1) {
+    _joinClauses.forEach(function(jc) {
+      if (jc && jc.clause) sql += '\n' + jc.clause;
+    });
+  }
+
+  function escVal(v, cat) {
+    if (v === '' || v === null || v === undefined) return "''";
+    if (cat === 'number' && !isNaN(Number(v))) return String(Number(v));
+    return "'" + String(v).replace(/'/g, "''") + "'";
+  }
+
+  function buildWhere(group) {
+    if (!group || !group.items || !group.items.length) return '';
+    var parts = [];
+    for (var i = 0; i < group.items.length; i++) {
+      var item = group.items[i];
+      if (item._type === 'group') {
+        var sub = buildWhere(item);
+        if (sub) parts.push('(' + sub + ')');
+      } else if (item.field && item.operator) {
+        var fld = item.field.indexOf('.') !== -1 ? item.field : '"' + item.field + '"';
+        var op = item.operator;
+        var val1 = item.value || '';
+        var val2 = item.value2 || '';
+        if (op === 'is empty') {
+          parts.push('(' + fld + ' IS NULL OR ' + fld + " = '')");
+        } else if (op === 'is not empty') {
+          parts.push('(' + fld + ' IS NOT NULL AND ' + fld + " != '')");
+        } else if (op === 'between') {
+          parts.push(fld + ' BETWEEN ' + escVal(val1, item.category) + ' AND ' + escVal(val2, item.category));
+        } else if (op === 'contains') {
+          parts.push(fld + " LIKE '%" + val1.replace(/'/g, "''") + "%'");
+        } else if (op === 'starts with') {
+          parts.push(fld + " LIKE '" + val1.replace(/'/g, "''") + "%'");
+        } else if (op === 'ends with') {
+          parts.push(fld + " LIKE '%" + val1.replace(/'/g, "''") + "'");
+        } else {
+          parts.push(fld + ' ' + op + ' ' + escVal(val1, item.category));
+        }
+      }
+    }
+    return parts.join(' ' + (group.joiner || 'AND') + ' ');
+  }
+
+  if (_filterGroups && _filterGroups.length) {
+    var topParts = [];
+    _filterGroups.forEach(function(g) {
+      var s = buildWhere(g);
+      if (s) topParts.push('(' + s + ')');
+    });
+    if (topParts.length) sql += '\nWHERE ' + topParts.join(' OR ');
+  }
+
+  if (_groupByPills.length) {
+    sql += '\nGROUP BY ' + _groupByPills.map(function(p) { return p.expr; }).join(', ');
+    var havingAgg = ((document.getElementById('having-agg') || {}).value || '').trim();
+    var havingOp  = (document.getElementById('having-op') || {}).value || '>';
+    var havingVal = ((document.getElementById('having-val') || {}).value || '').trim();
+    if (havingAgg && havingVal) {
+      sql += '\nHAVING ' + havingAgg + ' ' + havingOp + ' ' + havingVal;
+    }
+  }
+
+  var sortCol = (document.getElementById('sort-col') || {}).value || '';
+  var sortDir = (document.getElementById('sort-dir') || {}).value || 'ASC';
+  if (sortCol) {
+    sql += '\nORDER BY ' + (sortCol.indexOf('.') !== -1 ? sortCol : '"' + sortCol + '"') + ' ' + sortDir;
+  }
+
+  var limit = parseInt((document.getElementById('result-limit') || {}).value || '5000', 10);
+  if (limit) {
+    sql += '\nLIMIT ' + limit;
+  }
+
+  var ed = document.getElementById('sql-editor');
+  if (ed) {
+    ed.value = sql;
+    syncSqlLines();
+  }
 }
 
 /* Build the wire format to send to Python */
@@ -1644,9 +1744,13 @@ function escapeHtml(str) {
   });
 }
 
+var _rowSearchTimer = null;
 function filterResultRows(text) {
-  _rowSearchTerm = (text || '').trim();
-  drawPage(_currentPage);
+  clearTimeout(_rowSearchTimer);
+  _rowSearchTimer = setTimeout(function() {
+    _rowSearchTerm = (text || '').trim();
+    drawPage(_currentPage);
+  }, 150);
 }
 
 function nextResultRowMatch(event) {
@@ -1776,9 +1880,13 @@ function drawPage(page) {
   _currentPage = page;
 }
 
+var _resColFilterTimer = null;
 function filterResultColumns(term) {
-  _colSearch = term;
-  drawPage(_currentPage);
+  clearTimeout(_resColFilterTimer);
+  _resColFilterTimer = setTimeout(function() {
+    _colSearch = term;
+    drawPage(_currentPage);
+  }, 150);
 }
 
 function renderPaginationBar(page, total) {
@@ -3358,9 +3466,12 @@ function syncLines(editorId, linesId) {
   var lines = document.getElementById(linesId);
   if (!ed || !lines) return;
   var count = (ed.value.match(/\n/g) || []).length + 1;
-  var h = '';
-  for (var i = 1; i <= count; i++) h += i + '\n';
-  lines.textContent = h;
+  if (ed._lastLineCount !== count) {
+    ed._lastLineCount = count;
+    var h = '';
+    for (var i = 1; i <= count; i++) h += i + '\n';
+    lines.textContent = h;
+  }
   lines.scrollTop = ed.scrollTop;
 }
 
@@ -3472,7 +3583,12 @@ document.addEventListener('DOMContentLoaded', function() {
       if (_sqlHistory.length > 200) _sqlHistory.shift();
       _sqlHistIdx = _sqlHistory.length - 1;
     }
-    sqlEd.addEventListener('input', function() { syncSqlLines(); _sqlPush(); });
+    var _sqlPushTimer = null;
+    sqlEd.addEventListener('input', function() {
+      syncSqlLines();
+      clearTimeout(_sqlPushTimer);
+      _sqlPushTimer = setTimeout(_sqlPush, 300);
+    });
     sqlEd.addEventListener('scroll', function() {
       var ln = document.getElementById('sql-lines');
       if (ln) ln.scrollTop = sqlEd.scrollTop;
