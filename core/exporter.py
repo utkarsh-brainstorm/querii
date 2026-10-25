@@ -270,6 +270,7 @@ def _build_pdf_html(
     bold_data: bool = False,
     show_grid_lines: bool = False,
     is_preview: bool = False,
+    watermark_enabled: bool = True,
 ) -> str:
     """
     Build a complete, standalone, executive-grade HTML string for high-fidelity printing.
@@ -551,6 +552,20 @@ def _build_pdf_html(
     })();
   </script>
 """
+
+    watermark_block = (
+        f"""
+    <!-- Background Watermark -->
+    <div class="watermark-area" id="watermarkArea" aria-hidden="true">
+      <div class="watermark-text" id="watermarkText"></div>
+      <div class="logo-watermark-zone">
+        {logo_img_watermark}
+      </div>
+    </div>"""
+        if watermark_enabled
+        else ""
+    )
+    watermark_js = watermark_script if watermark_enabled else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1063,13 +1078,7 @@ def _build_pdf_html(
     <!-- Document border frame -->
     <div class="document-frame" aria-hidden="true"></div>
 
-    <!-- Background Watermark -->
-    <div class="watermark-area" id="watermarkArea" aria-hidden="true">
-      <div class="watermark-text" id="watermarkText"></div>
-      <div class="logo-watermark-zone">
-        {logo_img_watermark}
-      </div>
-    </div>
+    {watermark_block}
 
     <!-- Scalable Document Content Container -->
     <div class="sheet-content" id="sheetContent">
@@ -1109,7 +1118,7 @@ def _build_pdf_html(
     ── Page 1 Physical Paper Boundary ({pw} × {ph}) ──
   </div>
 </div>''' if is_preview else ""}
-  {watermark_script}
+  {watermark_js}
   {resize_script if is_preview else ""}
 </body>
 </html>"""
@@ -1135,6 +1144,7 @@ def export_pdf_html(
     full_override: bool = False,
     bold_data: bool = False,
     show_grid_lines: bool = False,
+    watermark_enabled: bool = True,
 ) -> None:
     """
     Render query results to PDF using headless native Chromium/Chrome.
@@ -1149,6 +1159,7 @@ def export_pdf_html(
             sql_display=sql_display, source_label=source_label,
             page_size=page_size, orientation=orientation, scale=scale,
             col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
+            watermark_enabled=watermark_enabled,
         )
         return
 
@@ -1160,6 +1171,7 @@ def export_pdf_html(
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=False,
+        watermark_enabled=watermark_enabled,
     )
 
     out_path = str(Path(filepath).resolve())
@@ -1225,6 +1237,7 @@ def get_pdf_html_preview(
     full_override: bool = False,
     bold_data: bool = False,
     show_grid_lines: bool = False,
+    watermark_enabled: bool = True,
 ) -> str:
     """Return the HTML string for in-app preview (iframe srcdoc) with exact paper geometry."""
     return _build_pdf_html(
@@ -1235,6 +1248,7 @@ def get_pdf_html_preview(
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=True,
+        watermark_enabled=watermark_enabled,
     )
 
 
@@ -1362,6 +1376,7 @@ def export_pdf(
     col_widths: Optional[Dict[str, float]] = None,
     col_headers: Optional[Dict[str, str]] = None,
     col_visible: Optional[List[str]] = None,
+    watermark_enabled: bool = True,
 ) -> None:
     """
     Render query results to PDF.

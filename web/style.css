@@ -152,6 +152,125 @@ nav#navbar {
 }
 .select-sm:focus { border-color: var(--accent); }
 
+/* ── Searchable Select Component ────────────────────────────── */
+.searchable-select-wrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+.searchable-select-trigger {
+  height: 28px;
+  padding: 0 22px 0 7px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text-body);
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23A0A0A6' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  transition: border-color 110ms;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.searchable-select-trigger:focus,
+.searchable-select-trigger.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+.searchable-select-trigger .searchable-select-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+}
+.searchable-select-popover {
+  position: fixed;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 11px;
+  min-width: 220px;
+  max-width: 380px;
+}
+.searchable-select-search-wrap {
+  padding: 6px;
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+.searchable-select-search-input {
+  width: 100%;
+  height: 24px;
+  padding: 0 7px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-head);
+  outline: none;
+  box-sizing: border-box;
+}
+.searchable-select-search-input:focus {
+  border-color: var(--accent);
+}
+.searchable-select-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.searchable-select-group-title {
+  padding: 4px 8px 2px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.searchable-select-item {
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--text-body);
+  font-family: monospace;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  white-space: nowrap;
+  transition: background 70ms;
+}
+.searchable-select-item:hover,
+.searchable-select-item.highlighted {
+  background: var(--bg-hover, var(--bg-muted));
+  color: var(--text-head);
+}
+.searchable-select-item.selected {
+  font-weight: 600;
+  color: var(--accent);
+}
+.searchable-select-empty {
+  padding: 12px 8px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 /* ── Import bar ──────────────────────────────────────────── */
 .import-bar {
   background: var(--bg-surface);
@@ -350,6 +469,28 @@ nav#navbar {
 .results-tbl tr:hover td,
 .tbl-row:hover .tbl-cell {
   background: var(--bg-muted) !important;
+}
+
+/* ── Output table row selection & drag-to-copy selection ─────── */
+.results-tbl tr.tbl-row.tbl-row-selected td,
+.results-tbl tr.tbl-row.tbl-row-selected:hover td,
+.tbl-row.tbl-row-selected .tbl-cell,
+.tbl-row.tbl-row-selected:hover .tbl-cell {
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.18)) !important;
+}
+.results-tbl tr.tbl-row.tbl-row-selected {
+  outline: 1px solid var(--accent, #3b82f6);
+}
+.results-tbl td.tbl-cell.tbl-cell-selected,
+.results-tbl td.tbl-cell.tbl-cell-selected:hover,
+.tbl-cell.tbl-cell-selected {
+  background: rgba(59, 130, 246, 0.3) !important;
+  outline: 1px dashed var(--accent, #3b82f6) !important;
+  outline-offset: -1px;
+}
+body.tbl-selecting {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 .tbl-head { padding: 5px 10px; font-size: 11px; font-weight: 600; color: var(--text-mid); white-space: nowrap; }
 
@@ -724,5 +865,21 @@ tr.selected-row td { background: var(--accent-bg) !important; }
 .ce-col-vanishing input {
   opacity: 0 !important;
   transition: opacity 100ms ease-out !important;
+}
+
+/* ── CSV Editor Drag & Drop Indicators ───────────────────────── */
+.ce-drag-over-top {
+  border-top: 2px solid var(--accent, #3b82f6) !important;
+  background-color: var(--accent-subtle, rgba(59, 130, 246, 0.12)) !important;
+}
+.ce-drag-over-left {
+  border-left: 3px solid var(--accent, #3b82f6) !important;
+  background-color: var(--accent-subtle, rgba(59, 130, 246, 0.12)) !important;
+}
+.ce-row-dragging {
+  opacity: 0.45 !important;
+}
+.ce-col-dragging {
+  opacity: 0.45 !important;
 }
 

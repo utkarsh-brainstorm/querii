@@ -104,8 +104,15 @@ function _csvEdRender() {
   var htr = '<tr>';
   htr += '<th style="' + _ceThStyle(true) + 'width:44px;color:#94a3b8;font-weight:400;text-align:center;user-select:none">#</th>';
   _csvEd.cols.forEach(function(col, ci) {
-    htr += '<th style="' + _ceThStyle(false) + '" title="Header: Column name">' +
+    htr += '<th style="' + _ceThStyle(false) + ';position:relative;cursor:grab" ' +
+      'draggable="true" data-ce-col-drag="' + ci + '" ' +
+      'ondragstart="_csvEdColDragStart(event,' + ci + ')" ' +
+      'ondragover="_csvEdColDragOver(event,' + ci + ')" ' +
+      'ondragleave="_csvEdColDragLeave(event)" ' +
+      'ondrop="_csvEdColDrop(event,' + ci + ')" ' +
+      'title="Header: Column name (drag to reorder)">' +
       '<div style="display:flex;align-items:center;gap:4px">' +
+        '<span style="font-size:10px;opacity:0.4;cursor:grab;user-select:none" title="Drag to reorder column">⠿</span>' +
         '<input type="text" value="' + _ceEsc(col) + '" ' +
         'data-ce-col="' + ci + '" ' +
         'onfocus="_csvEd.activeCol=' + ci + '" ' +
@@ -126,11 +133,16 @@ function _csvEdRender() {
   /* Data rows */
   var html = '';
   _csvEd.rows.forEach(function(row, ri) {
-    html += '<tr>';
-    html += '<td style="' + _ceTdStyle(true) + 'color:#94a3b8;text-align:center;user-select:none;position:relative" ' +
+    html += '<tr data-ce-row-idx="' + ri + '" ' +
+      'ondragover="_csvEdRowDragOver(event,' + ri + ')" ' +
+      'ondragleave="_csvEdRowDragLeave(event)" ' +
+      'ondrop="_csvEdRowDrop(event,' + ri + ')">';
+    html += '<td style="' + _ceTdStyle(true) + 'color:#94a3b8;text-align:center;user-select:none;position:relative;cursor:grab" ' +
+      'draggable="true" ' +
+      'ondragstart="_csvEdRowDragStart(event,' + ri + ')" ' +
       'onmouseenter="var b=this.querySelector(\'.ce-row-del\');if(b)b.style.opacity=\'1\';" ' +
       'onmouseleave="var b=this.querySelector(\'.ce-row-del\');if(b)b.style.opacity=\'0\';">' +
-      '<span style="font-size:10px">' + (ri + 1) + '</span>' +
+      '<span style="font-size:10px;display:inline-flex;align-items:center;gap:3px"><span style="font-size:9px;opacity:0.4;cursor:grab" title="Drag to reorder row">⠿</span>' + (ri + 1) + '</span>' +
       '<button type="button" class="ce-row-del" onclick="_csvEdDelRow(' + ri + ')" title="Delete row ' + (ri + 1) + '" ' +
       'style="opacity:0;border:none;background:none;color:#ef4444;cursor:pointer;font-size:12px;font-weight:bold;line-height:1;padding:0 2px;margin-left:2px;transition:opacity .15s">×</button>' +
       '</td>';
@@ -328,16 +340,23 @@ function _csvEdFocus(ri, ci) {
   if (inp) { inp.focus(); inp.select(); }
 }
 
-/* ─── Add row / column (with N input support) ───────────────────────────── */
+/* ─── Add row / column (with N input & active cursor position support) ──── */
 function csvEditorAddRowsN() {
   _csvEdSyncAll();
   var countEl = document.getElementById('csv-add-rows-count');
   var n = Math.max(1, Math.min(500, parseInt(countEl ? countEl.value : 1, 10) || 1));
+  var insertAt = (_csvEd.activeRow >= 0 && _csvEd.activeRow < _csvEd.rows.length)
+    ? _csvEd.activeRow + 1
+    : _csvEd.rows.length;
+
+  var newRows = [];
   for (var i = 0; i < n; i++) {
-    _csvEd.rows.push(_csvEd.cols.map(function() { return ''; }));
+    newRows.push(_csvEd.cols.map(function() { return ''; }));
   }
+  _csvEd.rows.splice.apply(_csvEd.rows, [insertAt, 0].concat(newRows));
+  _csvEd.activeRow = insertAt;
   _csvEdRender();
-  setTimeout(function() { _csvEdFocus(_csvEd.rows.length - 1, 0); }, 30);
+  setTimeout(function() { _csvEdFocus(insertAt, Math.max(0, _csvEd.activeCol)); }, 30);
   var info = document.getElementById('csv-editor-info');
   if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
 }
@@ -346,19 +365,130 @@ function csvEditorAddColsN() {
   _csvEdSyncAll();
   var countEl = document.getElementById('csv-add-cols-count');
   var n = Math.max(1, Math.min(50, parseInt(countEl ? countEl.value : 1, 10) || 1));
+  var insertAt = (_csvEd.activeCol >= 0 && _csvEd.activeCol < _csvEd.cols.length)
+    ? _csvEd.activeCol + 1
+    : _csvEd.cols.length;
+
+  var newCols = [];
   for (var i = 0; i < n; i++) {
-    var newCol = 'Column' + (_csvEd.cols.length + 1);
-    _csvEd.cols.push(newCol);
-    _csvEd.rows.forEach(function(r) { r.push(''); });
+    var colNum = _csvEd.cols.length + 1 + i;
+    var colName = 'Column' + colNum;
+    while (_csvEd.cols.indexOf(colName) !== -1 || newCols.indexOf(colName) !== -1) {
+      colNum++;
+      colName = 'Column' + colNum;
+    }
+    newCols.push(colName);
   }
+  _csvEd.cols.splice.apply(_csvEd.cols, [insertAt, 0].concat(newCols));
+  _csvEd.rows.forEach(function(r) {
+    for (var k = 0; k < n; k++) {
+      r.splice(insertAt + k, 0, '');
+    }
+  });
+  _csvEd.activeCol = insertAt;
   _csvEdRender();
   setTimeout(function() {
-    var inp = document.querySelector('[data-ce-col="' + (_csvEd.cols.length - 1) + '"]');
+    var inp = document.querySelector('[data-ce-col="' + insertAt + '"]');
     if (inp) { inp.focus(); inp.select(); }
   }, 30);
   var info = document.getElementById('csv-editor-info');
   if (info) info.textContent = _csvEd.rows.length.toLocaleString() + ' rows · ' + _csvEd.cols.length + ' cols';
 }
+
+/* ─── Drag & Drop Reordering for Rows and Columns ──────────────────────── */
+var _csvEdDragRowIdx = -1;
+var _csvEdDragColIdx = -1;
+
+function _csvEdRowDragStart(e, ri) {
+  _csvEdSyncAll();
+  _csvEdDragRowIdx = ri;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'row:' + ri);
+  var tr = e.target.closest('tr');
+  if (tr) tr.classList.add('ce-row-dragging');
+}
+
+function _csvEdRowDragOver(e, ri) {
+  if (_csvEdDragRowIdx < 0) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var tr = e.currentTarget;
+  if (tr) {
+    tr.classList.add('ce-drag-over-top');
+  }
+}
+
+function _csvEdRowDragLeave(e) {
+  var tr = e.currentTarget;
+  if (tr) tr.classList.remove('ce-drag-over-top');
+}
+
+function _csvEdRowDrop(e, targetRi) {
+  e.preventDefault();
+  var fromRi = _csvEdDragRowIdx;
+  _csvEdDragRowIdx = -1;
+  document.querySelectorAll('.ce-drag-over-top, .ce-row-dragging').forEach(function(el) {
+    el.classList.remove('ce-drag-over-top', 'ce-row-dragging');
+  });
+  if (fromRi < 0 || fromRi === targetRi || fromRi >= _csvEd.rows.length || targetRi >= _csvEd.rows.length) return;
+
+  _csvEdSyncAll();
+  var moved = _csvEd.rows.splice(fromRi, 1)[0];
+  _csvEd.rows.splice(targetRi, 0, moved);
+  _csvEd.activeRow = targetRi;
+  _csvEdRender();
+}
+
+function _csvEdColDragStart(e, ci) {
+  _csvEdSyncAll();
+  _csvEdDragColIdx = ci;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'col:' + ci);
+  var th = e.currentTarget;
+  if (th) th.classList.add('ce-col-dragging');
+}
+
+function _csvEdColDragOver(e, ci) {
+  if (_csvEdDragColIdx < 0) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var th = e.currentTarget;
+  if (th) th.classList.add('ce-drag-over-left');
+}
+
+function _csvEdColDragLeave(e) {
+  var th = e.currentTarget;
+  if (th) th.classList.remove('ce-drag-over-left');
+}
+
+function _csvEdColDrop(e, targetCi) {
+  e.preventDefault();
+  var fromCi = _csvEdDragColIdx;
+  _csvEdDragColIdx = -1;
+  document.querySelectorAll('.ce-drag-over-left, .ce-col-dragging').forEach(function(el) {
+    el.classList.remove('ce-drag-over-left', 'ce-col-dragging');
+  });
+  if (fromCi < 0 || fromCi === targetCi || fromCi >= _csvEd.cols.length || targetCi >= _csvEd.cols.length) return;
+
+  _csvEdSyncAll();
+  var movedCol = _csvEd.cols.splice(fromCi, 1)[0];
+  _csvEd.cols.splice(targetCi, 0, movedCol);
+  _csvEd.rows.forEach(function(r) {
+    var movedVal = r.splice(fromCi, 1)[0];
+    r.splice(targetCi, 0, movedVal);
+  });
+  _csvEd.activeCol = targetCi;
+  _csvEdRender();
+}
+
+window._csvEdRowDragStart = _csvEdRowDragStart;
+window._csvEdRowDragOver  = _csvEdRowDragOver;
+window._csvEdRowDragLeave = _csvEdRowDragLeave;
+window._csvEdRowDrop      = _csvEdRowDrop;
+window._csvEdColDragStart = _csvEdColDragStart;
+window._csvEdColDragOver  = _csvEdColDragOver;
+window._csvEdColDragLeave = _csvEdColDragLeave;
+window._csvEdColDrop      = _csvEdColDrop;
 
 function csvEditorAddRow() { csvEditorAddRowsN(); }
 function csvEditorAddCol() { csvEditorAddColsN(); }

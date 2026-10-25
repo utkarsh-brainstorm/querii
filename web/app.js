@@ -555,6 +555,8 @@ function onTableChange() {
     if (btd) btd.classList.add('hidden');
     if (atb) atb.classList.add('hidden');
     if (feh) feh.classList.remove('hidden');
+    renderSchemaTree([]);
+    refreshOpenSchemaPanel();
     return;
   }
 
@@ -568,11 +570,13 @@ function onTableChange() {
   var tableSchema = _allSchemaData.find(function(t) { return t.table === _activeTable; });
   if (tableSchema) {
     renderSchemaTree(_allSchemaData);
+    refreshOpenSchemaPanel();
   } else {
     // Schema might not be loaded yet — refresh from backend
     apiCall('get_schema').then(function(schema) {
       _allSchemaData = schema || [];
       renderSchemaTree(_allSchemaData);
+      refreshOpenSchemaPanel();
     }).catch(function(e) { console.error('schema refresh error', e); });
   }
 
@@ -588,6 +592,219 @@ function onTableChange() {
     .catch(function(e) { console.error('get_table_columns error:', e); });
 }
 
+/* ── Custom Searchable Select Component ─────────────────────────────── */
+var _activeSearchablePopover = null;
+
+function syncSearchableSelectTrigger(selectEl, customPlaceholder) {
+  if (!selectEl) return;
+  var wrap = selectEl.nextElementSibling;
+  if (!wrap || !wrap.classList || !wrap.classList.contains('searchable-select-wrap')) return;
+  var lbl = wrap.querySelector('.searchable-select-label');
+  if (lbl) {
+    var opt = selectEl.options[selectEl.selectedIndex];
+    var text = (opt && opt.value) ? opt.text : (customPlaceholder || (opt ? opt.text : 'Select…'));
+    lbl.textContent = text;
+  }
+}
+
+function makeSearchableSelect(selectEl, customPlaceholder) {
+  if (!selectEl) return;
+
+  var wrap = selectEl.nextElementSibling;
+  if (!wrap || !wrap.classList || !wrap.classList.contains('searchable-select-wrap')) {
+    wrap = document.createElement('div');
+    wrap.className = 'searchable-select-wrap';
+    selectEl.style.display = 'none';
+    selectEl.parentNode.insertBefore(wrap, selectEl.nextSibling);
+  }
+
+  function getSelectedLabel() {
+    var opt = selectEl.options[selectEl.selectedIndex];
+    if (opt && opt.value) return opt.text;
+    return (opt && opt.text) ? opt.text : (customPlaceholder || 'Select column…');
+  }
+
+  wrap.innerHTML = '<div class="searchable-select-trigger" tabindex="0">' +
+    '<span class="searchable-select-label">' + esc(getSelectedLabel()) + '</span>' +
+    '</div>';
+
+  var trigger = wrap.querySelector('.searchable-select-trigger');
+
+  function openPopover() {
+    closeActiveSearchablePopover();
+
+    var rect = trigger.getBoundingClientRect();
+    var popover = document.createElement('div');
+    popover.className = 'searchable-select-popover';
+
+    var popWidth = Math.max(rect.width, 240);
+    var popLeft = Math.min(rect.left, window.innerWidth - popWidth - 10);
+    if (popLeft < 10) popLeft = 10;
+
+    var spaceBelow = window.innerHeight - rect.bottom;
+    var spaceAbove = rect.top;
+    var openUpward = (spaceBelow < 220 && spaceAbove > spaceBelow);
+
+    if (openUpward) {
+      popover.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+      popover.style.left = popLeft + 'px';
+      popover.style.width = popWidth + 'px';
+    } else {
+      popover.style.top = (rect.bottom + 2) + 'px';
+      popover.style.left = popLeft + 'px';
+      popover.style.width = popWidth + 'px';
+    }
+
+    var searchWrap = document.createElement('div');
+    searchWrap.className = 'searchable-select-search-wrap';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'searchable-select-search-input';
+    searchInput.placeholder = '🔍 Search column…';
+    searchWrap.appendChild(searchInput);
+    popover.appendChild(searchWrap);
+
+    var listEl = document.createElement('div');
+    listEl.className = 'searchable-select-list';
+    popover.appendChild(listEl);
+
+    var allItems = [];
+    var children = Array.from(selectEl.children);
+    children.forEach(function(child) {
+      if (child.tagName === 'OPTGROUP') {
+        var grpTitle = document.createElement('div');
+        grpTitle.className = 'searchable-select-group-title';
+        grpTitle.textContent = child.label;
+        listEl.appendChild(grpTitle);
+
+        Array.from(child.children).forEach(function(opt) {
+          var item = createItemEl(opt);
+          listEl.appendChild(item);
+          allItems.push({ el: item, text: opt.text.toLowerCase(), grp: grpTitle });
+        });
+      } else if (child.tagName === 'OPTION') {
+        var item = createItemEl(child);
+        listEl.appendChild(item);
+        allItems.push({ el: item, text: child.text.toLowerCase() });
+      }
+    });
+
+    function createItemEl(opt) {
+      var item = document.createElement('div');
+      item.className = 'searchable-select-item' + (opt.selected ? ' selected' : '');
+      item.textContent = opt.text;
+      item.setAttribute('data-value', opt.value);
+      item.addEventListener('click', function(e) {
+        e.stopPropagation();
+        selectEl.value = opt.value;
+        syncSearchableSelectTrigger(selectEl, customPlaceholder);
+        closeActiveSearchablePopover();
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      return item;
+    }
+
+    searchInput.addEventListener('input', function() {
+      var term = searchInput.value.trim().toLowerCase();
+      var visibleCount = 0;
+      allItems.forEach(function(obj) {
+        var match = !term || obj.text.indexOf(term) !== -1;
+        obj.el.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+      });
+      var grpHeaders = listEl.querySelectorAll('.searchable-select-group-title');
+      grpHeaders.forEach(function(gh) {
+        var next = gh.nextElementSibling;
+        var hasVisible = false;
+        while (next && next.classList.contains('searchable-select-item')) {
+          if (next.style.display !== 'none') { hasVisible = true; break; }
+          next = next.nextElementSibling;
+        }
+        gh.style.display = hasVisible ? '' : 'none';
+      });
+
+      var emptyMsg = listEl.querySelector('.searchable-select-empty');
+      if (visibleCount === 0) {
+        if (!emptyMsg) {
+          emptyMsg = document.createElement('div');
+          emptyMsg.className = 'searchable-select-empty';
+          emptyMsg.textContent = 'No matching columns';
+          listEl.appendChild(emptyMsg);
+        }
+      } else if (emptyMsg) {
+        emptyMsg.remove();
+      }
+    });
+
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeActiveSearchablePopover();
+        trigger.focus();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        var visibleItems = allItems.map(function(o) { return o.el; }).filter(function(el) { return el.style.display !== 'none'; });
+        if (!visibleItems.length) return;
+        var curIdx = visibleItems.findIndex(function(el) { return el.classList.contains('highlighted'); });
+        if (e.key === 'ArrowDown') curIdx = (curIdx + 1) % visibleItems.length;
+        else curIdx = (curIdx - 1 + visibleItems.length) % visibleItems.length;
+        visibleItems.forEach(function(el, i) { el.classList.toggle('highlighted', i === curIdx); });
+        visibleItems[curIdx].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        var high = listEl.querySelector('.searchable-select-item.highlighted');
+        if (!high) high = listEl.querySelector('.searchable-select-item:not([style*="none"])');
+        if (high) high.click();
+      }
+    });
+
+    document.body.appendChild(popover);
+    _activeSearchablePopover = { popover: popover, trigger: trigger };
+    trigger.classList.add('active');
+
+    setTimeout(function() {
+      searchInput.focus();
+    }, 10);
+  }
+
+  trigger.onclick = function(e) {
+    e.stopPropagation();
+    if (_activeSearchablePopover && _activeSearchablePopover.trigger === trigger) {
+      closeActiveSearchablePopover();
+    } else {
+      openPopover();
+    }
+  };
+
+  trigger.onkeydown = function(e) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      openPopover();
+    }
+  };
+}
+
+function closeActiveSearchablePopover() {
+  if (_activeSearchablePopover) {
+    if (_activeSearchablePopover.popover && _activeSearchablePopover.popover.parentNode) {
+      _activeSearchablePopover.popover.parentNode.removeChild(_activeSearchablePopover.popover);
+    }
+    if (_activeSearchablePopover.trigger) {
+      _activeSearchablePopover.trigger.classList.remove('active');
+    }
+    _activeSearchablePopover = null;
+  }
+}
+
+document.addEventListener('click', function(e) {
+  if (_activeSearchablePopover) {
+    if (!_activeSearchablePopover.popover.contains(e.target) && !_activeSearchablePopover.trigger.contains(e.target)) {
+      closeActiveSearchablePopover();
+    }
+  }
+});
+window.addEventListener('resize', closeActiveSearchablePopover);
+window.addEventListener('scroll', function() { closeActiveSearchablePopover(); }, true);
+
 function rebuildSortDropdown() {
   var sortSel = document.getElementById('sort-col');
   if (!sortSel) return;
@@ -595,6 +812,7 @@ function rebuildSortDropdown() {
   _tableColumns.forEach(function(c) {
     sortSel.appendChild(new Option(c.name, c.name));
   });
+  makeSearchableSelect(sortSel, '— none —');
 
   // Show column search bar in filter panel when there are many columns
   var searchBar = document.getElementById('col-filter-search-bar');
@@ -642,16 +860,16 @@ function filterColumnDropdowns(term) {
 
 
 /* ── Schema tree render ─────────────────────────────────────────────── */
-// showAll: if false, only show tables in _selectedTables
+// showAll: if false, only show tables in _selectedTables (or active table)
 function renderSchemaTree(schema, showAll) {
   var el = document.getElementById('schema-tree');
   var cr = document.getElementById('cr-schema-ref');
   if (!el) return;
 
-  // Sidebar: filter to selected tables only (showAll === false or undefined)
+  var currentTables = (_selectedTables && _selectedTables.length > 0) ? _selectedTables : (_activeTable ? [_activeTable] : []);
   var sidebarSchema = schema;
-  if (!showAll && _selectedTables.length > 0) {
-    sidebarSchema = schema.filter(function(t) { return _selectedTables.indexOf(t.table) !== -1; });
+  if (!showAll && currentTables.length > 0) {
+    sidebarSchema = schema.filter(function(t) { return currentTables.indexOf(t.table) !== -1; });
   }
 
   if (!schema || schema.length === 0) {
@@ -661,10 +879,17 @@ function renderSchemaTree(schema, showAll) {
     return;
   }
 
+  if (sidebarSchema.length === 0) {
+    var noSel = '<div style="color:var(--text-dim);text-align:center;padding:32px 8px;font-size:11px">No tables selected</div>';
+    el.innerHTML = noSel;
+    if (cr) cr.innerHTML = noSel;
+    return;
+  }
+
   // Render sidebar with filtered tables
-  el.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema, false);
+  el.innerHTML = _buildSchemaHtml(sidebarSchema, false);
   // Render SQL reference panel with FILTERED tables
-  if (cr) cr.innerHTML = _buildSchemaHtml(sidebarSchema.length ? sidebarSchema : schema, true);
+  if (cr) cr.innerHTML = _buildSchemaHtml(sidebarSchema, true);
 }
 
 function _buildSchemaHtml(schema, isEditor) {
@@ -730,20 +955,61 @@ function insertColIntoEditor(colName) {
   syncSqlLines();
 }
 
-/* ── Copy Schema Text ────────────────────────────────────────────────── */
+/* ── Copy Schema Text (Formatted for AI) ────────────────────────────── */
 function copySchemaText() {
-  if (!_allSchemaData.length) { toast('No tables imported yet.', 'warn'); return; }
-  var lines = ['# Database Schema — Querii\n'];
-  _allSchemaData.forEach(function(t) {
+  if (!_allSchemaData || !_allSchemaData.length) { toast('No tables imported yet.', 'warn'); return; }
+  var currentTables = (_selectedTables && _selectedTables.length > 0) ? _selectedTables : (_activeTable ? [_activeTable] : []);
+  var tables = _allSchemaData.filter(function(t) { return currentTables.length === 0 || currentTables.indexOf(t.table) !== -1; });
+  if (!tables.length) tables = _allSchemaData;
+
+  var lines = [];
+  lines.push('### Role & Instructions');
+  lines.push('You are an expert SQL Assistant for **Querii**, a high-performance offline desktop data analysis platform running an embedded **SQLite 3** engine.');
+  lines.push('Based on the active database schema and query constraints below, write clean, efficient, and syntactically valid SQLite queries.');
+  lines.push('');
+  lines.push('### Database Engine & Dialect Specifications');
+  lines.push('- **Engine**: SQLite 3 (in-memory / local storage).');
+  lines.push('- **Identifier Quoting**: ALWAYS double-quote table and column identifiers with spaces or special characters, e.g. `"Order ID"`, `"Customer Name"`, `"' + (tables[0] ? tables[0].table : 'table') + '"`.');
+  lines.push('- **String Literals**: Single quotes only, e.g. \'Completed\', \'2024-01-01\'.');
+  lines.push('- **Date & Time Operations**: Dates and timestamps are stored as ISO-8601 strings. Use SQLite functions: `date()`, `datetime()`, `strftime(\'%Y-%m\', "col")`, `julianday()`.');
+  lines.push('- **Case-Insensitive Match**: Use `LOWER("col") LIKE \'%pattern%\'` or `LIKE` (case-insensitive for ASCII in SQLite). Do NOT use PostgreSQL `ILIKE`.');
+  lines.push('- **Null Coalescing**: Use `COALESCE("col", default_value)` or `IFNULL("col", default_value)`.');
+  lines.push('');
+  lines.push('### Permitted Capabilities & Statements');
+  lines.push('- Full standard query syntax: `SELECT`, `FROM`, `JOIN` (INNER, LEFT OUTER, CROSS), `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`.');
+  lines.push('- Common Table Expressions (CTEs): `WITH ... AS (...) SELECT ...`.');
+  lines.push('- Window functions: `ROW_NUMBER() OVER (...)`, `RANK()`, `DENSE_RANK()`, `SUM(...) OVER (...)`, `LAG()`, `LEAD()`.');
+  lines.push('- Full Aggregates: `COUNT()`, `SUM()`, `AVG()`, `MIN()`, `MAX()`, `GROUP_CONCAT("col", \', \')`.');
+  lines.push('- Data modification (DML): `INSERT INTO`, `UPDATE`, `DELETE`, `CREATE TABLE` are supported in Querii.');
+  lines.push('');
+  lines.push('### Strict Restrictions & Prohibited Commands');
+  lines.push('- **FORBIDDEN**: Do NOT generate `DROP TABLE`, `DROP VIEW`, or `TRUNCATE` unless explicitly asked (these destructive commands are safety-restricted).');
+  lines.push('- Do NOT use non-SQLite syntax such as SQL Server `SELECT TOP n`, MySQL `LIMIT offset, count`, or PostgreSQL `DISTINCT ON (...)` (use standard SQLite window functions instead).');
+  lines.push('');
+  lines.push('### Active Database Schema (' + tables.length + ' table' + (tables.length > 1 ? 's' : '') + ')');
+  tables.forEach(function(t) {
     var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
-    lines.push('## Table: ' + t.table);
+    lines.push('#### Table: "' + t.table + '" (' + userCols.length + ' columns)');
+    lines.push('Columns:');
     userCols.forEach(function(c) {
-      lines.push('  - ' + c.name + '  (' + c.type + ')');
+      lines.push('  - "' + c.name + '" : ' + c.type);
     });
+    var sampleCols = userCols.slice(0, 5).map(function(c) { return '"' + c.name + '"'; }).join(', ');
+    lines.push('Sample Query:');
+    lines.push('```sql');
+    lines.push('SELECT ' + sampleCols + (userCols.length > 5 ? ' ...' : '') + ' FROM "' + t.table + '" LIMIT 10;');
+    lines.push('```');
     lines.push('');
   });
+  lines.push('### Instructions for Response');
+  lines.push('- Enclose SQL in a single ```sql code block.');
+  lines.push('- Briefly explain any complex JOINs, CTEs, or window calculations used.');
+  lines.push('');
+  lines.push('### My Question:');
+  lines.push('[Type your query requirement or data question here]');
+
   var text = lines.join('\n');
-  copyToClipboard(text, 'Schema copied to clipboard! Paste it into ChatGPT or any AI to get custom queries.');
+  copyToClipboard(text, 'Schema copied structured for AI! Paste it into ChatGPT, Claude, or Gemini.');
 }
 
 /* ── Column Stats ────────────────────────────────────────────────────── */
@@ -1091,6 +1357,8 @@ function buildConditionEl(cond, ci, gid) {
   // Populate ops after inserting into DOM
   setTimeout(function() {
     populateCondOps(cond, gid);
+    var ff = document.getElementById('ff-' + cond.id);
+    if (ff) makeSearchableSelect(ff);
   }, 0);
 
   return row;
@@ -1177,6 +1445,8 @@ function onCondFieldChange(gid, iid, fieldVal) {
       return '<option value="' + esc(op) + '">' + esc(op) + '</option>';
     }).join('');
     renderCondValue(cond, gid);
+    var ff = document.getElementById('ff-' + iid);
+    if (ff) syncSearchableSelectTrigger(ff);
   }
 }
 function updateFilterOps(fieldName, iid) {
@@ -1351,6 +1621,8 @@ function buildAggDropdowns() {
       });
     }
   });
+  makeSearchableSelect(selectAdd, '+ Add column or aggregate…');
+  makeSearchableSelect(groupbyAdd, '+ Add group field…');
 }
 function addSelectField(sel) {
   if (!sel.value) return;
@@ -1358,6 +1630,7 @@ function addSelectField(sel) {
   _selectPills.push({ expr: d.expr, label: d.label, agg: !!d.agg });
   renderSelectPills();
   sel.value = '';
+  syncSearchableSelectTrigger(sel, '+ Add column or aggregate…');
 }
 function addGroupByField(sel) {
   if (!sel.value) return;
@@ -1365,6 +1638,7 @@ function addGroupByField(sel) {
   _groupByPills.push({ expr: d.expr, label: d.label });
   renderGroupByPills();
   sel.value = '';
+  syncSearchableSelectTrigger(sel, '+ Add group field…');
 }
 function renderSelectPills() {
   var el = document.getElementById('select-pills');
@@ -1789,6 +2063,178 @@ function renderPage(page) {
   }
 }
 
+/* ── Output Table Rectangular Drag-Selection & Auto-Scroll ─────────── */
+var _tableDragStart = null;
+var _tableDragCurrent = null;
+var _isTableDragging = false;
+var _tableDragCopied = false;
+var _tableAutoScrollAnim = null;
+var _tableAutoScrollDx = 0;
+var _tableAutoScrollDy = 0;
+
+function _runTableAutoScroll() {
+  if (!_isTableDragging || (_tableAutoScrollDx === 0 && _tableAutoScrollDy === 0)) {
+    _tableAutoScrollAnim = null;
+    return;
+  }
+  var tbl = document.getElementById('results-table');
+  var wrap = tbl ? tbl.parentElement : null;
+  if (wrap) {
+    if (_tableAutoScrollDx !== 0) wrap.scrollLeft += _tableAutoScrollDx;
+    if (_tableAutoScrollDy !== 0) wrap.scrollTop += _tableAutoScrollDy;
+  }
+  _tableAutoScrollAnim = requestAnimationFrame(_runTableAutoScroll);
+}
+
+function _updateTableCellHighlights() {
+  var body = document.getElementById('results-body');
+  if (!body || !_tableDragStart || !_tableDragCurrent) return;
+
+  var minR = Math.min(_tableDragStart.ri, _tableDragCurrent.ri);
+  var maxR = Math.max(_tableDragStart.ri, _tableDragCurrent.ri);
+  var minC = Math.min(_tableDragStart.ci, _tableDragCurrent.ci);
+  var maxC = Math.max(_tableDragStart.ci, _tableDragCurrent.ci);
+
+  var prev = body.querySelectorAll('.tbl-cell-selected');
+  prev.forEach(function(td) { td.classList.remove('tbl-cell-selected'); });
+
+  for (var r = minR; r <= maxR; r++) {
+    var tr = body.children[r];
+    if (!tr || tr.style.display === 'none') continue;
+    for (var c = minC; c <= maxC; c++) {
+      var td = tr.children[c];
+      if (td) td.classList.add('tbl-cell-selected');
+    }
+  }
+}
+
+function initTableSelectionAndDragCopy() {
+  var table = document.getElementById('results-table');
+  if (!table || table._dragCopyInited) return;
+  table._dragCopyInited = true;
+
+  table.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return; // left click only
+    var td = e.target.closest('td.tbl-cell');
+    if (!td) return;
+    var tr = td.parentElement;
+    if (!tr || !tr.hasAttribute('data-row-idx')) return;
+
+    var ri = parseInt(tr.getAttribute('data-row-idx'), 10);
+    var ci = parseInt(td.getAttribute('data-col-idx'), 10);
+
+    _tableDragStart = { ri: ri, ci: ci, clientX: e.clientX, clientY: e.clientY };
+    _tableDragCurrent = { ri: ri, ci: ci };
+    _isTableDragging = false;
+  });
+
+  window.addEventListener('mousemove', function(e) {
+    if (!_tableDragStart) return;
+
+    var dist = Math.hypot(e.clientX - _tableDragStart.clientX, e.clientY - _tableDragStart.clientY);
+    if (dist > 5) {
+      if (!_isTableDragging) {
+        _isTableDragging = true;
+        document.body.classList.add('tbl-selecting');
+        try { window.getSelection().removeAllRanges(); } catch(err) {}
+      }
+
+      var tbl = document.getElementById('results-table');
+      var wrap = tbl ? tbl.parentElement : null;
+      if (wrap) {
+        var rect = wrap.getBoundingClientRect();
+        var edgeZone = 40;
+        var maxSpeed = 16;
+        _tableAutoScrollDx = 0;
+        _tableAutoScrollDy = 0;
+
+        if (e.clientY < rect.top + edgeZone) {
+          _tableAutoScrollDy = -Math.round(maxSpeed * Math.min(2, Math.max(0.5, (rect.top + edgeZone - e.clientY) / edgeZone)));
+        } else if (e.clientY > rect.bottom - edgeZone) {
+          _tableAutoScrollDy = Math.round(maxSpeed * Math.min(2, Math.max(0.5, (e.clientY - (rect.bottom - edgeZone)) / edgeZone)));
+        }
+
+        if (e.clientX < rect.left + edgeZone) {
+          _tableAutoScrollDx = -Math.round(maxSpeed * Math.min(2, Math.max(0.5, (rect.left + edgeZone - e.clientX) / edgeZone)));
+        } else if (e.clientX > rect.right - edgeZone) {
+          _tableAutoScrollDx = Math.round(maxSpeed * Math.min(2, Math.max(0.5, (e.clientX - (rect.right - edgeZone)) / edgeZone)));
+        }
+
+        if ((_tableAutoScrollDx !== 0 || _tableAutoScrollDy !== 0) && !_tableAutoScrollAnim) {
+          _tableAutoScrollAnim = requestAnimationFrame(_runTableAutoScroll);
+        }
+      }
+
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      var td = el ? el.closest('#results-body td.tbl-cell') : null;
+      if (td && td.parentElement && td.parentElement.hasAttribute('data-row-idx')) {
+        var curRi = parseInt(td.parentElement.getAttribute('data-row-idx'), 10);
+        var curCi = parseInt(td.getAttribute('data-col-idx'), 10);
+        if (!isNaN(curRi) && !isNaN(curCi)) {
+          _tableDragCurrent = { ri: curRi, ci: curCi };
+          _updateTableCellHighlights();
+        }
+      }
+    }
+  });
+
+  window.addEventListener('mouseup', function(e) {
+    _tableAutoScrollDx = 0;
+    _tableAutoScrollDy = 0;
+    if (_tableAutoScrollAnim) {
+      cancelAnimationFrame(_tableAutoScrollAnim);
+      _tableAutoScrollAnim = null;
+    }
+    document.body.classList.remove('tbl-selecting');
+
+    if (_isTableDragging && _tableDragStart && _tableDragCurrent) {
+      var minR = Math.min(_tableDragStart.ri, _tableDragCurrent.ri);
+      var maxR = Math.max(_tableDragStart.ri, _tableDragCurrent.ri);
+      var minC = Math.min(_tableDragStart.ci, _tableDragCurrent.ci);
+      var maxC = Math.max(_tableDragStart.ci, _tableDragCurrent.ci);
+
+      var body = document.getElementById('results-body');
+      if (body) {
+        var csvLines = [];
+        for (var r = minR; r <= maxR; r++) {
+          var tr = body.children[r];
+          if (!tr || tr.style.display === 'none') continue;
+          var rowVals = [];
+          for (var c = minC; c <= maxC; c++) {
+            var cell = tr.children[c];
+            var val = cell ? cell.textContent.trim() : '';
+            if (val === 'NULL') val = '';
+            if (val.indexOf(',') !== -1 || val.indexOf('"') !== -1 || val.indexOf('\n') !== -1) {
+              val = '"' + val.replace(/"/g, '""') + '"';
+            }
+            rowVals.push(val);
+          }
+          csvLines.push(rowVals.join(','));
+        }
+
+        if (csvLines.length > 0) {
+          var csvText = csvLines.join('\n');
+          var numRows = maxR - minR + 1;
+          var numCols = maxC - minC + 1;
+          copyToClipboard(csvText, '✓ Copied ' + numRows + '×' + numCols + ' cells to clipboard as CSV');
+          _tableDragCopied = true;
+          setTimeout(function() { _tableDragCopied = false; }, 300);
+        }
+
+        // Keep selection highlight visible briefly for feedback, then clear
+        setTimeout(function() {
+          var prev = body.querySelectorAll('.tbl-cell-selected');
+          prev.forEach(function(td) { td.classList.remove('tbl-cell-selected'); });
+        }, 600);
+      }
+    }
+
+    _tableDragStart = null;
+    _tableDragCurrent = null;
+    _isTableDragging = false;
+  });
+}
+
 function drawPage(page) {
   var columns = _lastResults.columns;
   var rows    = _lastResults.cachedPages[page] || [];
@@ -1816,6 +2262,16 @@ function drawPage(page) {
     var row = rows[i];
     var tr  = document.createElement('tr');
     tr.className = 'tbl-row';
+    tr.setAttribute('data-row-idx', i);
+    tr.onclick = function(e) {
+      if (_tableDragCopied) return;
+      var wasSelected = this.classList.contains('tbl-row-selected');
+      var allRows = body.querySelectorAll('.tbl-row-selected');
+      allRows.forEach(function(r) { r.classList.remove('tbl-row-selected'); });
+      if (!wasSelected) {
+        this.classList.add('tbl-row-selected');
+      }
+    };
     
     var rowMatchesTerm = false;
     if (_rowSearchTerm) {
@@ -1836,6 +2292,7 @@ function drawPage(page) {
       var v  = row[c];
       var td = document.createElement('td');
       td.className = 'tbl-cell';
+      td.setAttribute('data-col-idx', j);
       if (v == null) {
         var span = document.createElement('span');
         span.style.color = 'var(--text-dim)';
@@ -1857,6 +2314,7 @@ function drawPage(page) {
     frag.appendChild(tr);
   }
   body.appendChild(frag);
+  initTableSelectionAndDragCopy();
 
   if (_rowSearchTerm) {
     var marks = body.querySelectorAll('mark.row-match');
@@ -3081,6 +3539,10 @@ function confirmExportPdf() {
   var cFullO     = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
   var cBold      = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
   var cGrid      = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
+  var wmCb       = document.getElementById('pdf-include-watermark');
+  var inclWatermark = (typeof _dev !== 'undefined' && _dev.inclWatermark !== undefined)
+    ? _dev.inclWatermark
+    : (wmCb ? wmCb.checked : true);
 
   closeModal();
   showProgress(true);
@@ -3088,11 +3550,11 @@ function confirmExportPdf() {
 
   var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
   if (useHtml) {
-    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid, cBlankRows, cExtraCols)
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid, cBlankRows, cExtraCols, inclWatermark)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   } else {
-    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel, cWidths, cHeads, visArr, cBlankRows, cExtraCols)
+    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel, cWidths, cHeads, visArr, cBlankRows, cExtraCols, inclWatermark)
       .then(function(r) { showProgress(false); if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { showProgress(false); toast('Export failed: ' + e.message, 'error'); });
   }
@@ -3106,21 +3568,29 @@ function toggleSchemaPanel() {
   var btn = document.getElementById('btn-schema-toggle');
   if (btn) btn.classList.toggle('active', !hidden);
   if (!hidden) {
-    var html = '';
-    _allSchemaData.forEach(function(t) {
-      var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
-      html += '<div style="padding:6px 8px;border-bottom:1px solid var(--border)">' +
-        '<div style="font-weight:600;font-size:11px;font-family:monospace;color:var(--text-head);margin-bottom:4px">📋 ' + esc(t.table) + '</div>';
-      userCols.forEach(function(c) {
-        html += '<div style="display:flex;justify-content:space-between;padding:1px 4px;cursor:pointer;border-radius:2px" onclick="insertColInSql(\'' + esc(c.name) + '\')" title="Click to insert">' +
-          '<span style="font-family:monospace;font-size:10px">' + esc(c.name) + '</span>' +
-          '<span style="font-size:9px;color:var(--text-dim)">' + c.type + '</span></div>';
-      });
-      html += '</div>';
-    });
-    if (!html) html = '<div style="padding:12px;font-size:11px;color:var(--text-dim)">No tables yet.</div>';
-    panel.innerHTML = html;
+    refreshOpenSchemaPanel();
   }
+}
+
+function refreshOpenSchemaPanel() {
+  var panel = document.getElementById('schema-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  var currentTables = (_selectedTables && _selectedTables.length > 0) ? _selectedTables : (_activeTable ? [_activeTable] : []);
+  var targetTables = _allSchemaData.filter(function(t) { return currentTables.indexOf(t.table) !== -1; });
+  var html = '';
+  targetTables.forEach(function(t) {
+    var userCols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
+    html += '<div style="padding:6px 8px;border-bottom:1px solid var(--border)">' +
+      '<div style="font-weight:600;font-size:11px;font-family:monospace;color:var(--text-head);margin-bottom:4px">📋 ' + esc(t.table) + '</div>';
+    userCols.forEach(function(c) {
+      html += '<div style="display:flex;justify-content:space-between;padding:1px 4px;cursor:pointer;border-radius:2px" onclick="insertColInSql(\'' + esc(c.name) + '\')" title="Click to insert">' +
+        '<span style="font-family:monospace;font-size:10px">' + esc(c.name) + '</span>' +
+        '<span style="font-size:9px;color:var(--text-dim)">' + c.type + '</span></div>';
+    });
+    html += '</div>';
+  });
+  if (!html) html = '<div style="padding:12px;font-size:11px;color:var(--text-dim)">No selected tables.</div>';
+  panel.innerHTML = html;
 }
 function insertColInSql(colName) {
   var ed = document.getElementById('sql-editor');
@@ -3268,6 +3738,8 @@ function useSelectedTables() {
     enterJoinMode(checked);
   }
   updateTableBadge();
+  renderSchemaTree(_allSchemaData);
+  refreshOpenSchemaPanel();
 }
 
 function updateTableBadge() {
@@ -3341,6 +3813,8 @@ function enterJoinMode(tables) {
   rebuildSortDropdown();
   buildAggDropdowns();
   clearFilterGroups();
+  renderSchemaTree(_allSchemaData);
+  refreshOpenSchemaPanel();
   runFilter();
 }
 
@@ -3365,6 +3839,7 @@ function exitJoinMode() {
   var bar = document.getElementById('join-bar');
   if (bar) bar.classList.add('hidden');
   _joinClauses = [];
+  if (_activeTable) { _selectedTables = [_activeTable]; }
 
   var sel = document.getElementById('table-select');
   if (sel) {
@@ -3374,6 +3849,8 @@ function exitJoinMode() {
       sel.value = _activeTable;
     }
   }
+  renderSchemaTree(_allSchemaData);
+  refreshOpenSchemaPanel();
 }
 
 function addJoinClause() {

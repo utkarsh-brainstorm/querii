@@ -14,6 +14,7 @@ var _dev = {
   orgName:        '',
   logo:           '',
   inclLogo:       true,        // toggle logo in masthead & watermark
+  inclWatermark:  true,        // toggle repeating background watermark
   pageSize:       'A4',
   orient:         'portrait',
   css:            '',
@@ -150,6 +151,8 @@ function openUltraDevMode() {
   var gridEl  = document.getElementById('pdf-grid-lines');
   var logoCb  = document.getElementById('pdf-include-logo');
 
+  var wmCb    = document.getElementById('pdf-include-watermark');
+
   _dev.title   = (titleEl && titleEl.value) || 'Query Results';
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
   _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
@@ -159,6 +162,7 @@ function openUltraDevMode() {
   _dev.boldData= boldEl ? boldEl.checked : false;
   _dev.showGridLines = gridEl ? gridEl.checked : false;
   _dev.inclLogo = logoCb ? logoCb.checked : true;
+  _dev.inclWatermark = wmCb ? wmCb.checked : true;
   _dev.logo    = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
                  (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : '';
 
@@ -257,6 +261,13 @@ function _devRenderDocControls() {
       '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
         '<input type="checkbox" id="dev-incl-logo" class="dev-cb"' + (_dev.inclLogo !== false ? ' checked' : '') + ' onchange="window._devOnLogoToggle(this.checked)">' +
         ' Include Logo in Masthead &amp; Watermark' +
+      '</label>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Watermark</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-incl-watermark" class="dev-cb"' + (_dev.inclWatermark !== false ? ' checked' : '') + ' onchange="window._devOnWatermarkToggle(this.checked)">' +
+        ' Include Background Watermark' +
       '</label>' +
     '</div>' +
     '<div class="dev-field-row">' +
@@ -377,6 +388,11 @@ function _devRenderColControls() {
 
 window._devOnLogoToggle = function(v) {
   _dev.inclLogo = v;
+  _devRefreshPreviewDebounced(150);
+};
+
+window._devOnWatermarkToggle = function(v) {
+  _dev.inclWatermark = v;
   _devRefreshPreviewDebounced(150);
 };
 
@@ -845,7 +861,8 @@ function _devRefreshPreview() {
     _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
     _dev.boldData, _dev.showGridLines,
-    _dev.extraBlankRows || 0, _dev.extraCols || []
+    _dev.extraBlankRows || 0, _dev.extraCols || [],
+    _dev.inclWatermark !== false
   ).then(function(r) {
     if (!r) return;
     iframe.srcdoc = r;
@@ -966,7 +983,8 @@ window._devExportPdf = function() {
       '', _dev.css, _dev.pageSize, _dev.orient, _dev.scale || 1.0,
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
       _dev.boldData, _dev.showGridLines,
-      _dev.extraBlankRows || 0, _dev.extraCols || []
+      _dev.extraBlankRows || 0, _dev.extraCols || [],
+      _dev.inclWatermark !== false
     );
   }).then(function(r) {
     if (r) _dToast('✓ PDF exported!');

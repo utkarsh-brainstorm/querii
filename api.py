@@ -530,6 +530,7 @@ class Api:
             col_visible = kwargs.get("col_visible", None)
             extra_blank_rows = kwargs.get("extra_blank_rows", 0)
             extra_cols = kwargs.get("extra_cols", None)
+            watermark_enabled = kwargs.get("watermark_enabled", True)
 
             if args:
                 if isinstance(args[0], str):
@@ -550,6 +551,7 @@ class Api:
                     if len(args) > 14 and args[14]: col_visible = args[14]
                     if len(args) > 15 and args[15] is not None: extra_blank_rows = args[15]
                     if len(args) > 16 and args[16]: extra_cols = args[16]
+                    if len(args) > 17 and args[17] is not None: watermark_enabled = bool(args[17])
                 elif isinstance(args[0], (list, tuple)) and len(args) >= 3:
                     # Signature: (columns, rows, filepath, ...)
                     cols = args[0] or cols
@@ -597,6 +599,7 @@ class Api:
                 col_widths=col_widths,
                 col_headers=col_headers,
                 col_visible=col_visible,
+                watermark_enabled=watermark_enabled,
             )
             return _ok(filepath)
         except Exception as e:
@@ -622,6 +625,7 @@ class Api:
         show_grid_lines: bool = False,
         extra_blank_rows: int = 0,
         extra_cols: list = None,
+        watermark_enabled: bool = True,
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
@@ -657,6 +661,7 @@ class Api:
                 full_override=full_override,
                 bold_data=bold_data,
                 show_grid_lines=show_grid_lines,
+                watermark_enabled=watermark_enabled,
             )
             return _ok(filepath)
         except Exception as e:
@@ -679,6 +684,7 @@ class Api:
         show_grid_lines: bool = False,
         extra_blank_rows: int = 0,
         extra_cols: list = None,
+        watermark_enabled: bool = True,
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
@@ -705,6 +711,7 @@ class Api:
                 col_widths=col_widths or {}, col_headers=col_headers or {},
                 col_visible=col_visible, full_override=full_override,
                 bold_data=bold_data, show_grid_lines=show_grid_lines,
+                watermark_enabled=watermark_enabled,
             )
             return _ok(html)
         except Exception as e:
