@@ -150,9 +150,10 @@ def sanitise_table_name(filename: str, existing: Optional[set] = None) -> str:
 # ---------------------------------------------------------------------------
 
 def get_all_tables(conn: sqlite3.Connection) -> List[str]:
-    """Return all user-created table names (excludes sqlite_* internals)."""
+    """Return all user-created table names (excludes sqlite_* internals and management tables)."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+        "AND name NOT IN ('import_log', 'app_settings', 'query_log', 'ai_chat_sessions') "
         "ORDER BY name"
     ).fetchall()
     return [r[0] for r in rows]
@@ -181,7 +182,7 @@ def describe_schema(conn: sqlite3.Connection) -> List[Dict]:
     result = []
     for table in get_all_tables(conn):
         # Skip internal Querii tables
-        if table in ("import_log", "app_settings", "query_log"):
+        if table in ("import_log", "app_settings", "query_log", "ai_chat_sessions"):
             continue
         cols = get_table_columns(conn, table)
         samples = get_table_sample(conn, table)

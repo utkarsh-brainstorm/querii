@@ -1293,3 +1293,165 @@ window.addEventListener('keydown', function(e) {
     closeUltraDevMode();
   }
 }, true);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AI DESIGN ASSISTANT — Ultra Dev Mode
+   ══════════════════════════════════════════════════════════════════════════ */
+var _devAiHistory = [];
+var _devPreviousAiState = null;
+
+window._devToggleAiDrawer = function() {
+  var drawer = document.getElementById('dev-ai-drawer');
+  if (!drawer) return;
+  drawer.classList.toggle('hidden');
+  if (!drawer.classList.contains('hidden')) {
+    var input = document.getElementById('dev-ai-input');
+    if (input) setTimeout(function() { input.focus(); }, 50);
+  }
+};
+
+window._devClearAiChat = function() {
+  _devAiHistory = [];
+  var msgs = document.getElementById('dev-ai-messages');
+  if (msgs) {
+    msgs.innerHTML = '<div style="padding:10px 12px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;line-height:1.4">' +
+      '👋 Conversation cleared. What design change would you like to make?' +
+    '</div>';
+  }
+};
+
+window._devUndoAiChange = function() {
+  if (!_devPreviousAiState) {
+    _dToast('No previous design state to revert to.', 'warn');
+    return;
+  }
+  _dev.css = _devPreviousAiState.css || '';
+  _dev.orient = _devPreviousAiState.orient || _dev.orient;
+  _dev.pageSize = _devPreviousAiState.pageSize || _dev.pageSize;
+  _dev.inclWatermark = (_devPreviousAiState.inclWatermark !== undefined) ? _devPreviousAiState.inclWatermark : _dev.inclWatermark;
+  _dev.inclLogo = (_devPreviousAiState.inclLogo !== undefined) ? _devPreviousAiState.inclLogo : _dev.inclLogo;
+  if (_devPreviousAiState.colWidths) {
+    _dev.colWidths = JSON.parse(JSON.stringify(_devPreviousAiState.colWidths));
+  }
+  if (_devPreviousAiState.extraBlankRows !== undefined) {
+    _dev.extraBlankRows = _devPreviousAiState.extraBlankRows;
+  }
+  _devPreviousAiState = null;
+
+  var undoBtn = document.getElementById('dev-ai-undo-btn');
+  if (undoBtn) undoBtn.classList.add('hidden');
+
+  _devRenderAll();
+  _devUpdatePaperBadge();
+  _devRefreshPreviewDebounced(100);
+  _dToast('✓ Previous design restored!');
+};
+
+window._devSendAiMessage = function() {
+  var input = document.getElementById('dev-ai-input');
+  var msgs = document.getElementById('dev-ai-messages');
+  if (!input || !msgs) return;
+  var text = (input.value || '').trim();
+  if (!text) return;
+
+  input.value = '';
+
+  var userEl = document.createElement('div');
+  userEl.style.cssText = 'align-self:flex-end;max-width:88%;background:#7c3aed;color:#ffffff;padding:8px 12px;border-radius:10px 10px 2px 10px;word-break:break-word;font-size:11px;line-height:1.4';
+  userEl.textContent = text;
+  msgs.appendChild(userEl);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  var typingEl = document.createElement('div');
+  typingEl.id = 'dev-ai-typing';
+  typingEl.style.cssText = 'align-self:flex-start;max-width:88%;background:#f1f5f9;color:#64748b;padding:8px 12px;border-radius:10px 10px 10px 2px;font-size:11px;font-style:italic';
+  typingEl.innerHTML = '✨ Designing layout & styles…';
+  msgs.appendChild(typingEl);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  _devPreviousAiState = {
+    css: _dev.css,
+    orient: _dev.orient,
+    pageSize: _dev.pageSize,
+    inclWatermark: _dev.inclWatermark,
+    inclLogo: _dev.inclLogo,
+    colWidths: JSON.parse(JSON.stringify(_dev.colWidths || {})),
+    extraBlankRows: _dev.extraBlankRows || 0
+  };
+
+  _devAiHistory.push({ role: 'user', content: text });
+
+  var systemPrompt = "You are the Querii PDF Design Specialist. " +
+    "Your job is to customize the PDF layout, typography, column widths, font sizes, margins, watermark, or CSS based on the user's prompt without breaking existing working content.\n" +
+    "CURRENT PDF STATE:\n" +
+    "- Orientation: " + _dev.orient + "\n" +
+    "- Page Size: " + _dev.pageSize + "\n" +
+    "- Watermark: " + (_dev.inclWatermark !== false ? "Enabled" : "Disabled") + "\n" +
+    "- Logo: " + (_dev.inclLogo !== false ? "Enabled" : "Disabled") + "\n" +
+    "- Columns: " + JSON.stringify(_dev.cols) + "\n" +
+    "- Column Widths: " + JSON.stringify(_dev.colWidths) + "\n" +
+    "- Current Custom CSS:\n" + (_dev.css || '/* default */') + "\n\n" +
+    "INSTRUCTIONS:\n" +
+    "1. Explain what styling or layout changes you made clearly and concisely in markdown.\n" +
+    "2. If you modify CSS (colors, fonts, padding, borders, headers, zebra striping, margins), provide the updated CSS in a ```css ... ``` block.\n" +
+    "3. If you modify page settings (orientation, watermark, logo, column widths), output a JSON block ```json ... ``` with only the changed fields, for example:\n" +
+    "```json\n{\n  \"orient\": \"landscape\",\n  \"inclWatermark\": false,\n  \"colWidths\": {\"col_name\": 25}\n}\n```\n" +
+    "Keep existing table structure and class names intact.";
+
+  var provider = (typeof _aiSettings !== 'undefined' && _aiSettings.provider) ? _aiSettings.provider : 'gemini';
+  var model = provider === 'nvidia' ? ((typeof _aiSettings !== 'undefined' && _aiSettings.nvidiaModel) ? _aiSettings.nvidiaModel : 'nvidia/nemotron-3-ultra-550b-a55b') : ((typeof _aiSettings !== 'undefined' && _aiSettings.geminiModel) ? _aiSettings.geminiModel : 'gemini-2.5-flash');
+
+  _dApi('send_ai_chat', provider, model, '', JSON.stringify(_devAiHistory), systemPrompt, false)
+    .then(function(res) {
+      if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+      var reply = (res && res.text) || 'Done!';
+      _devAiHistory.push({ role: 'model', content: reply });
+
+      var cssMatch = reply.match(/```css\s*([\s\S]*?)```/i);
+      if (cssMatch && cssMatch[1].trim()) {
+        _dev.css = cssMatch[1].trim();
+      }
+
+      var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*```/i);
+      if (jsonMatch) {
+        try {
+          var cfg = JSON.parse(jsonMatch[1]);
+          if (cfg.orient) _dev.orient = cfg.orient;
+          if (cfg.pageSize) _dev.pageSize = cfg.pageSize;
+          if (cfg.inclWatermark !== undefined) _dev.inclWatermark = !!cfg.inclWatermark;
+          if (cfg.inclLogo !== undefined) _dev.inclLogo = !!cfg.inclLogo;
+          if (cfg.colWidths && typeof cfg.colWidths === 'object') {
+            for (var k in cfg.colWidths) {
+              _dev.colWidths[k] = parseInt(cfg.colWidths[k], 10) || 0;
+            }
+          }
+          if (cfg.extraBlankRows !== undefined) _dev.extraBlankRows = parseInt(cfg.extraBlankRows, 10) || 0;
+        } catch(e) {}
+      }
+
+      _devRenderAll();
+      _devUpdatePaperBadge();
+      _devRefreshPreviewDebounced(100);
+
+      var undoBtn = document.getElementById('dev-ai-undo-btn');
+      if (undoBtn) undoBtn.classList.remove('hidden');
+
+      var cleanNote = reply.replace(/```css[\s\S]*?```/gi, '').replace(/```json[\s\S]*?```/gi, '').trim();
+      if (!cleanNote) cleanNote = 'Design changes applied to live preview!';
+
+      var botEl = document.createElement('div');
+      botEl.style.cssText = 'align-self:flex-start;max-width:92%;background:#f8fafc;color:#1e293b;padding:10px 12px;border-radius:10px 10px 10px 2px;border:1px solid #e2e8f0;font-size:11px;line-height:1.45';
+      botEl.innerHTML = '<div style="margin-bottom:6px;font-weight:600;color:#6b21a8;display:flex;align-items:center;gap:4px"><span>✨ Applied to Live Preview</span></div>' +
+        '<div>' + (typeof renderMarkdown === 'function' ? renderMarkdown(cleanNote) : cleanNote.replace(/\n/g, '<br>')) + '</div>';
+      msgs.appendChild(botEl);
+      msgs.scrollTop = msgs.scrollHeight;
+    })
+    .catch(function(err) {
+      if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+      var errEl = document.createElement('div');
+      errEl.style.cssText = 'align-self:flex-start;max-width:88%;background:#fef2f2;color:#b91c1c;padding:8px 12px;border-radius:10px 10px 10px 2px;border:1px solid #fecaca;font-size:11px';
+      errEl.textContent = '⚠ AI Error: ' + (err.message || String(err));
+      msgs.appendChild(errEl);
+      msgs.scrollTop = msgs.scrollHeight;
+    });
+};

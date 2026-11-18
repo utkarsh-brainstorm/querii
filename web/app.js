@@ -644,8 +644,229 @@ function confirmImport(overwrite) {
     });
 }
 
-/* ── Schema ─────────────────────────────────────────────────────────── */
-function refreshSchema(selectTable) {
+/* ── Schema & Multi-Table Selection ─────────────────────────────────── */
+var _activeMultiTablePopover = null;
+
+function closeActiveMultiTablePopover() {
+  if (_activeMultiTablePopover) {
+    if (_activeMultiTablePopover.popover && _activeMultiTablePopover.popover.parentNode) {
+      _activeMultiTablePopover.popover.parentNode.removeChild(_activeMultiTablePopover.popover);
+    }
+    if (_activeMultiTablePopover.trigger) {
+      _activeMultiTablePopover.trigger.classList.remove('active');
+    }
+    _activeMultiTablePopover = null;
+  }
+}
+
+document.addEventListener('click', function(e) {
+  if (_activeMultiTablePopover) {
+    if (!_activeMultiTablePopover.popover.contains(e.target) && !_activeMultiTablePopover.trigger.contains(e.target)) {
+      closeActiveMultiTablePopover();
+    }
+  }
+});
+window.addEventListener('resize', closeActiveMultiTablePopover);
+
+function renderLeftPanelTableMultiSelect() {
+  var sel = document.getElementById('table-select');
+  if (!sel) return;
+
+  var wrap = document.getElementById('multi-table-wrap-left');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'multi-table-wrap-left';
+    wrap.className = 'multi-table-wrap flex-1 min-w-0';
+    sel.style.display = 'none';
+    sel.parentNode.insertBefore(wrap, sel);
+  }
+
+  var selectedCount = (_selectedTables || []).length;
+  var labelText = '';
+  if (selectedCount === 0) {
+    labelText = '— No tables selected —';
+  } else if (selectedCount === 1) {
+    labelText = '📋 ' + _selectedTables[0];
+  } else {
+    labelText = '📋 ' + selectedCount + ' tables (' + _selectedTables.join(', ') + ')';
+  }
+
+  wrap.innerHTML =
+    '<div class="multi-table-trigger" tabindex="0" title="Click to select one, multiple, or no tables">' +
+      '<span class="multi-table-label font-mono text-[11px] truncate ' + (selectedCount === 0 ? 'text-[var(--text-dim)] italic' : '') + '">' + esc(labelText) + '</span>' +
+      '<span class="multi-table-arrow">▼</span>' +
+    '</div>';
+
+  var trigger = wrap.querySelector('.multi-table-trigger');
+  trigger.onclick = function(e) {
+    e.stopPropagation();
+    openLeftPanelTablePopover(trigger);
+  };
+}
+
+function openLeftPanelTablePopover(trigger) {
+  if (_activeMultiTablePopover && _activeMultiTablePopover.trigger === trigger) {
+    closeActiveMultiTablePopover();
+    return;
+  }
+  closeActiveMultiTablePopover();
+  closeActiveSearchablePopover();
+
+  var rect = trigger.getBoundingClientRect();
+  var popover = document.createElement('div');
+  popover.className = 'multi-table-popover';
+  popover.style.top = (rect.bottom + 3) + 'px';
+  popover.style.left = Math.max(10, Math.min(rect.left, window.innerWidth - 300)) + 'px';
+  popover.style.width = Math.max(rect.width, 270) + 'px';
+
+  // Prevent wheel scroll closure
+  popover.addEventListener('wheel', function(e) { e.stopPropagation(); }, { passive: true });
+
+  var allTables = (_allSchemaData || []).map(function(t) { return t.table; });
+
+  var header = document.createElement('div');
+  header.className = 'multi-table-popover-header';
+  header.innerHTML =
+    '<span style="font-weight:700;color:var(--text-head)">Select Tables</span>' +
+    '<div class="multi-table-popover-actions">' +
+      '<a id="mt-select-all">All</a>' +
+      '<span>·</span>' +
+      '<a id="mt-clear-all">None</a>' +
+    '</div>';
+  popover.appendChild(header);
+
+  var searchWrap = document.createElement('div');
+  searchWrap.className = 'searchable-select-search-wrap';
+  var searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'searchable-select-search-input';
+  searchInput.placeholder = '🔍 Search tables…';
+  searchWrap.appendChild(searchInput);
+  popover.appendChild(searchWrap);
+
+  var listEl = document.createElement('div');
+  listEl.className = 'multi-table-list';
+  popover.appendChild(listEl);
+
+  function populateItems(term) {
+    listEl.innerHTML = '';
+    var filtered = allTables.filter(function(t) {
+      return !term || t.toLowerCase().indexOf(term.toLowerCase()) !== -1;
+    });
+
+    if (!filtered.length) {
+      listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:10px">No tables match search</div>';
+      return;
+    }
+
+    filtered.forEach(function(tbl) {
+      var sObj = _allSchemaData.find(function(s) { return s.table === tbl; });
+      var colCount = sObj ? sObj.columns.filter(function(c) { return !c.name.startsWith('_'); }).length : 0;
+      var isChecked = (_selectedTables || []).indexOf(tbl) !== -1;
+
+      var row = document.createElement('div');
+      row.className = 'multi-table-item';
+      row.innerHTML =
+        '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' tabindex="-1">' +
+        '<span class="multi-table-item-name">' + esc(tbl) + '</span>' +
+        '<span class="multi-table-item-count">' + colCount + ' cols</span>';
+
+      var cb = row.querySelector('input[type="checkbox"]');
+      row.onclick = function(e) {
+        if (e.target !== cb) cb.checked = !cb.checked;
+        toggleTableSelected(tbl, cb.checked);
+      };
+      listEl.appendChild(row);
+    });
+  }
+
+  function toggleTableSelected(tbl, checked) {
+    if (!_selectedTables) _selectedTables = [];
+    var idx = _selectedTables.indexOf(tbl);
+    if (checked && idx === -1) {
+      _selectedTables.push(tbl);
+    } else if (!checked && idx !== -1) {
+      _selectedTables.splice(idx, 1);
+    }
+    applyLeftPanelTableSelectionChange();
+  }
+
+  header.querySelector('#mt-select-all').onclick = function(e) {
+    e.preventDefault();
+    _selectedTables = allTables.slice();
+    applyLeftPanelTableSelectionChange();
+    populateItems(searchInput.value.trim());
+  };
+
+  header.querySelector('#mt-clear-all').onclick = function(e) {
+    e.preventDefault();
+    _selectedTables = [];
+    applyLeftPanelTableSelectionChange();
+    populateItems(searchInput.value.trim());
+  };
+
+  searchInput.oninput = function() {
+    populateItems(searchInput.value.trim());
+  };
+
+  populateItems('');
+  document.body.appendChild(popover);
+  _activeMultiTablePopover = { popover: popover, trigger: trigger };
+  trigger.classList.add('active');
+
+  setTimeout(function() { searchInput.focus(); }, 15);
+}
+
+function applyLeftPanelTableSelectionChange() {
+  renderLeftPanelTableMultiSelect();
+
+  var atb = document.getElementById('active-table-badge');
+  var atn = document.getElementById('active-table-name');
+  var btd = document.getElementById('btn-drop-table');
+  var feh = document.getElementById('filter-empty-hint');
+
+  if (!_selectedTables || _selectedTables.length === 0) {
+    _activeTable = '';
+    _tableColumns = [];
+    if (atb) atb.classList.add('hidden');
+    if (btd) btd.classList.add('hidden');
+    if (feh) feh.classList.remove('hidden');
+    renderSchemaTree([]);
+    refreshOpenSchemaPanel();
+    _selectPills = [];
+    _groupByPills = [];
+    renderSelectPills();
+    renderGroupByPills();
+    clearFilterGroups();
+  } else {
+    _activeTable = _selectedTables[0];
+    if (atn) atn.textContent = _selectedTables.length === 1 ? _activeTable : (_selectedTables.length + ' tables');
+    if (atb) atb.classList.remove('hidden');
+    if (btd) btd.classList.toggle('hidden', _selectedTables.length > 1);
+    if (feh) feh.classList.add('hidden');
+
+    renderSchemaTree(_allSchemaData);
+    refreshOpenSchemaPanel();
+
+    apiCall('get_table_columns', _activeTable)
+      .then(function(cols) {
+        _tableColumns = cols || [];
+        rebuildSortDropdown();
+        buildAggDropdowns();
+      }).catch(function(){});
+  }
+
+  // Update active tab object without altering AI context table
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (activeTab) {
+    activeTab.selectedTables = (_selectedTables || []).slice();
+    activeTab.activeTable = _activeTable || '';
+  }
+  schedulePersistedSessionSave();
+}
+
+function refreshSchema(selectTable, options) {
+  options = options || {};
   apiCall('get_schema')
     .then(function(schema) {
       _allSchemaData = schema || [];
@@ -661,6 +882,10 @@ function refreshSchema(selectTable) {
         if (atb) atb.classList.add('hidden');
         var feh = document.getElementById('filter-empty-hint');
         if (feh) feh.classList.remove('hidden');
+        _activeTable = '';
+        _selectedTables = [];
+        renderLeftPanelTableMultiSelect();
+        updateAiContextTableDropdown();
         renderSchemaTree([]);
         return;
       }
@@ -675,15 +900,32 @@ function refreshSchema(selectTable) {
       var target = selectTable || prev;
       var found  = _allSchemaData.find(function(t) { return t.table === target; });
       if (sel) sel.value = found ? target : _allSchemaData[0].table;
-      onTableChange();
+
+      if (found) {
+        _activeTable = target;
+        _selectedTables = [target];
+      } else if (!selectTable && _selectedTables && _selectedTables.length > 0) {
+        // Retain currently selected tables if they still exist
+        var valid = (_allSchemaData || []).map(function(t) { return t.table; });
+        _selectedTables = _selectedTables.filter(function(tbl) { return valid.indexOf(tbl) !== -1; });
+        _activeTable = _selectedTables.length > 0 ? _selectedTables[0] : _allSchemaData[0].table;
+        if (!_selectedTables.length && _activeTable) _selectedTables = [_activeTable];
+      } else {
+        _activeTable = _allSchemaData[0].table;
+        _selectedTables = [_activeTable];
+      }
+
+      renderLeftPanelTableMultiSelect();
+      updateAiContextTableDropdown();
+      onTableChange(options.skipFilter);
       renderSchemaTree(_allSchemaData);
     })
     .catch(function(e) { console.error('refreshSchema error:', e); });
 }
 
-function onTableChange() {
+function onTableChange(skipFilter) {
   var sel = document.getElementById('table-select');
-  var val = sel ? sel.value : '';
+  var val = _activeTable || (sel ? sel.value : '');
 
   if (val === 'JOIN_MODE') return;
 
@@ -714,25 +956,15 @@ function onTableChange() {
   if (btd) btd.classList.remove('hidden');
   if (feh) feh.classList.add('hidden');
 
-  _selectedTables = [_activeTable]; // Update selected tables before rendering schema
-  // Always re-render schema tree so it shows up even after relaunch
-  var tableSchema = _allSchemaData.find(function(t) { return t.table === _activeTable; });
-  if (tableSchema) {
-    renderSchemaTree(_allSchemaData);
-    refreshOpenSchemaPanel();
-  } else {
-    // Schema might not be loaded yet — refresh from backend
-    apiCall('get_schema').then(function(schema) {
-      _allSchemaData = schema || [];
-      renderSchemaTree(_allSchemaData);
-      refreshOpenSchemaPanel();
-    }).catch(function(e) { console.error('schema refresh error', e); });
+  if (!_selectedTables || !_selectedTables.length) {
+    _selectedTables = [_activeTable];
   }
+  renderSchemaTree(_allSchemaData);
+  refreshOpenSchemaPanel();
 
   apiCall('get_table_columns', _activeTable)
     .then(function(cols) {
       _tableColumns = cols || [];
-      _selectedTables = [_activeTable];
       _selectPills = [];
       _groupByPills = [];
       renderSelectPills();
@@ -743,7 +975,9 @@ function onTableChange() {
       rebuildSortDropdown();
       buildAggDropdowns();
       clearFilterGroups();
-      runFilter();
+      if (!skipFilter) {
+        runFilter();
+      }
     })
     .catch(function(e) { console.error('get_table_columns error:', e); });
 }
@@ -959,7 +1193,14 @@ document.addEventListener('click', function(e) {
   }
 });
 window.addEventListener('resize', closeActiveSearchablePopover);
-window.addEventListener('scroll', function() { closeActiveSearchablePopover(); }, true);
+window.addEventListener('scroll', function(e) {
+  if (_activeSearchablePopover && _activeSearchablePopover.popover) {
+    if (e.target && (_activeSearchablePopover.popover === e.target || _activeSearchablePopover.popover.contains(e.target))) {
+      return; // Do NOT close popover when scrolling inside its own list
+    }
+  }
+  closeActiveSearchablePopover();
+}, true);
 
 function rebuildSortDropdown() {
   var sortSel = document.getElementById('sort-col');
@@ -2061,6 +2302,26 @@ function runSql() {
   runSqlDirect(sql.trim());
 }
 
+function renderMutationSuccess(message, table) {
+  var tbody = document.getElementById('results-tbody');
+  var thead = document.getElementById('results-thead');
+  var countEl = document.getElementById('result-count');
+  if (thead) thead.innerHTML = '';
+  if (countEl) countEl.textContent = 'Statement Executed';
+
+  if (tbody) {
+    tbody.innerHTML =
+      '<tr><td colspan="100" style="padding:0;border:none">' +
+        '<div class="mutation-result-card">' +
+          '<div style="width:48px;height:48px;border-radius:24px;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px;border:1px solid var(--ok)">✓</div>' +
+          '<div style="font-size:14px;font-weight:700;color:var(--text-head);margin-bottom:6px">Query Executed Successfully</div>' +
+          '<div style="font-size:12px;font-family:monospace;color:var(--ok);background:var(--ok-bg);padding:4px 14px;border-radius:6px;border:1px solid var(--ok);margin-bottom:12px">' + esc(message) + '</div>' +
+          (table ? '<div style="font-size:11.5px;color:var(--text-mid);max-width:440px;line-height:1.4">Created table <strong>' + esc(table) + '</strong> is now active in your schema. Query it anytime using <code style="background:var(--bg-muted);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">SELECT * FROM "' + esc(table) + '" LIMIT 100</code></div>' : '') +
+        '</div>' +
+      '</td></tr>';
+  }
+}
+
 function runSqlDirect(sql) {
   setSqlStatus('Running…');
   apiCall('run_sql', sql)
@@ -2068,15 +2329,23 @@ function runSqlDirect(sql) {
       if (d.message && (!d.columns || d.columns.length === 0)) {
         setSqlStatus(d.message);
         toast('✓ ' + d.message);
-        refreshSchema();
-        renderResults([], [], 0);
+
+        // Detect if CREATE TABLE created a new table
+        var createdTableMatch = sql.match(/CREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_]+)["']?/i);
+        var newlyCreatedTable = createdTableMatch ? createdTableMatch[1] : null;
+
+        // Refresh schema without running filter or overwriting SQL editor
+        refreshSchema(newlyCreatedTable, { skipFilter: true, preserveEditor: true });
+        renderMutationSuccess(d.message, newlyCreatedTable);
+        schedulePersistedSessionSave();
         return;
       }
       setSqlStatus((d.count || 0).toLocaleString() + ' rows');
       renderResults(d.columns || [], d.rows || [], d.count || 0);
       if (d.is_mutation) {
-        refreshSchema();
+        refreshSchema(null, { skipFilter: true, preserveEditor: true });
       }
+      schedulePersistedSessionSave();
     })
     .catch(function(e) { setSqlStatus('⚠ ' + e.message); toast(e.message, 'error'); });
 }
@@ -4383,8 +4652,123 @@ var _activeTabId = 'tab_1';
 var _secondaryTabId = null;
 var _focusedPane = 'primary';
 var _splitActive = false;
-var _tabSeq = 1;
-var _lastResultsB = null;
+var _saveSessionDebounceTid = null;
+function schedulePersistedSessionSave() {
+  if (_saveSessionDebounceTid) clearTimeout(_saveSessionDebounceTid);
+  _saveSessionDebounceTid = setTimeout(savePersistedSession, 750);
+}
+
+function savePersistedSession() {
+  if (new URLSearchParams(window.location.search).get('window_id')) return;
+  if (!_tabs || !_tabs.length) return;
+  saveTabState(_activeTabId);
+  var payload = {
+    tabs: _tabs,
+    activeTabId: _activeTabId,
+    secondaryTabId: _secondaryTabId,
+    splitActive: _splitActive,
+    focusedPane: _focusedPane,
+    selectedTables: _selectedTables || [],
+    activeTable: _activeTable || '',
+    savedAt: Date.now()
+  };
+  apiCall('save_persisted_tabs', JSON.stringify(payload)).catch(function(){});
+}
+
+function restorePersistedSession() {
+  return apiCall('get_persisted_tabs').then(function(raw) {
+    if (!raw) return false;
+    try {
+      var sess = JSON.parse(raw);
+      if (sess && Array.isArray(sess.tabs) && sess.tabs.length > 0) {
+        _tabs = sess.tabs;
+        _activeTabId = sess.activeTabId || _tabs[0].id;
+        _secondaryTabId = sess.secondaryTabId || (_tabs[1] ? _tabs[1].id : null);
+        _splitActive = !!sess.splitActive;
+        _focusedPane = sess.focusedPane || 'primary';
+        _tabSeq = _tabs.length;
+
+        var validTables = (_allSchemaData || []).map(function(t) { return t.table; });
+        if (validTables.length === 0) {
+          _activeTable = '';
+          _selectedTables = [];
+          _tabs.forEach(function(t) {
+            t.activeTable = '';
+            t.selectedTables = [];
+            t.tableColumns = [];
+          });
+        } else {
+          _tabs.forEach(function(t) {
+            if (t.selectedTables) {
+              t.selectedTables = t.selectedTables.filter(function(tbl) { return validTables.indexOf(tbl) !== -1; });
+            }
+            if (t.activeTable && validTables.indexOf(t.activeTable) === -1) {
+              t.activeTable = validTables[0] || '';
+            }
+          });
+          _selectedTables = sess.selectedTables ? sess.selectedTables.filter(function(tbl) { return validTables.indexOf(tbl) !== -1; }) : [];
+          _activeTable = (sess.activeTable && validTables.indexOf(sess.activeTable) !== -1) ? sess.activeTable : (validTables[0] || '');
+        }
+
+        renderTabStrip();
+        renderLeftPanelTableMultiSelect();
+        updateAiContextTableDropdown();
+        restoreTabState(_activeTabId, 'primary');
+        if (_splitActive && _secondaryTabId) {
+          restoreTabState(_secondaryTabId, 'secondary');
+        }
+        return true;
+      }
+    } catch(e) {
+      console.error('Error parsing persisted tabs', e);
+    }
+    return false;
+  }).catch(function() { return false; });
+}
+
+function initCleanZeroState() {
+  _activeTable = '';
+  _selectedTables = [];
+  _tableColumns = [];
+  _tabs = [{
+    id: 'tab_1',
+    title: 'Query 1',
+    activeTable: '',
+    selectedTables: [],
+    joinClauses: [],
+    tableColumns: [],
+    sql: '',
+    filterGroups: [],
+    groupCounter: 0,
+    itemCounter: 0,
+    selectPills: [],
+    groupByPills: [],
+    havingAgg: '',
+    havingOp: '>',
+    havingVal: '',
+    sortCol: '',
+    sortDir: 'ASC',
+    limit: '5000',
+    results: null,
+    currentPage: 0,
+    sqlStatus: '',
+    aiChatHistory: [],
+    aiContextTables: '__ALL__'
+  }];
+  _activeTabId = 'tab_1';
+  _tabSeq = 1;
+  renderTabStrip();
+  updateSplitDropdown();
+  var edA = document.getElementById('sql-editor');
+  if (edA) { edA.value = ''; syncSqlLines(); }
+  setSqlStatus('');
+  renderResults([], [], 0);
+  renderSchemaTree([]);
+  refreshOpenSchemaPanel();
+  renderLeftPanelTableMultiSelect();
+  updateAiContextTableDropdown();
+}
+window.addEventListener('beforeunload', savePersistedSession);
 
 function createNewTab(initialData) {
   _tabSeq++;
@@ -4658,8 +5042,10 @@ function renderTabStrip() {
         sourceWindowId: new URLSearchParams(window.location.search).get('window_id') || 'main'
       });
       e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData('application/x-querii-tab', transferPayload);
       e.dataTransfer.setData('application/json', transferPayload);
-      e.dataTransfer.setData('text/plain', 'querii_tab:' + transferPayload);
+      // NOTE: Do not set text/plain because Linux desktop shells create dropped text files on the desktop!
+      apiCall('set_active_drag_tab', transferPayload);
       pill.classList.add('tab-dragging');
 
       var dz = document.getElementById('tab-detach-dropzone');
@@ -4670,6 +5056,7 @@ function renderTabStrip() {
       pill.classList.remove('tab-dragging');
       var dz = document.getElementById('tab-detach-dropzone');
       if (dz) dz.classList.add('hidden');
+      apiCall('clear_active_drag_tab');
 
       // Check if this tab was transferred to another window
       apiCall('is_tab_transferred', t.id).then(function(transferred) {
@@ -4688,7 +5075,7 @@ function renderTabStrip() {
     pill.ondragover = function(e) { e.preventDefault(); };
     pill.ondrop = function(e) {
       e.preventDefault();
-      var raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/json');
+      var raw = e.dataTransfer.getData('application/x-querii-tab') || e.dataTransfer.getData('application/json');
       if (!raw) return;
       if (raw.startsWith('querii_tab:')) raw = raw.slice('querii_tab:'.length);
       try {
@@ -4701,6 +5088,7 @@ function renderTabStrip() {
             var moved = _tabs.splice(srcIdx, 1)[0];
             _tabs.splice(dstIdx, 0, moved);
             renderTabStrip();
+            schedulePersistedSessionSave();
           }
         }
       } catch(err) {}
@@ -4750,6 +5138,18 @@ function renderTabStrip() {
     strip.appendChild(pill);
   });
 
+  if (isDetachedWindow) {
+    var reattachBtn = document.createElement('button');
+    reattachBtn.className = 'tab-reattach-btn';
+    reattachBtn.style.cssText = 'margin-left:auto;font-size:10.5px;padding:3px 10px;border-radius:6px;background:var(--bg-muted);border:1px solid var(--border);color:var(--accent);font-weight:600;cursor:pointer';
+    reattachBtn.innerHTML = '↩ Attach to Main';
+    reattachBtn.title = 'Reattach this tab back to the primary main window and close this window';
+    reattachBtn.onclick = function() {
+      reattachCurrentWindowToMain();
+    };
+    strip.appendChild(reattachBtn);
+  }
+
   // Setup tab strip drop target for attaching tabs from other windows
   strip.ondragover = function(e) {
     e.preventDefault();
@@ -4761,26 +5161,38 @@ function renderTabStrip() {
   strip.ondrop = function(e) {
     e.preventDefault();
     strip.classList.remove('tab-drop-active');
-    var raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/json');
-    if (!raw) return;
-    if (raw.startsWith('querii_tab:')) raw = raw.slice('querii_tab:'.length);
-    try {
-      var parsed = JSON.parse(raw);
-      var tabData = parsed.tab || parsed;
-      if (tabData && tabData.id) {
-        var existing = _tabs.find(function(x) { return x.id === tabData.id; });
-        if (!existing) {
-          _tabs.push(tabData);
-          renderTabStrip();
-          switchTab(tabData.id);
-          apiCall('notify_tab_transferred', tabData.id);
-          toast('✓ Tab "' + (tabData.title || 'Tab') + '" attached to this window!');
-        } else {
-          switchTab(tabData.id);
+    var raw = e.dataTransfer.getData('application/x-querii-tab') || e.dataTransfer.getData('application/json');
+
+    function applyDropPayload(payloadText) {
+      if (!payloadText) return;
+      if (payloadText.startsWith('querii_tab:')) payloadText = payloadText.slice('querii_tab:'.length);
+      try {
+        var parsed = JSON.parse(payloadText);
+        var tabData = parsed.tab || parsed;
+        if (tabData && tabData.id) {
+          var existing = _tabs.find(function(x) { return x.id === tabData.id; });
+          if (!existing) {
+            _tabs.push(tabData);
+            renderTabStrip();
+            switchTab(tabData.id);
+            apiCall('notify_tab_transferred', tabData.id);
+            schedulePersistedSessionSave();
+            toast('✓ Tab "' + (tabData.title || 'Tab') + '" attached to this window!');
+          } else {
+            switchTab(tabData.id);
+          }
         }
+      } catch(err) {
+        console.error('Failed to attach tab:', err);
       }
-    } catch(err) {
-      console.error('Failed to attach tab:', err);
+    }
+
+    if (raw) {
+      applyDropPayload(raw);
+    } else {
+      apiCall('get_active_drag_tab').then(function(backendPayload) {
+        if (backendPayload) applyDropPayload(backendPayload);
+      });
     }
   };
 
@@ -5001,15 +5413,19 @@ function runSqlSecondaryDirect(sql) {
       if (d.message && (!d.columns || d.columns.length === 0)) {
         setSqlStatusSecondary(d.message);
         toast('✓ ' + d.message);
-        refreshSchema();
+        var createdTableMatch = sql.match(/CREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_]+)["']?/i);
+        var newlyCreatedTable = createdTableMatch ? createdTableMatch[1] : null;
+        refreshSchema(newlyCreatedTable, { skipFilter: true, preserveEditor: true });
         renderResultsSecondary([], [], 0);
+        schedulePersistedSessionSave();
         return;
       }
       setSqlStatusSecondary((d.count || 0).toLocaleString() + ' rows');
       renderResultsSecondary(d.columns || [], d.rows || [], d.count || 0);
       if (d.is_mutation) {
-        refreshSchema();
+        refreshSchema(null, { skipFilter: true, preserveEditor: true });
       }
+      schedulePersistedSessionSave();
     })
     .catch(function(e) {
       setSqlStatusSecondary('⚠ ' + e.message);
@@ -5200,7 +5616,7 @@ var _aiSettings = {
   geminiKey: '',
   geminiModel: 'gemini-2.5-flash',
   nvidiaKey: '',
-  nvidiaModel: 'meta/llama-3.3-70b-instruct'
+  nvidiaModel: 'nvidia/nemotron-3-ultra-550b-a55b'
 };
 var _activeTabAiHistory = [];
 var _aiIsSending = false;
@@ -5219,59 +5635,293 @@ function updateAiProviderBadge() {
   var badge = document.getElementById('ai-provider-badge');
   if (!badge) return;
   if (_aiSettings.provider === 'nvidia') {
-    var shortMod = (_aiSettings.nvidiaModel || 'Llama 3.3').split('/').pop();
+    var shortMod = (_aiSettings.nvidiaModel || 'Nemotron Ultra').split('/').pop();
+    if (shortMod.toLowerCase().indexOf('nemotron') !== -1) shortMod = 'Nemotron Ultra 550B';
     badge.textContent = 'NVIDIA · ' + shortMod;
   } else {
     badge.textContent = 'Gemini · ' + (_aiSettings.geminiModel || 'gemini-2.5-flash');
   }
 }
 
-function updateAiContextTableDropdown() {
-  var sel = document.getElementById('ai-context-table-sel');
-  if (!sel) return;
-  var currentVal = sel.value || '__ACTIVE__';
-  sel.innerHTML = '';
+/* ── AI Context Multi-Table Selector ────────────────────────────────── */
+var _activeAiContextPopover = null;
 
-  var optActive = document.createElement('option');
-  optActive.value = '__ACTIVE__';
-  optActive.textContent = 'Active Table (' + (_activeTable || 'None') + ')';
-  sel.appendChild(optActive);
-
-  var optAll = document.createElement('option');
-  optAll.value = '__ALL__';
-  optAll.textContent = 'All Tables in DB (' + (_allSchemaData ? _allSchemaData.length : 0) + ')';
-  sel.appendChild(optAll);
-
-  if (_allSchemaData && _allSchemaData.length) {
-    var grp = document.createElement('optgroup');
-    grp.label = 'Specific Tables';
-    _allSchemaData.forEach(function(t) {
-      var opt = document.createElement('option');
-      opt.value = t.table;
-      opt.textContent = t.table;
-      grp.appendChild(opt);
-    });
-    sel.appendChild(grp);
+function closeActiveAiContextPopover() {
+  if (_activeAiContextPopover) {
+    if (_activeAiContextPopover.popover && _activeAiContextPopover.popover.parentNode) {
+      _activeAiContextPopover.popover.parentNode.removeChild(_activeAiContextPopover.popover);
+    }
+    if (_activeAiContextPopover.trigger) {
+      _activeAiContextPopover.trigger.classList.remove('active');
+    }
+    _activeAiContextPopover = null;
   }
-
-  sel.value = currentVal;
 }
 
-function onAiContextTableChange(val) {
-  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
-  if (activeTab) {
-    activeTab.aiContextTable = val;
+document.addEventListener('click', function(e) {
+  if (_activeAiContextPopover) {
+    if (!_activeAiContextPopover.popover.contains(e.target) && !_activeAiContextPopover.trigger.contains(e.target)) {
+      closeActiveAiContextPopover();
+    }
   }
+});
+
+function updateAiContextTableDropdown() {
+  renderAiContextMultiSelect();
+}
+
+function renderAiContextMultiSelect() {
+  var sel = document.getElementById('ai-context-table-sel');
+  if (!sel) return;
+
+  var wrap = document.getElementById('ai-context-multi-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'ai-context-multi-wrap';
+    wrap.className = 'multi-table-wrap flex-1 min-w-0';
+    sel.style.display = 'none';
+    sel.parentNode.insertBefore(wrap, sel);
+  }
+
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  var ctx = activeTab ? (activeTab.aiContextTables !== undefined ? activeTab.aiContextTables : '__ALL__') : '__ALL__';
+
+  var labelText = '';
+  if (ctx === '__ALL__') {
+    labelText = 'All Tables (' + (_allSchemaData ? _allSchemaData.length : 0) + ')';
+  } else if (!ctx || ctx === '__NONE__' || (Array.isArray(ctx) && ctx.length === 0)) {
+    labelText = 'None (Clean General)';
+  } else if (Array.isArray(ctx)) {
+    labelText = ctx.length === 1 ? ctx[0] : (ctx.length + ' tables (' + ctx.join(', ') + ')');
+  } else {
+    labelText = String(ctx);
+  }
+
+  wrap.innerHTML =
+    '<div class="multi-table-trigger h-6 text-[10px] py-0 px-2" tabindex="0" title="Choose which tables the AI sees in its context">' +
+      '<span class="multi-table-label truncate">' + esc(labelText) + '</span>' +
+      '<span class="multi-table-arrow">▼</span>' +
+    '</div>';
+
+  var trigger = wrap.querySelector('.multi-table-trigger');
+  trigger.onclick = function(e) {
+    e.stopPropagation();
+    openAiContextMultiPopover(trigger);
+  };
+}
+
+function openAiContextMultiPopover(trigger) {
+  if (_activeAiContextPopover && _activeAiContextPopover.trigger === trigger) {
+    closeActiveAiContextPopover();
+    return;
+  }
+  closeActiveAiContextPopover();
+  closeActiveMultiTablePopover();
+  closeActiveSearchablePopover();
+
+  var rect = trigger.getBoundingClientRect();
+  var popover = document.createElement('div');
+  popover.className = 'multi-table-popover';
+  popover.style.top = (rect.bottom + 3) + 'px';
+  popover.style.right = (window.innerWidth - rect.right) + 'px';
+  popover.style.width = Math.max(rect.width, 260) + 'px';
+
+  popover.addEventListener('wheel', function(e) { e.stopPropagation(); }, { passive: true });
+
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  var currentCtx = activeTab ? (activeTab.aiContextTables !== undefined ? activeTab.aiContextTables : '__ALL__') : '__ALL__';
+  var allTables = (_allSchemaData || []).map(function(t) { return t.table; });
+
+  var header = document.createElement('div');
+  header.className = 'multi-table-popover-header';
+  header.innerHTML =
+    '<span style="font-weight:700;color:var(--text-head);font-size:10.5px">AI Context Tables</span>' +
+    '<div class="multi-table-popover-actions">' +
+      '<a id="ai-ctx-all">All</a>' +
+      '<span>·</span>' +
+      '<a id="ai-ctx-none">None</a>' +
+    '</div>';
+  popover.appendChild(header);
+
+  var listEl = document.createElement('div');
+  listEl.className = 'multi-table-list';
+  popover.appendChild(listEl);
+
+  function populate() {
+    listEl.innerHTML = '';
+
+    if (!allTables.length) {
+      listEl.innerHTML = '<div style="padding:10px;text-align:center;color:var(--text-dim);font-size:10px">No tables in database</div>';
+      return;
+    }
+
+    allTables.forEach(function(tbl) {
+      var isChecked = (currentCtx === '__ALL__') || (Array.isArray(currentCtx) && currentCtx.indexOf(tbl) !== -1);
+      var row = document.createElement('div');
+      row.className = 'multi-table-item';
+      row.innerHTML =
+        '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' tabindex="-1">' +
+        '<span class="multi-table-item-name">' + esc(tbl) + '</span>';
+
+      var cb = row.querySelector('input[type="checkbox"]');
+      row.onclick = function(e) {
+        if (e.target !== cb) cb.checked = !cb.checked;
+        if (currentCtx === '__ALL__') {
+          currentCtx = allTables.slice();
+        } else if (currentCtx === '__NONE__' || !Array.isArray(currentCtx)) {
+          currentCtx = [];
+        }
+        var idx = currentCtx.indexOf(tbl);
+        if (cb.checked && idx === -1) {
+          currentCtx.push(tbl);
+        } else if (!cb.checked && idx !== -1) {
+          currentCtx.splice(idx, 1);
+        }
+        if (currentCtx.length === allTables.length) currentCtx = '__ALL__';
+        if (activeTab) activeTab.aiContextTables = currentCtx;
+        renderAiContextMultiSelect();
+        schedulePersistedSessionSave();
+        populate();
+      };
+      listEl.appendChild(row);
+    });
+  }
+
+  header.querySelector('#ai-ctx-all').onclick = function(e) {
+    e.preventDefault();
+    currentCtx = '__ALL__';
+    if (activeTab) activeTab.aiContextTables = '__ALL__';
+    renderAiContextMultiSelect();
+    schedulePersistedSessionSave();
+    populate();
+  };
+
+  header.querySelector('#ai-ctx-none').onclick = function(e) {
+    e.preventDefault();
+    currentCtx = [];
+    if (activeTab) activeTab.aiContextTables = [];
+    renderAiContextMultiSelect();
+    schedulePersistedSessionSave();
+    populate();
+  };
+
+  populate();
+  document.body.appendChild(popover);
+  _activeAiContextPopover = { popover: popover, trigger: trigger };
+  trigger.classList.add('active');
 }
 
 function clearActiveTabAiChat() {
-  if (!confirm('Clear AI conversation history for this tab?')) return;
+  if (!confirm('Clear AI conversation history for this tab? (Conversation will be saved in Past Sessions)')) return;
+  saveActiveTabAiSessionToHistory();
   _activeTabAiHistory = [];
   var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
   if (activeTab) {
     activeTab.aiChatHistory = [];
+    activeTab.aiSessionId = null;
   }
+  schedulePersistedSessionSave();
   renderActiveTabAiMessages();
+}
+
+function saveActiveTabAiSessionToHistory() {
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (!activeTab || !activeTab.aiChatHistory || activeTab.aiChatHistory.length === 0) return;
+
+  var firstUserMsg = activeTab.aiChatHistory.find(function(m) { return m.role === 'user'; });
+  var title = firstUserMsg ? firstUserMsg.content.slice(0, 55).trim() : 'AI Conversation';
+  if (firstUserMsg && firstUserMsg.content.length > 55) title += '…';
+
+  var sessId = activeTab.aiSessionId || ('sess_' + activeTab.id + '_' + Date.now());
+  activeTab.aiSessionId = sessId;
+
+  var provider = _aiSettings.provider || 'gemini';
+  var model = provider === 'nvidia' ? _aiSettings.nvidiaModel : _aiSettings.geminiModel;
+
+  apiCall('save_ai_chat_session', sessId, title, provider, model, JSON.stringify(activeTab.aiChatHistory))
+    .catch(function(e) { console.error('Failed to save AI session', e); });
+}
+
+function openAiSessionsHistoryModal() {
+  var list = document.getElementById('ai-sessions-list');
+  var countEl = document.getElementById('ai-sessions-count');
+  if (list) list.innerHTML = '<div class="py-6 text-center text-[var(--text-dim)]">Loading history…</div>';
+  openModal('modal-ai-history');
+
+  apiCall('get_ai_chat_sessions', 50)
+    .then(function(sessions) {
+      if (!sessions || !sessions.length) {
+        if (list) list.innerHTML = '<div class="py-6 text-center text-[var(--text-dim)]">No past AI conversations recorded yet.</div>';
+        if (countEl) countEl.textContent = '0 sessions';
+        return;
+      }
+      if (countEl) countEl.textContent = sessions.length + ' saved sessions';
+      list.innerHTML = '';
+      sessions.forEach(function(sess) {
+        var card = document.createElement('div');
+        card.className = 'p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] hover:border-[var(--accent)] transition-all space-y-2';
+
+        var msgsCount = 0;
+        try {
+          var parsed = JSON.parse(sess.messages_json);
+          msgsCount = Array.isArray(parsed) ? parsed.length : 0;
+        } catch(e) {}
+
+        var dateStr = sess.updated_at || sess.created_at || '';
+        card.innerHTML =
+          '<div class="flex items-center justify-between">' +
+            '<div class="font-semibold text-[12px] text-[var(--text-head)] truncate flex-1 mr-2">' + esc(sess.title || 'Untitled Conversation') + '</div>' +
+            '<span class="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--bg-muted)] border border-[var(--border)] font-mono text-[var(--text-dim)]">' + esc(sess.provider || 'AI') + '</span>' +
+          '</div>' +
+          '<div class="flex items-center justify-between text-[10px] text-[var(--text-dim)]">' +
+            '<span>' + esc(dateStr) + ' · ' + msgsCount + ' messages</span>' +
+            '<div class="flex items-center gap-1.5">' +
+              '<button class="btn-ghost text-[10.5px] h-6 px-2 text-[var(--accent)] hover:bg-[var(--accent-bg)] font-medium" onclick="restoreAiSessionToCurrentTab(\'' + sess.id + '\')">📥 Load into Tab</button>' +
+              '<button class="btn-ghost text-[10.5px] h-6 px-1.5 text-red-500 hover:bg-red-50" onclick="deleteAiSessionFromHistory(\'' + sess.id + '\')">✕</button>' +
+            '</div>' +
+          '</div>';
+        list.appendChild(card);
+      });
+    })
+    .catch(function(err) {
+      if (list) list.innerHTML = '<div class="py-6 text-center text-red-500">Error loading sessions: ' + esc(err.message) + '</div>';
+    });
+}
+
+function restoreAiSessionToCurrentTab(sessionId) {
+  apiCall('get_ai_chat_sessions', 100)
+    .then(function(sessions) {
+      var found = (sessions || []).find(function(s) { return s.id === sessionId; });
+      if (!found) { toast('Session not found', 'error'); return; }
+      try {
+        var msgs = JSON.parse(found.messages_json);
+        if (Array.isArray(msgs)) {
+          _activeTabAiHistory = msgs.slice();
+          var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+          if (activeTab) {
+            activeTab.aiChatHistory = _activeTabAiHistory.slice();
+            activeTab.aiSessionId = found.id;
+          }
+          renderActiveTabAiMessages();
+          closeModal();
+          schedulePersistedSessionSave();
+          toast('✓ AI Conversation session restored into active tab!');
+        }
+      } catch(e) {
+        toast('Failed to parse session messages', 'error');
+      }
+    });
+}
+
+function deleteAiSessionFromHistory(sessionId) {
+  if (!confirm('Permanently delete this saved conversation session?')) return;
+  apiCall('delete_ai_chat_session', sessionId)
+    .then(function() {
+      toast('Session deleted');
+      openAiSessionsHistoryModal();
+    }).catch(function(e) {
+      toast(e.message, 'error');
+    });
 }
 
 function renderActiveTabAiMessages() {
@@ -5285,7 +5935,7 @@ function renderActiveTabAiMessages() {
     welcome.innerHTML =
       '<div class="text-3xl mb-2">✨</div>' +
       '<div class="text-[12px] font-semibold text-[var(--text-head)] mb-1">Querii AI Assistant</div>' +
-      '<div class="text-[10.5px] mb-4 text-[var(--text-body)]">Ask questions in natural language. Queries will be auto-generated and safely executed!</div>' +
+      '<div class="text-[10.5px] mb-4 text-[var(--text-body)]">Ask questions in natural language. Queries are auto-generated and read-only queries are executed live!</div>' +
       '<div class="space-y-1.5 text-left">' +
         '<button class="ai-suggestion-chip" onclick="applyAiSuggestion(\'Show top 10 rows with highest values\')">📊 Top 10 highest values</button>' +
         '<button class="ai-suggestion-chip" onclick="applyAiSuggestion(\'Summarize row count and key column statistics\')">📈 Summarize column statistics</button>' +
@@ -5302,7 +5952,7 @@ function renderActiveTabAiMessages() {
       bubble.textContent = msg.content;
     } else {
       bubble.className = 'ai-chat-bubble-assistant';
-      bubble.innerHTML = formatAssistantMessageHtml(msg.content, idx);
+      bubble.innerHTML = formatAssistantMessageHtml(msg, idx);
     }
     container.appendChild(bubble);
   });
@@ -5336,9 +5986,9 @@ function renderMarkdown(md) {
   });
 
   // Headings
-  text = text.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  text = text.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  text = text.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+  text = text.replace(/^### (.*$)/gim, '<h3 style="font-size:12px;font-weight:700;margin:6px 0 3px">$1</h3>');
+  text = text.replace(/^## (.*$)/gim, '<h2 style="font-size:13px;font-weight:700;margin:8px 0 4px">$1</h2>');
+  text = text.replace(/^# (.*$)/gim, '<h1 style="font-size:14px;font-weight:800;margin:10px 0 5px">$1</h1>');
 
   // Bold & Italic
   text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -5347,14 +5997,13 @@ function renderMarkdown(md) {
   text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
 
   // Inline code
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/`([^`]+)`/g, '<code style="font-family:monospace;font-size:10px;background:var(--bg-muted);padding:1px 4px;border-radius:3px">$1</code>');
 
   // Blockquotes
   text = text.replace(/^\> (.*$)/gim, '<blockquote style="border-left:2px solid var(--accent);padding-left:8px;margin:4px 0;opacity:0.85">$1</blockquote>');
 
   // Unordered lists
-  text = text.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
-  text = text.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+  text = text.replace(/^\s*[-*]\s+(.*)$/gim, '<li style="margin-left:14px;list-style:disc">$1</li>');
 
   // Paragraphs and breaks
   text = text.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
@@ -5396,13 +6045,42 @@ function extractSqlFromResponse(text) {
   return match ? match[1].trim() : null;
 }
 
-function formatAssistantMessageHtml(fullText, msgIdx) {
+function formatAssistantMessageHtml(msgObj, msgIdx) {
+  var fullText = typeof msgObj === 'string' ? msgObj : (msgObj.content || '');
+  var reasoning = (typeof msgObj === 'object' && msgObj.reasoning) ? msgObj.reasoning : '';
+  var agentSteps = (typeof msgObj === 'object' && msgObj.agent_steps) ? msgObj.agent_steps : [];
+
+  var reasoningHtml = '';
+  if (reasoning) {
+    reasoningHtml =
+      '<details class="ai-reasoning-accordion">' +
+        '<summary class="ai-accordion-summary"><span>🧠 Reasoning Process</span></summary>' +
+        '<div class="ai-reasoning-body">' + renderMarkdown(reasoning) + '</div>' +
+      '</details>';
+  }
+
+  var stepsHtml = '';
+  if (agentSteps && agentSteps.length > 0) {
+    stepsHtml =
+      '<details class="ai-agent-steps-accordion" open>' +
+        '<summary class="ai-accordion-summary"><span>⚡ Dynamic Inspection (' + agentSteps.length + ' step' + (agentSteps.length > 1 ? 's' : '') + ')</span></summary>' +
+        '<div class="ai-steps-body">' +
+          agentSteps.map(function(s) {
+            return '<div class="ai-step-row">' +
+              '<div class="ai-step-action">🔍 ' + esc(s.action) + ' ' + (s.input && Object.keys(s.input).length ? ('<code style="font-size:9px;color:var(--text-mid)">' + esc(JSON.stringify(s.input)) + '</code>') : '') + '</div>' +
+              (s.thought ? '<div style="font-size:9.5px;color:var(--text-mid);margin:2px 0 3px"><em>' + esc(s.thought) + '</em></div>' : '') +
+              (s.observation ? '<div class="ai-step-obs">' + esc(s.observation) + '</div>' : '') +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</details>';
+  }
+
   var sql = extractSqlFromResponse(fullText);
   var explanatoryText = fullText;
 
   var sqlCardHtml = '';
   if (sql) {
-    // Remove the code block from explanatory text to avoid duplication
     explanatoryText = fullText.replace(/```(?:sql|sqlite)?\s*[\s\S]*?```/i, '').trim();
 
     var isSafe = isReadOnlyQuery(sql);
@@ -5430,7 +6108,7 @@ function formatAssistantMessageHtml(fullText, msgIdx) {
   }
 
   var mdHtml = explanatoryText ? renderMarkdown(explanatoryText) : '';
-  return mdHtml + sqlCardHtml;
+  return reasoningHtml + stepsHtml + mdHtml + sqlCardHtml;
 }
 
 function getSqlFromMsgIdx(msgIdx) {
@@ -5470,16 +6148,19 @@ function buildAiSystemPrompt(contextChoice) {
   var tables = [];
   if (contextChoice === '__ALL__') {
     tables = _allSchemaData || [];
-  } else if (contextChoice === '__ACTIVE__' || !contextChoice) {
+  } else if (!contextChoice || contextChoice === '__NONE__' || (Array.isArray(contextChoice) && contextChoice.length === 0)) {
+    tables = [];
+  } else if (Array.isArray(contextChoice)) {
+    tables = (_allSchemaData || []).filter(function(t) { return contextChoice.indexOf(t.table) !== -1; });
+  } else if (contextChoice === '__ACTIVE__') {
     var curr = (_selectedTables && _selectedTables.length) ? _selectedTables : (_activeTable ? [_activeTable] : []);
     tables = (_allSchemaData || []).filter(function(t) { return curr.indexOf(t.table) !== -1; });
-    if (!tables.length && _allSchemaData && _allSchemaData.length) tables = [_allSchemaData[0]];
   } else {
     tables = (_allSchemaData || []).filter(function(t) { return t.table === contextChoice; });
   }
 
   var prompt = [];
-  prompt.push('You are an expert SQL analytics AI assistant embedded inside Querii, an offline desktop analytics app running an embedded SQLite 3 engine.');
+  prompt.push('You are an expert SQL analytics and data intelligence AI assistant embedded inside Querii, an offline desktop analytics app running an embedded SQLite 3 engine.');
   prompt.push('');
   prompt.push('### MANDATORY TWO-PART RESPONSE FORMAT');
   prompt.push('Always structure your answer into TWO distinct parts:');
@@ -5491,16 +6172,20 @@ function buildAiSystemPrompt(contextChoice) {
   prompt.push('### SQLite 3 Dialect Rules:');
   prompt.push('- ALWAYS wrap table names and column names with double quotes: "table_name", "Column Name".');
   prompt.push('- String literals use single quotes: \'Active\'.');
-  prompt.push('- Functions available: COUNT(), SUM(), AVG(), MIN(), MAX(), ROUND(), COALESCE(), IFNULL(), date(), datetime(), strftime(\'%Y-%m\', "col").');
   prompt.push('- Support CTEs (WITH ... AS ...) and window functions: ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD().');
   prompt.push('');
-  prompt.push('### Active Database Schema (' + tables.length + ' table' + (tables.length > 1 ? 's' : '') + ' in context):');
-  tables.forEach(function(t) {
-    var cols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
-    prompt.push('Table: "' + t.table + '" (' + cols.length + ' columns)');
-    prompt.push('Columns: ' + cols.map(function(c) { return '"' + c.name + '" (' + c.type + ')'; }).join(', '));
-    prompt.push('');
-  });
+
+  if (tables.length > 0) {
+    prompt.push('### Active Database Schema (' + tables.length + ' table' + (tables.length > 1 ? 's' : '') + ' in context):');
+    tables.forEach(function(t) {
+      var cols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
+      prompt.push('Table: "' + t.table + '" (' + cols.length + ' columns)');
+      prompt.push('Columns: ' + cols.map(function(c) { return '"' + c.name + '" (' + c.type + ')'; }).join(', '));
+      prompt.push('');
+    });
+  } else {
+    prompt.push('### Context: No specific tables currently assigned. Answer generally or utilize available dynamic inspection tools to inspect data on demand.');
+  }
 
   return prompt.join('\n');
 }
@@ -5538,13 +6223,13 @@ function sendAiChatMessage() {
   var loadingBubble = document.createElement('div');
   loadingBubble.className = 'ai-chat-bubble-assistant opacity-70';
   loadingBubble.id = 'ai-loading-bubble';
-  loadingBubble.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-mono">✨ Thinking & querying database…</span>';
+  loadingBubble.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-mono">✨ Thinking & inspecting database…</span>';
   if (container) {
     container.appendChild(loadingBubble);
     container.scrollTop = container.scrollHeight;
   }
 
-  var contextChoice = activeTab.aiContextTable || '__ACTIVE__';
+  var contextChoice = activeTab.aiContextTables !== undefined ? activeTab.aiContextTables : '__ALL__';
   var systemPrompt = buildAiSystemPrompt(contextChoice);
 
   // Build message chain
@@ -5552,7 +6237,7 @@ function sendAiChatMessage() {
     return { role: m.role, content: m.content };
   });
 
-  apiCall('send_ai_chat', provider, model, apiKey, JSON.stringify(conversationChain), systemPrompt)
+  apiCall('send_ai_chat', provider, model, apiKey, JSON.stringify(conversationChain), systemPrompt, true)
     .then(function(res) {
       _aiIsSending = false;
       if (sendBtn) sendBtn.disabled = false;
@@ -5562,22 +6247,26 @@ function sendAiChatMessage() {
       var reply = (res && res.text) ? res.text : '';
       if (!reply) throw new Error('Empty response from AI service.');
 
-      // 3. Save assistant reply
-      _activeTabAiHistory.push({ role: 'assistant', content: reply, time: Date.now() });
+      // 3. Save assistant reply with reasoning and agent_steps
+      _activeTabAiHistory.push({
+        role: 'assistant',
+        content: reply,
+        reasoning: (res && res.reasoning) || '',
+        agent_steps: (res && res.agent_steps) || [],
+        time: Date.now()
+      });
       activeTab.aiChatHistory = _activeTabAiHistory.slice();
 
       // 4. Inspect for SQL
       var sql = extractSqlFromResponse(reply);
       if (sql) {
         var isSafe = isReadOnlyQuery(sql);
-        // Always paste into SQL editor
         var ed = document.getElementById('sql-editor');
         if (ed) {
           ed.value = sql;
           syncSqlLines();
         }
         if (isSafe) {
-          // Auto-execute read-only queries!
           runSqlDirect(sql);
           toast('⚡ AI Query executed automatically!');
         } else {
@@ -5585,6 +6274,8 @@ function sendAiChatMessage() {
         }
       }
 
+      saveActiveTabAiSessionToHistory();
+      schedulePersistedSessionSave();
       renderActiveTabAiMessages();
     })
     .catch(function(err) {
@@ -5906,23 +6597,6 @@ document.addEventListener('DOMContentLoaded', function() {
     _allSchemaData = schema;
     var sel = document.getElementById('table-select');
     if (sel) sel.innerHTML = '';
-    if (!schema.length) {
-      if (sel) sel.innerHTML = '<option value="">— no tables yet —</option>';
-      renderSchemaTree([]);
-      return;
-    }
-    schema.forEach(function(t) {
-      var opt = document.createElement('option');
-      opt.value = t.table;
-      opt.textContent = t.table + '  (' + t.columns.filter(function(c) { return !c.name.startsWith('_'); }).length + ' cols)';
-      if (sel) sel.appendChild(opt);
-    });
-    if (sel) sel.value = schema[0].table;
-    onTableChange();
-    renderSchemaTree(schema);
-
-    // Initialize Multi-Tab system
-    initTabs();
 
     // Check if window was detached with pre-existing state
     var urlParams = new URLSearchParams(window.location.search);
@@ -5937,6 +6611,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 _tabs = [state];
                 _activeTabId = state.id;
                 _tabSeq = parseInt(state.id.replace('tab_', ''), 10) || 1;
+                renderLeftPanelTableMultiSelect();
+                updateAiContextTableDropdown();
                 restoreTabState(_activeTabId, 'primary');
                 renderTabStrip();
                 if (state.title) document.title = 'Querii — ' + state.title;
@@ -5948,7 +6624,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }).catch(function(e) {
           console.error('get_initial_tab_state error:', e);
         });
+      return;
     }
+
+    if (!schema.length) {
+      initCleanZeroState();
+      return;
+    }
+
+    renderLeftPanelTableMultiSelect();
+    updateAiContextTableDropdown();
+
+    restorePersistedSession().then(function(restored) {
+      if (!restored) {
+        schema.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t.table;
+          opt.textContent = t.table + '  (' + t.columns.filter(function(c) { return !c.name.startsWith('_'); }).length + ' cols)';
+          if (sel) sel.appendChild(opt);
+        });
+        if (sel) sel.value = schema[0].table;
+        _activeTable = schema[0].table;
+        _selectedTables = [_activeTable];
+        renderLeftPanelTableMultiSelect();
+        onTableChange();
+        renderSchemaTree(schema);
+        initTabs();
+      }
+    });
   }).catch(function(e) {
     console.error('[Querii init error]', e);
     loadCustomReports();

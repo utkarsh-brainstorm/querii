@@ -74,10 +74,37 @@ class Api:
     _pending_tab_states: Dict[str, str] = {}
     _window_creator_fn = None
     _transferred_tab_ids = set()
+    _active_drag_tab: Optional[str] = None
+    _main_tab_queue: List[str] = []
 
     @classmethod
     def set_window_creator(cls, fn):
         cls._window_creator_fn = fn
+
+    @classmethod
+    def set_active_drag_tab(cls, tab_json: str) -> dict:
+        cls._active_drag_tab = tab_json
+        return _ok(True)
+
+    @classmethod
+    def get_active_drag_tab(cls) -> dict:
+        return _ok(cls._active_drag_tab)
+
+    @classmethod
+    def clear_active_drag_tab(cls) -> dict:
+        cls._active_drag_tab = None
+        return _ok(True)
+
+    @classmethod
+    def queue_tab_for_main(cls, tab_json: str) -> dict:
+        cls._main_tab_queue.append(tab_json)
+        return _ok(True)
+
+    @classmethod
+    def pop_queued_main_tabs(cls) -> dict:
+        tabs = list(cls._main_tab_queue)
+        cls._main_tab_queue.clear()
+        return _ok(tabs)
 
     def __init__(self):
         self._window: Optional[webview.Window] = None
@@ -141,6 +168,133 @@ class Api:
         except Exception as e:
             return _err(str(e))
 
+    def save_ai_chat_session(self, session_id: str, title: str, provider: str, model: str, messages_json: str) -> dict:
+        try:
+            db.save_ai_session(session_id, title, provider, model, messages_json)
+            return _ok(True)
+        except Exception as e:
+            return _err(str(e))
+
+    def get_ai_chat_sessions(self, limit: int = 50) -> dict:
+        try:
+            sessions = db.get_ai_sessions(int(limit))
+            return _ok(sessions)
+        except Exception as e:
+            return _err(str(e))
+
+    def delete_ai_chat_session(self, session_id: str) -> dict:
+        try:
+            res = db.delete_ai_session(session_id)
+            return _ok(res)
+        except Exception as e:
+            return _err(str(e))
+
+    def save_persisted_tabs(self, tabs_json: str) -> dict:
+        try:
+            db.save_persisted_tabs(tabs_json)
+            return _ok(True)
+        except Exception as e:
+            return _err(str(e))
+
+    def get_persisted_tabs(self) -> dict:
+        try:
+            data = db.get_persisted_tabs()
+            return _ok(data)
+        except Exception as e:
+            return _err(str(e))
+
+    def _execute_readonly_db_tool(self, tool_name: str, args: dict) -> str:
+        """Execute dynamic read-only database inspections for agentic AI."""
+        import json
+        import re
+        try:
+            if tool_name == "db_list_tables":
+                schema = db.get_schema()
+                res = []
+                for s in schema:
+                    t = s.get("table", "")
+                    try:
+                        _, r = db.execute_query(f'SELECT COUNT(*) as c FROM "{t}"')
+                        cnt = r[0]["c"] if r else 0
+                    except Exception:
+                        cnt = 0
+                    res.append({"table": t, "columns_count": len(s.get("columns", [])), "rows": cnt})
+                return json.dumps(res, indent=2)
+
+            elif tool_name == "db_get_schema":
+                tbls = args.get("tables", [])
+                if isinstance(tbls, str):
+                    tbls = [tbls]
+                schema = db.get_schema()
+                simplified = []
+                for s in schema:
+                    t = s.get("table", "")
+                    if tbls and t not in tbls:
+                        continue
+                    cols = [f"{c['name']} ({c['type']})" + (" PK" if c.get("pk") else "") for c in s.get("columns", []) if not c.get("name", "").startswith("_")]
+                    simplified.append(f"Table '{t}': {', '.join(cols)}")
+                return "\n".join(simplified) if simplified else "No matching tables found."
+
+            elif tool_name == "db_sample_data":
+                tbl = str(args.get("table", "")).strip().replace('"', '""')
+                limit = min(int(args.get("limit", 5)), 20)
+                if not tbl:
+                    return "Error: 'table' parameter required."
+                cols, rows = db.execute_query(f'SELECT * FROM "{tbl}" LIMIT {limit}')
+                return json.dumps(rows, indent=2, default=str)
+
+            elif tool_name == "db_inspect_column":
+                tbl = str(args.get("table", "")).strip().replace('"', '""')
+                col = str(args.get("column", "")).strip().replace('"', '""')
+                if not tbl or not col:
+                    return "Error: 'table' and 'column' required."
+                q = f"""
+                SELECT
+                    COUNT(*) as total_rows,
+                    COUNT("{col}") as non_null_count,
+                    COUNT(DISTINCT "{col}") as distinct_count,
+                    MIN("{col}") as min_val,
+                    MAX("{col}") as max_val
+                FROM "{tbl}"
+                """
+                _, stats = db.execute_query(q)
+                stat_obj = dict(stats[0]) if stats else {}
+                top_q = f"""
+                SELECT "{col}" as val, COUNT(*) as cnt
+                FROM "{tbl}"
+                WHERE "{col}" IS NOT NULL
+                GROUP BY "{col}"
+                ORDER BY cnt DESC
+                LIMIT 5
+                """
+                _, top_rows = db.execute_query(top_q)
+                stat_obj["top_values"] = top_rows
+                return json.dumps(stat_obj, indent=2, default=str)
+
+            elif tool_name == "db_readonly_query":
+                sql = str(args.get("sql", "")).strip()
+                if not sql:
+                    return "Error: 'sql' required."
+                upper_sql = sql.upper().strip()
+                if not (upper_sql.startswith("SELECT") or upper_sql.startswith("WITH") or upper_sql.startswith("EXPLAIN") or upper_sql.startswith("PRAGMA")):
+                    return "Forbidden: Only read-only queries (SELECT, WITH, EXPLAIN) are permitted during inspection. Write and schema mutations are forbidden."
+                forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "REPLACE", "TRUNCATE", "ATTACH", "DETACH"]
+                tokens = re.findall(r'\b[A-Z]+\b', upper_sql)
+                for f in forbidden:
+                    if f in tokens:
+                        return f"Forbidden: Mutating keyword '{f}' is not allowed in dynamic inspection."
+                cols, rows = db.execute_query(sql)
+                return json.dumps({
+                    "columns": cols,
+                    "rows": rows[:50],
+                    "total_returned": len(rows)
+                }, indent=2, default=str)
+
+            else:
+                return f"Error: Unknown tool '{tool_name}'."
+        except Exception as e:
+            return f"Tool Execution Error: {str(e)}"
+
     def send_ai_chat(
         self,
         provider: str,
@@ -148,11 +302,13 @@ class Api:
         api_key: str,
         messages_json: str,
         system_prompt: str,
+        enable_agent: bool = True,
     ) -> dict:
-        """Call Google Gemini API or NVIDIA NIM API with conversation history."""
+        """Call Google Gemini API or NVIDIA NIM API with conversation history, reasoning, and dynamic read-only agent tools."""
         import urllib.request
         import urllib.error
         import json
+        import re
         import ssl
 
         try:
@@ -175,101 +331,196 @@ class Api:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
-            if provider == "gemini":
-                model_name = model or db.get_setting("ai_gemini_model", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            agent_system_addon = (
+                "\n\n--- DYNAMIC INSPECTION TOOLS (AGENTIC CAPABILITY) ---\n"
+                "If the user's question requires deeper schema inspection, checking sample values, column stats, or validating data, you have read-only access to execute inspection actions before giving your final answer.\n"
+                "To call a tool, respond with:\n"
+                "Thought: <your reasoning for why this inspection is needed>\n"
+                "Action: <tool_name>\n"
+                "Action Input: <json_formatted_arguments>\n\n"
+                "Available tools:\n"
+                "- db_list_tables: List all tables in DB. Input: {}\n"
+                "- db_get_schema: Get column info for tables. Input: {\"tables\": [\"tbl1\", ...]}\n"
+                "- db_sample_data: Peek at rows. Input: {\"table\": \"tbl\", \"limit\": 5}\n"
+                "- db_inspect_column: Check nulls, distinct, min/max & top values. Input: {\"table\": \"tbl\", \"column\": \"col\"}\n"
+                "- db_readonly_query: Run exploratory SELECT query. Input: {\"sql\": \"SELECT ... LIMIT 20\"}\n\n"
+                "CRITICAL: Do NOT call a tool for straightforward queries where table context is already sufficient. Only use tools when specific stats, distinct values, or missing schema details are necessary. Mutating operations are forbidden in dynamic inspection.\n"
+                "When you have the required information, output your final answer directly following the standard 2-part format (explanation + code block)."
+            )
 
-                contents = []
-                for m in messages:
-                    role = "user" if m.get("role") == "user" else "model"
-                    contents.append({
-                        "role": role,
-                        "parts": [{"text": str(m.get("content", ""))}]
-                    })
+            effective_system = system_prompt + (agent_system_addon if enable_agent else "")
+            agent_steps = []
+            max_agent_iterations = 3 if enable_agent else 1
 
-                req_body = {
-                    "contents": contents,
-                    "systemInstruction": {
-                        "parts": [{"text": system_prompt}]
-                    },
-                    "generationConfig": {
-                        "temperature": 0.2,
-                        "maxOutputTokens": 3000
+            current_messages = [dict(m) for m in messages]
+            overall_reasoning = ""
+
+            for step_idx in range(max_agent_iterations):
+                if provider == "gemini":
+                    model_name = model or db.get_setting("ai_gemini_model", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
+                    contents = []
+                    for m in current_messages:
+                        role = "user" if m.get("role") == "user" else "model"
+                        contents.append({
+                            "role": role,
+                            "parts": [{"text": str(m.get("content", ""))}]
+                        })
+
+                    req_body = {
+                        "contents": contents,
+                        "systemInstruction": {
+                            "parts": [{"text": effective_system}]
+                        },
+                        "generationConfig": {
+                            "temperature": 0.2,
+                            "maxOutputTokens": 3500
+                        }
                     }
-                }
 
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(req_body).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST"
-                )
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(req_body).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST"
+                    )
 
-                try:
-                    with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
-                        res_json = json.loads(resp.read().decode("utf-8"))
-                        candidates = res_json.get("candidates", [])
-                        if not candidates:
-                            return _err("Gemini returned no candidates.")
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        reply_text = "".join(p.get("text", "") for p in parts)
-                        return _ok({"text": reply_text, "model": model_name, "provider": "gemini"})
-                except urllib.error.HTTPError as he:
-                    err_body = he.read().decode("utf-8", errors="replace")
                     try:
-                        err_parsed = json.loads(err_body)
-                        msg = err_parsed.get("error", {}).get("message", err_body)
+                        with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                            res_json = json.loads(resp.read().decode("utf-8"))
+                            candidates = res_json.get("candidates", [])
+                            if not candidates:
+                                return _err("Gemini returned no candidates.")
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            thought_parts = [p.get("text", "") for p in parts if p.get("thought")]
+                            if thought_parts:
+                                step_thought = "".join(thought_parts).strip()
+                                overall_reasoning = (overall_reasoning + "\n" + step_thought).strip()
+                            raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+                    except urllib.error.HTTPError as he:
+                        err_body = he.read().decode("utf-8", errors="replace")
+                        try:
+                            err_parsed = json.loads(err_body)
+                            msg = err_parsed.get("error", {}).get("message", err_body)
+                        except Exception:
+                            msg = err_body or str(he)
+                        return _err(f"Gemini API Error ({he.code}): {msg}")
+
+                elif provider == "nvidia":
+                    model_name = model or db.get_setting("ai_nvidia_model", "nvidia/nemotron-3-ultra-550b-a55b").strip() or "nvidia/nemotron-3-ultra-550b-a55b"
+                    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+                    api_msgs = [{"role": "system", "content": effective_system}]
+                    for m in current_messages:
+                        api_msgs.append({
+                            "role": m.get("role", "user"),
+                            "content": str(m.get("content", ""))
+                        })
+
+                    req_body = {
+                        "model": model_name,
+                        "messages": api_msgs,
+                        "temperature": 0.2,
+                        "max_tokens": 3500
+                    }
+
+                    if "nemotron" in model_name.lower():
+                        req_body["extra_body"] = {
+                            "chat_template_kwargs": {"enable_thinking": True}
+                        }
+
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(req_body).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {api_key}"
+                        },
+                        method="POST"
+                    )
+
+                    try:
+                        with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                            res_json = json.loads(resp.read().decode("utf-8"))
+                            choices = res_json.get("choices", [])
+                            if not choices:
+                                return _err("NVIDIA API returned no response choices.")
+                            msg_obj = choices[0].get("message", {})
+                            raw_reply = msg_obj.get("content", "") or ""
+                            r_content = msg_obj.get("reasoning_content", "") or ""
+                            if r_content:
+                                overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
+                    except urllib.error.HTTPError as he:
+                        err_body = he.read().decode("utf-8", errors="replace")
+                        try:
+                            err_parsed = json.loads(err_body)
+                            msg = err_parsed.get("error", {}).get("message", err_body)
+                        except Exception:
+                            msg = err_body or str(he)
+                        return _err(f"NVIDIA API Error ({he.code}): {msg}")
+
+                else:
+                    return _err(f"Unsupported AI provider '{provider}'. Must be 'gemini' or 'nvidia'.")
+
+                # Extract <think> if present in raw content
+                if "<think>" in raw_reply and "</think>" in raw_reply:
+                    m_think = re.search(r"<think>([\s\S]*?)</think>", raw_reply)
+                    if m_think:
+                        extracted_think = m_think.group(1).strip()
+                        overall_reasoning = (overall_reasoning + "\n" + extracted_think).strip()
+                        raw_reply = re.sub(r"<think>[\s\S]*?</think>", "", raw_reply).strip()
+
+                # Check if model requested a tool Action
+                action_match = re.search(r"Action:\s*([a-zA-Z0-9_]+)", raw_reply)
+                input_match = re.search(r"Action Input:\s*(\{[\s\S]*?\}|\[[\s\S]*?\]|[^\n]+)", raw_reply)
+                thought_match = re.search(r"Thought:\s*([\s\S]*?)(?=\nAction:|$)", raw_reply)
+
+                if action_match and enable_agent and step_idx < (max_agent_iterations - 1):
+                    tool_act = action_match.group(1).strip()
+                    raw_input_str = input_match.group(1).strip() if input_match else "{}"
+                    thought_text = thought_match.group(1).strip() if thought_match else ""
+
+                    try:
+                        tool_args = json.loads(raw_input_str) if (raw_input_str.startswith("{") or raw_input_str.startswith("[")) else {}
                     except Exception:
-                        msg = err_body or str(he)
-                    return _err(f"Gemini API Error ({he.code}): {msg}")
+                        tool_args = {"param": raw_input_str}
 
-            elif provider == "nvidia":
-                model_name = model or db.get_setting("ai_nvidia_model", "meta/llama-3.3-70b-instruct").strip() or "meta/llama-3.3-70b-instruct"
-                url = "https://integrate.api.nvidia.com/v1/chat/completions"
-
-                api_msgs = [{"role": "system", "content": system_prompt}]
-                for m in messages:
-                    api_msgs.append({
-                        "role": m.get("role", "user"),
-                        "content": str(m.get("content", ""))
+                    obs_result = self._execute_readonly_db_tool(tool_act, tool_args)
+                    agent_steps.append({
+                        "thought": thought_text,
+                        "action": tool_act,
+                        "input": tool_args,
+                        "observation": obs_result[:1000] # preview length
                     })
 
-                req_body = {
-                    "model": model_name,
-                    "messages": api_msgs,
-                    "temperature": 0.2,
-                    "max_tokens": 3000
-                }
+                    # Feed observation back to model
+                    current_messages.append({"role": "model", "content": raw_reply})
+                    current_messages.append({"role": "user", "content": f"Observation from {tool_act}:\n{obs_result}"})
+                    continue
+                else:
+                    # Final direct answer reached or no action requested
+                    final_text = raw_reply
+                    # Strip any trailing Action/Action Input if model accidentally included it without executing
+                    if "Final Answer:" in final_text:
+                        final_text = final_text.split("Final Answer:", 1)[1].strip()
 
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(req_body).encode("utf-8"),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    },
-                    method="POST"
-                )
+                    return _ok({
+                        "text": final_text,
+                        "reasoning": overall_reasoning.strip(),
+                        "agent_steps": agent_steps,
+                        "model": model_name,
+                        "provider": provider
+                    })
 
-                try:
-                    with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
-                        res_json = json.loads(resp.read().decode("utf-8"))
-                        choices = res_json.get("choices", [])
-                        if not choices:
-                            return _err("NVIDIA API returned no response choices.")
-                        reply_text = choices[0].get("message", {}).get("content", "")
-                        return _ok({"text": reply_text, "model": model_name, "provider": "nvidia"})
-                except urllib.error.HTTPError as he:
-                    err_body = he.read().decode("utf-8", errors="replace")
-                    try:
-                        err_parsed = json.loads(err_body)
-                        msg = err_parsed.get("error", {}).get("message", err_body)
-                    except Exception:
-                        msg = err_body or str(he)
-                    return _err(f"NVIDIA API Error ({he.code}): {msg}")
-
-            else:
-                return _err(f"Unsupported AI provider '{provider}'. Must be 'gemini' or 'nvidia'.")
+            # If loop finished after max iterations, return the last response
+            return _ok({
+                "text": raw_reply,
+                "reasoning": overall_reasoning.strip(),
+                "agent_steps": agent_steps,
+                "model": model_name,
+                "provider": provider
+            })
 
         except Exception as e:
             return _err(str(e))

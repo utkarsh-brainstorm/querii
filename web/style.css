@@ -1200,3 +1200,188 @@ tr.selected-row td { background: var(--accent-bg) !important; }
   border-color: var(--accent);
 }
 
+/* ── Multi-Table Selector Component ───────────────────────────── */
+.multi-table-wrap {
+  position: relative;
+  width: 100%;
+}
+.multi-table-trigger {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text-body);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms;
+}
+.multi-table-trigger:hover,
+.multi-table-trigger.active {
+  border-color: var(--accent);
+}
+.multi-table-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-table-arrow {
+  font-size: 9px;
+  opacity: 0.6;
+  margin-left: 4px;
+}
+.multi-table-popover {
+  position: fixed;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.22);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 11px;
+  min-width: 240px;
+  max-width: 360px;
+}
+.multi-table-popover-header {
+  padding: 6px 10px;
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.multi-table-popover-actions {
+  display: flex;
+  gap: 8px;
+  font-size: 10.5px;
+}
+.multi-table-popover-actions a {
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+}
+.multi-table-popover-actions a:hover {
+  text-decoration: underline;
+}
+.multi-table-list {
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.multi-table-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 80ms;
+}
+.multi-table-item:hover {
+  background: var(--bg-muted);
+}
+.multi-table-item input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+.multi-table-item-name {
+  flex: 1;
+  font-family: monospace;
+  font-size: 10.5px;
+  color: var(--text-body);
+}
+.multi-table-item-count {
+  font-size: 9.5px;
+  color: var(--text-dim);
+}
+
+/* ── AI Reasoning & Agentic Accordions ────────────────────────── */
+.ai-reasoning-accordion,
+.ai-agent-steps-accordion {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.ai-accordion-summary {
+  padding: 6px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-mid);
+  background: var(--bg-muted);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms;
+}
+.ai-accordion-summary:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.ai-reasoning-body {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  color: var(--text-body);
+  border-top: 1px solid var(--border);
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.45;
+  background: var(--bg-surface);
+  font-family: inherit;
+}
+.ai-steps-body {
+  padding: 6px 10px;
+  font-size: 10px;
+  font-family: monospace;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ai-step-row {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ai-step-action {
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ai-step-obs {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Mutation Result Card ─────────────────────────────────────── */
+.mutation-result-card {
+  padding: 32px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+

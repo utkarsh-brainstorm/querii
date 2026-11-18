@@ -89,6 +89,16 @@ CREATE TABLE IF NOT EXISTS query_log (
     source        TEXT DEFAULT 'manual',
     builder_state TEXT
 );
+
+CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL,
+    provider      TEXT,
+    model         TEXT,
+    messages_json TEXT NOT NULL,
+    created_at    DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 
@@ -100,6 +110,21 @@ def init_db() -> None:
         # Migration: ensure builder_state column exists in existing databases
         try:
             conn.execute("ALTER TABLE query_log ADD COLUMN builder_state TEXT")
+        except Exception:
+            pass
+        # Migration: ensure ai_chat_sessions exists
+        try:
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+                id            TEXT PRIMARY KEY,
+                title         TEXT NOT NULL,
+                provider      TEXT,
+                model         TEXT,
+                messages_json TEXT NOT NULL,
+                created_at    DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at    DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+            )
+            """)
         except Exception:
             pass
         conn.commit()
@@ -434,3 +459,70 @@ def clear_query_log() -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# AI Chat Sessions & Tab Persistence
+# ---------------------------------------------------------------------------
+
+def save_ai_session(session_id: str, title: str, provider: str, model: str, messages_json: str) -> None:
+    """Save or update an AI conversation session in SQLite."""
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO ai_chat_sessions (id, title, provider, model, messages_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                provider = excluded.provider,
+                model = excluded.model,
+                messages_json = excluded.messages_json,
+                updated_at = excluded.updated_at
+            """,
+            (session_id, title, provider, model, messages_json),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_ai_sessions(limit: int = 50) -> List[Dict]:
+    """Retrieve saved AI conversation sessions ordered by most recently updated."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, title, provider, model, messages_json, created_at, updated_at
+            FROM ai_chat_sessions
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_ai_session(session_id: str) -> bool:
+    """Delete an AI conversation session."""
+    conn = _connect()
+    try:
+        cursor = conn.execute("DELETE FROM ai_chat_sessions WHERE id = ?", (session_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def save_persisted_tabs(tabs_json: str) -> None:
+    """Persist active tabs layout and states to app_settings."""
+    set_setting("persisted_tabs_session", tabs_json)
+
+
+def get_persisted_tabs() -> Optional[str]:
+    """Retrieve persisted tabs layout and states from app_settings."""
+    val = get_setting("persisted_tabs_session")
+    return val if val else None
+
