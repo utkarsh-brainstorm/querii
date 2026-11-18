@@ -215,71 +215,148 @@
     <!-- CENTER: SQL + Results -->
     <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0">
 
-      <!-- SQL Bar -->
-      <div id="sql-panel" class="flex-none flex flex-col bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden" style="height: 180px; min-height: 80px;">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
-          <div class="flex items-center gap-2">
-            <span class="panel-title">SQL</span>
-            <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter to run</span>
-          </div>
-          <div class="flex items-center gap-1">
-            <button id="btn-sql-templates"  class="btn-ghost text-[10px] px-2 h-6" onclick="openTemplates()">📝 Templates</button>
-            <button id="btn-sql-explain"     class="btn-ghost text-[10px] px-2 h-6" onclick="explainSql()">💡 Explain</button>
-            <button id="btn-schema-toggle"   class="btn-ghost text-[10px] px-2 h-6">📋 Schema</button>
-            <button id="btn-sql-clear"       class="btn-ghost text-[10px] px-2 h-6">Clear</button>
-            <button id="btn-sql-run"         class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
-          </div>
+      <!-- Navigation Bar for Tabs (Just above SQL editor, matching its width) -->
+      <div id="tab-nav-bar" class="flex-none flex items-center justify-between mb-1.5 px-0.5" style="min-height: 28px;">
+        <div id="tab-strip" class="flex items-center gap-1 overflow-x-auto min-w-0 flex-1 py-0.5">
+          <!-- Dynamic tab pills rendered here -->
         </div>
-        <div class="flex-1 flex overflow-hidden min-h-0">
-          <div id="sql-lines" class="sql-lines">1</div>
-          <textarea id="sql-editor"
-                    class="sql-editor flex-1"
-                    spellcheck="false"
-                    placeholder="-- Write SQL (SELECT, INSERT, UPDATE, DELETE, ALTER), or use Search above…"></textarea>
-          <div id="schema-panel" class="hidden schema-ref overflow-y-auto shrink-0" style="width:340px"></div>
+        <div class="flex items-center gap-1 shrink-0 ml-2">
+          <button id="btn-add-tab" class="btn-ghost text-[10px] h-6 px-2" title="New Query Tab (Ctrl+T)" onclick="createNewTab()">+ Tab</button>
+          <button id="btn-split-toggle" class="btn-ghost text-[10px] h-6 px-2 font-medium" title="Toggle Split View Comparison" onclick="toggleSplitView()">◫ Split View</button>
         </div>
-        <div id="sql-status" class="shrink-0 px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
       </div>
 
-      <!-- SQL Explainer panel (collapsible) -->
-      <div id="explainer-panel" class="hidden flex-none bg-[var(--bg-surface)] border border-[var(--border)] border-t-0 rounded-b-xl mx-0 px-4 py-3 text-[11px] leading-relaxed text-[var(--text-body)]">
-        <div class="flex items-center justify-between mb-2">
-          <span class="font-semibold text-[var(--text-head)]">💡 SQL Explainer</span>
-          <button onclick="closeExplainer()" class="text-[10px] text-[var(--text-dim)] hover:underline">✕ Close</button>
-        </div>
-        <div id="explainer-content"></div>
-      </div>
+      <!-- Panes Container (Single pane or side-by-side dual panes) -->
+      <div id="panes-container" class="flex-1 flex overflow-hidden min-h-0 gap-0">
 
-      <!-- Vertical Resize -->
-      <div class="resize-handle-v" id="rh-sql"></div>
+        <!-- PANE A (Primary) -->
+        <div id="pane-primary" class="flex-1 flex flex-col overflow-hidden min-w-[280px] focused-pane" onclick="setFocusedPane('primary')">
+          <!-- SQL Bar -->
+          <div id="sql-panel" class="flex-none flex flex-col bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden" style="height: 180px; min-height: 80px;">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
+              <div class="flex items-center gap-2">
+                <span id="primary-pane-title" class="panel-title">SQL</span>
+                <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter to run</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-sql-templates"  class="btn-ghost text-[10px] px-2 h-6" onclick="openTemplates()">📝 Templates</button>
+                <button id="btn-sql-explain"     class="btn-ghost text-[10px] px-2 h-6" onclick="explainSql()">💡 Explain</button>
+                <button id="btn-schema-toggle"   class="btn-ghost text-[10px] px-2 h-6">📋 Schema</button>
+                <button id="btn-sql-clear"       class="btn-ghost text-[10px] px-2 h-6">Clear</button>
+                <button id="btn-sql-run"         class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
+              </div>
+            </div>
+            <div class="flex-1 flex overflow-hidden min-h-0">
+              <div id="sql-lines" class="sql-lines">1</div>
+              <textarea id="sql-editor"
+                        class="sql-editor flex-1"
+                        spellcheck="false"
+                        placeholder="-- Write SQL (SELECT, INSERT, UPDATE, DELETE, ALTER), or use Search above…"></textarea>
+              <div id="schema-panel" class="hidden schema-ref overflow-y-auto shrink-0" style="width:340px"></div>
+            </div>
+            <div id="sql-status" class="shrink-0 px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
+          </div>
 
-      <!-- Results -->
-      <div class="flex-1 flex flex-col overflow-hidden min-h-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
-          <div class="flex items-center gap-2">
-            <span id="results-title" class="panel-title">Results</span>
-            <span id="results-count" class="text-[10px] font-mono text-[var(--text-dim)]"></span>
-            <input id="row-search-input" type="text" class="input-sm ml-2 w-32 md:w-48 text-[10px]" placeholder="🔍 Global Search (Enter to next)" oninput="filterResultRows(this.value)" onkeydown="nextResultRowMatch(event)" style="display:none">
+          <!-- SQL Explainer panel (collapsible) -->
+          <div id="explainer-panel" class="hidden flex-none bg-[var(--bg-surface)] border border-[var(--border)] border-t-0 rounded-b-xl mx-0 px-4 py-3 text-[11px] leading-relaxed text-[var(--text-body)]">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-semibold text-[var(--text-head)]">💡 SQL Explainer</span>
+              <button onclick="closeExplainer()" class="text-[10px] text-[var(--text-dim)] hover:underline">✕ Close</button>
+            </div>
+            <div id="explainer-content"></div>
           </div>
-          <div class="flex items-center gap-1">
-            <button id="btn-export-csv" class="btn-ghost text-[10px] h-6 px-2" disabled>⬇ CSV</button>
-            <button id="btn-copy-csv"   class="btn-ghost text-[10px] h-6 px-2" disabled onclick="copyCsv()">📋 Copy</button>
-            <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
+
+          <!-- Vertical Resize -->
+          <div class="resize-handle-v" id="rh-sql"></div>
+
+          <!-- Results -->
+          <div id="results-panel" class="flex-1 flex flex-col overflow-hidden min-h-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
+              <div class="flex items-center gap-2">
+                <span id="results-title" class="panel-title">Results</span>
+                <span id="results-count" class="text-[10px] font-mono text-[var(--text-dim)]"></span>
+                <input id="row-search-input" type="text" class="input-sm ml-2 w-32 md:w-48 text-[10px]" placeholder="🔍 Global Search (Enter to next)" oninput="filterResultRows(this.value)" onkeydown="nextResultRowMatch(event)" style="display:none">
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-export-csv" class="btn-ghost text-[10px] h-6 px-2" disabled>⬇ CSV</button>
+                <button id="btn-copy-csv"   class="btn-ghost text-[10px] h-6 px-2" disabled onclick="copyCsv()">📋 Copy</button>
+                <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
+              </div>
+            </div>
+            <!-- Pagination bar -->
+            <div id="results-pagination" class="flex-none border-b border-[var(--border)] bg-[var(--bg-muted)] text-[10px]"></div>
+            <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+              <table id="results-table" class="results-tbl w-full text-[11px]">
+                <thead id="results-head" class="sticky top-0 z-10"></thead>
+                <tbody id="results-body"></tbody>
+              </table>
+              <div id="results-empty" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div class="text-5xl mb-3 opacity-10">⚡</div>
+                <div class="text-[13px] font-medium text-[var(--text-mid)]">No results yet</div>
+                <div class="text-[11px] text-[var(--text-dim)] mt-1">Import a file, then search or run a query</div>
+              </div>
+            </div>
           </div>
         </div>
-        <!-- Pagination bar -->
-        <div id="results-pagination" class="flex-none border-b border-[var(--border)] bg-[var(--bg-muted)] text-[10px]"></div>
-        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
-          <table id="results-table" class="results-tbl w-full text-[11px]">
-            <thead id="results-head" class="sticky top-0 z-10"></thead>
-            <tbody id="results-body"></tbody>
-          </table>
-          <div id="results-empty" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div class="text-5xl mb-3 opacity-10">⚡</div>
-            <div class="text-[13px] font-medium text-[var(--text-mid)]">No results yet</div>
-            <div class="text-[11px] text-[var(--text-dim)] mt-1">Import a file, then search or run a query</div>
+
+        <!-- SPLIT RESIZE DIVIDER (visible only in split mode) -->
+        <div id="rh-split" class="hidden resize-handle-h"></div>
+
+        <!-- PANE B (Secondary, visible only in split mode) -->
+        <div id="pane-secondary" class="hidden flex-1 flex flex-col overflow-hidden min-w-[280px]" onclick="setFocusedPane('secondary')">
+          <!-- Secondary SQL Bar -->
+          <div id="sql-panel-b" class="flex-none flex flex-col bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden" style="height: 180px; min-height: 80px;">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
+              <div class="flex items-center gap-2">
+                <select id="split-tab-select-b" class="select-sm text-[10px] h-6" onchange="onSecondaryTabChange(this.value)">
+                  <!-- Dropdown of tabs to show in Pane B -->
+                </select>
+                <span class="text-[10px] text-[var(--text-dim)] font-mono">Pane B</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button class="btn-ghost text-[10px] px-2 h-6" onclick="closeSplitView()" title="Close Split View">✕ Close Split</button>
+                <button id="btn-sql-run-b" class="btn-primary text-[11px] h-6 px-3" onclick="runSqlSecondary()">▶ Run</button>
+              </div>
+            </div>
+            <div class="flex-1 flex overflow-hidden min-h-0">
+              <div id="sql-lines-b" class="sql-lines">1</div>
+              <textarea id="sql-editor-b"
+                        class="sql-editor flex-1"
+                        spellcheck="false"
+                        placeholder="-- SQL query for comparison pane…"></textarea>
+            </div>
+            <div id="sql-status-b" class="shrink-0 px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
+          </div>
+
+          <!-- Vertical Resize for Pane B -->
+          <div class="resize-handle-v" id="rh-sql-b"></div>
+
+          <!-- Results for Pane B -->
+          <div id="results-panel-b" class="flex-1 flex flex-col overflow-hidden min-h-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
+              <div class="flex items-center gap-2">
+                <span id="results-title-b" class="panel-title">Results B</span>
+                <span id="results-count-b" class="text-[10px] font-mono text-[var(--text-dim)]"></span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-export-csv-b" class="btn-ghost text-[10px] h-6 px-2" disabled onclick="exportCsvSecondary()">⬇ CSV</button>
+                <button id="btn-copy-csv-b"   class="btn-ghost text-[10px] h-6 px-2" disabled onclick="copyCsvSecondary()">📋 Copy</button>
+              </div>
+            </div>
+            <div id="results-pagination-b" class="flex-none border-b border-[var(--border)] bg-[var(--bg-muted)] text-[10px]"></div>
+            <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+              <table id="results-table-b" class="results-tbl w-full text-[11px]">
+                <thead id="results-head-b" class="sticky top-0 z-10"></thead>
+                <tbody id="results-body-b"></tbody>
+              </table>
+              <div id="results-empty-b" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div class="text-4xl mb-2 opacity-10">⚡</div>
+                <div class="text-[12px] font-medium text-[var(--text-mid)]">No comparison results yet</div>
+              </div>
+            </div>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -389,6 +466,7 @@
     <div class="px-4 py-3 space-y-3">
       <div class="flex items-center gap-3">
         <p class="text-[11px] text-[var(--text-dim)] flex-1">Check tables to <strong>work with multiple at once</strong> (JOIN mode). Single-check for normal use.</p>
+        <input id="filelist-search" type="text" class="input-sm text-[11px] h-7 w-48" placeholder="🔍 Search tables..." oninput="filterFileList(this.value)">
         <button class="btn-ghost text-[11px] px-3" onclick="openNewCsvEditor()">+ New CSV</button>
         <button id="btn-use-selected" class="btn-primary text-[11px] px-4" onclick="useSelectedTables()">Use Selected ▶</button>
       </div>
@@ -397,9 +475,13 @@
           <thead>
             <tr class="bg-[var(--bg-muted)]">
               <th class="tbl-head w-8"><input type="checkbox" id="filelist-checkall" title="Select all" onchange="toggleCheckAll(this)"></th>
-              <th class="tbl-head">Table (in DB)</th>
+              <th class="tbl-head" style="cursor:pointer;user-select:none" onclick="toggleFileListSort('table')" title="Click to sort by table name">
+                Table (in DB) <span id="filelist-sort-table" class="font-normal opacity-70">↕</span>
+              </th>
               <th class="tbl-head">Source file</th>
-              <th class="tbl-head">Imported at</th>
+              <th class="tbl-head" style="cursor:pointer;user-select:none" onclick="toggleFileListSort('imported_at')" title="Click to sort by date imported">
+                Imported at <span id="filelist-sort-date" class="font-normal opacity-70">▼</span>
+              </th>
               <th class="tbl-head text-right">Rows</th>
               <th class="tbl-head text-right">Cols</th>
               <th class="tbl-head text-center">Actions</th>
@@ -610,10 +692,11 @@
     </div>
 
     <!-- Query Log -->
-    <div id="tab-querylog" class="settings-tab-body hidden flex flex-col h-[300px]">
-      <div class="flex items-center justify-between mb-2">
-        <p class="text-[11px] text-[var(--text-dim)]">Last 100 queries (filter + manual SQL)</p>
-        <button class="text-[10px] text-[var(--danger)] hover:underline" onclick="clearQueryLog()">Clear Log</button>
+    <div id="tab-querylog" class="settings-tab-body hidden flex flex-col h-[340px]">
+      <div class="flex items-center justify-between mb-2 gap-2">
+        <p class="text-[11px] text-[var(--text-dim)] shrink-0">Recent queries (up to 500)</p>
+        <input id="qlog-search" type="text" class="input-sm flex-1 text-[10px] h-6 px-2" placeholder="🔍 Search queries (text or table)..." oninput="filterQueryLog(this.value)">
+        <button class="text-[10px] text-[var(--danger)] hover:underline shrink-0" onclick="clearQueryLog()">Clear Log</button>
       </div>
       <div id="query-log-list" class="flex-1 overflow-y-auto space-y-2 text-[10px] pr-2"></div>
     </div>
@@ -1073,6 +1156,33 @@ DROP TABLE old_data;"></textarea>
       </div>
     </div>
   </div><!-- /ultra-dev-overlay -->
+
+  <!-- TODDLER-PROOF SAFETY MODAL FOR DESTRUCTIVE DML / DDL -->
+  <div id="modal-safety-warning" class="modal hidden" style="width:520px;max-width:95vw;border:2px solid #ef4444;box-shadow:0 12px 36px rgba(239,68,68,0.3)">
+    <div class="modal-header" style="background:#fef2f2;border-bottom:1px solid #fecaca">
+      <span style="color:#b91c1c;font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px">
+        ⚠️ High-Risk Action Warning
+      </span>
+      <button class="modal-close" onclick="closeSafetyModal()">✕</button>
+    </div>
+    <div class="px-5 py-4 space-y-3">
+      <div id="safety-warning-badge" style="background:#fee2e2;color:#991b1b;border-radius:6px;padding:9px 12px;font-size:12px;font-weight:700">
+        <!-- Badge text -->
+      </div>
+      <div id="safety-warning-details" class="text-[11.5px] leading-relaxed text-[var(--text-body)]" style="white-space:pre-line">
+        <!-- Toddler-proof explanation -->
+      </div>
+      <div style="background:var(--bg-muted);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:11px;max-height:100px;overflow-y:auto" id="safety-warning-sql">
+        <!-- SQL query snippet -->
+      </div>
+    </div>
+    <div class="modal-footer gap-2" style="background:var(--bg-muted);border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button class="btn-ghost text-[11px] px-3.5 h-7" onclick="closeSafetyModal()">Cancel (Keep Safe)</button>
+      <button id="safety-btn-confirm" class="text-[11px] px-4 h-7 rounded font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled onclick="executeConfirmedDestructiveQuery()">
+        Wait (2s)...
+      </button>
+    </div>
+  </div>
 
   <!-- TOAST -->
   <div id="toast" class="hidden fixed bottom-4 right-4 z-50 text-[12px] font-medium px-4 py-2.5 rounded shadow-xl max-w-xs"></div>

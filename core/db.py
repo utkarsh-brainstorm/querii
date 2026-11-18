@@ -49,9 +49,13 @@ def get_db_path() -> str:
 def _connect() -> sqlite3.Connection:
     db_path = get_db_path()
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")  # Power-cut & crash safe in WAL mode, highly performant
+    conn.execute("PRAGMA cache_size=-64000")   # 64MB RAM page cache
+    conn.execute("PRAGMA mmap_size=268435456") # 256MB memory-mapped I/O for instant reads
+    conn.execute("PRAGMA temp_store=MEMORY")   # Memory temporary store
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -78,21 +82,40 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 CREATE TABLE IF NOT EXISTS query_log (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    sql_text   TEXT NOT NULL,
-    ran_at     DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
-    row_count  INTEGER DEFAULT 0,
-    source     TEXT DEFAULT 'manual'
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    sql_text      TEXT NOT NULL,
+    ran_at        DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+    row_count     INTEGER DEFAULT 0,
+    source        TEXT DEFAULT 'manual',
+    builder_state TEXT
 );
 """
 
 
 def init_db() -> None:
-    """Create internal management tables. Safe to call multiple times."""
+    """Create internal management tables and run lightweight migrations. Safe to call multiple times."""
     conn = _connect()
     try:
         conn.executescript(_INTERNAL_SCHEMA)
+        # Migration: ensure builder_state column exists in existing databases
+        try:
+            conn.execute("ALTER TABLE query_log ADD COLUMN builder_state TEXT")
+        except Exception:
+            pass
         conn.commit()
+    finally:
+        conn.close()
+
+
+def checkpoint_db() -> None:
+    """Safely flush WAL to the main database file and optimize on shutdown."""
+    conn = _connect()
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("PRAGMA optimize")
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Checkpoint warning: {e}")
     finally:
         conn.close()
 
@@ -334,8 +357,7 @@ def get_table_column_meta(table_name: str) -> List[Dict]:
 def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict], int]:
     """
     Execute SQL statement.
-    Allows: SELECT, WITH, PRAGMA, INSERT, UPDATE, DELETE, ALTER TABLE, CREATE TABLE.
-    Blocks: DROP statements (e.g. DROP TABLE), which are reserved for Developer Mode (Settings -> Advanced).
+    Allows all standard SQL: SELECT, WITH, PRAGMA, INSERT, UPDATE, DELETE, ALTER TABLE, CREATE TABLE, DROP TABLE, DROP VIEW, TRUNCATE.
     Returns (columns, rows, affected_rows).
     """
     import re
@@ -344,15 +366,6 @@ def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Di
     if not clean:
         return [], [], 0
 
-    first_word = clean.split()[0].upper() if clean.split() else ""
-
-    # Block standalone DROP statements (DROP TABLE, DROP VIEW, DROP INDEX, etc.)
-    # Exception: ALTER TABLE ... DROP COLUMN ... is an ALTER statement, which is permitted!
-    if first_word == "DROP" or re.search(r"\bDROP\s+(TABLE|VIEW|INDEX|TRIGGER|DATABASE)\b", clean, re.IGNORECASE):
-        raise ValueError(
-            "DROP operations (e.g. DROP TABLE) can only be executed in Developer Mode (Settings → Advanced)."
-        )
-
     conn = _connect()
     try:
         cur = conn.execute(sql, params)
@@ -360,6 +373,14 @@ def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Di
         cols = [d[0] for d in cur.description] if cur.description else []
         rows = [dict(r) for r in cur.fetchall()] if cur.description else []
         affected = cur.rowcount
+
+        # If a table was dropped, clean up import_log
+        drop_match = re.search(r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?[\"']?([a-zA-Z0-9_]+)[\"']?", clean, re.IGNORECASE)
+        if drop_match:
+            dropped_tbl = drop_match.group(1)
+            conn.execute("DELETE FROM import_log WHERE table_name = ?", (dropped_tbl,))
+            conn.commit()
+
         return cols, rows, affected
     finally:
         conn.close()
@@ -375,19 +396,19 @@ def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
 # Query log
 # ---------------------------------------------------------------------------
 
-def log_query(sql: str, row_count: int = 0, source: str = "manual") -> None:
+def log_query(sql: str, row_count: int = 0, source: str = "manual", builder_state: Optional[str] = None) -> None:
     sql_stripped = sql.strip()
-    if not sql_stripped or len(sql_stripped) < 8:
+    if not sql_stripped or len(sql_stripped) < 4:
         return
     conn = _connect()
     try:
         conn.execute(
-            "INSERT INTO query_log (sql_text, row_count, source) VALUES (?, ?, ?)",
-            (sql_stripped, row_count, source),
+            "INSERT INTO query_log (sql_text, row_count, source, builder_state) VALUES (?, ?, ?, ?)",
+            (sql_stripped, row_count, source, builder_state),
         )
         conn.execute(
             "DELETE FROM query_log WHERE id NOT IN "
-            "(SELECT id FROM query_log ORDER BY id DESC LIMIT 100)"
+            "(SELECT id FROM query_log ORDER BY id DESC LIMIT 500)"
         )
         conn.commit()
     finally:
@@ -398,8 +419,8 @@ def get_query_log() -> List[Dict]:
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT id, sql_text, ran_at, row_count, source "
-            "FROM query_log ORDER BY id DESC LIMIT 100"
+            "SELECT id, sql_text, ran_at, row_count, source, builder_state "
+            "FROM query_log ORDER BY id DESC LIMIT 500"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

@@ -71,6 +71,13 @@ def _parse_filter_groups(groups_raw: list) -> List[FilterGroup]:
 
 
 class Api:
+    _pending_tab_states: Dict[str, str] = {}
+    _window_creator_fn = None
+
+    @classmethod
+    def set_window_creator(cls, fn):
+        cls._window_creator_fn = fn
+
     def __init__(self):
         self._window: Optional[webview.Window] = None
         self._import_lock = threading.Lock()
@@ -81,6 +88,38 @@ class Api:
 
     def set_window(self, window: webview.Window):
         self._window = window
+
+    def get_table_row_count(self, table_name: str) -> dict:
+        """Fetch row count of a table quickly for safety inspection dialogs."""
+        try:
+            sanitized = table_name.replace('"', '""').strip()
+            cols, rows = db.execute_query(f'SELECT COUNT(*) as cnt FROM "{sanitized}"')
+            cnt = rows[0]["cnt"] if rows else 0
+            return _ok(cnt)
+        except Exception as e:
+            return _err(str(e))
+
+    def create_new_window(self, tab_state_json: str = "", title: str = "Query") -> dict:
+        """Spawn a new OS application window hosting the detached tab."""
+        import uuid
+        try:
+            if not Api._window_creator_fn:
+                return _err("Window creator not initialized")
+            new_id = f"win_{uuid.uuid4().hex[:8]}"
+            if tab_state_json:
+                Api._pending_tab_states[new_id] = tab_state_json
+            Api._window_creator_fn(new_id, title)
+            return _ok({"window_id": new_id})
+        except Exception as e:
+            return _err(str(e))
+
+    def get_initial_tab_state(self, window_id: str) -> dict:
+        """Retrieve initial tab state when opening a detached window."""
+        try:
+            state = Api._pending_tab_states.pop(window_id, None)
+            return _ok(state)
+        except Exception as e:
+            return _err(str(e))
 
     # ----------------------------------------------------------------
     # Settings
@@ -431,8 +470,21 @@ class Api:
             self._last_result_cols = cols
             self._last_result_rows = data
 
-            # Log the READABLE (display) SQL, not the parameterised one
-            db.log_query(sql_display, len(data), source="filter")
+            # Log the READABLE (display) SQL, and save builder state for rehydration
+            builder_state_dict = {
+                "table": table,
+                "groups": groups_raw,
+                "sort_col": sort_col,
+                "sort_dir": sort_dir,
+                "limit": limit,
+                "select_exprs": sel_e,
+                "select_labels": sel_l,
+                "group_by_exprs": grp_e,
+                "having": having,
+                "join_tables": join_t,
+                "join_clauses": join_c,
+            }
+            db.log_query(sql_display, len(data), source="filter", builder_state=json.dumps(builder_state_dict))
 
             return _ok({
                 "columns": cols,

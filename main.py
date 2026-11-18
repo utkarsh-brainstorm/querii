@@ -111,8 +111,48 @@ def _run_app() -> None:
         background_color = "#F7F7F8",
     )
 
-    api.set_window(window)
-    window.events.closed += lambda: os._exit(0)
+    _active_windows: set = set()
+
+    def _setup_window(win: webview.Window, win_api: Api) -> None:
+        _active_windows.add(win)
+        win_api.set_window(win)
+
+        def _on_closing() -> None:
+            try:
+                db.checkpoint_db()
+            except Exception:
+                pass
+
+        def _on_closed() -> None:
+            _active_windows.discard(win)
+            if len(_active_windows) == 0:
+                try:
+                    db.checkpoint_db()
+                except Exception:
+                    pass
+                os._exit(0)
+
+        win.events.closing += _on_closing
+        win.events.closed += _on_closed
+
+    def _create_secondary_window(win_id: str, win_title: str):
+        sub_api = Api()
+        url = f"file://{html_path}?window_id={win_id}"
+        sub_win = webview.create_window(
+            title            = f"Querii — {win_title}",
+            url              = url,
+            js_api           = sub_api,
+            width            = 1024,
+            height           = 768,
+            min_size         = (800, 600),
+            easy_drag        = False,
+            background_color = "#F7F7F8",
+        )
+        _setup_window(sub_win, sub_api)
+        return sub_win
+
+    Api.set_window_creator(_create_secondary_window)
+    _setup_window(window, api)
 
     # ── Start the event loop (picks best available native renderer) ─────────
     start_kwargs: dict = {
