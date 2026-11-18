@@ -1227,12 +1227,21 @@ function addFilterFromStats() {
 
 /* ── Right panel tabs ───────────────────────────────────────────────── */
 function switchRightTab(tab) {
-  ['schema', 'reports'].forEach(function(t) {
+  ['schema', 'ai'].forEach(function(t) {
     var btn = document.getElementById('rt-' + t);
     var pnl = document.getElementById('right-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
     if (pnl) pnl.classList.toggle('hidden', t !== tab);
   });
+  if (tab === 'ai') {
+    updateAiContextTableDropdown();
+    renderActiveTabAiMessages();
+    updateAiProviderBadge();
+    setTimeout(function() {
+      var inp = document.getElementById('ai-chat-input');
+      if (inp) inp.focus();
+    }, 50);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -4403,7 +4412,9 @@ function createNewTab(initialData) {
     limit: (initialData && initialData.limit) || '5000',
     results: (initialData && initialData.results) || null,
     currentPage: 0,
-    sqlStatus: (initialData && initialData.sqlStatus) || ''
+    sqlStatus: (initialData && initialData.sqlStatus) || '',
+    aiChatHistory: (initialData && initialData.aiChatHistory) ? initialData.aiChatHistory.slice() : [],
+    aiContextTable: (initialData && initialData.aiContextTable) || '__ACTIVE__'
   };
 
   _tabs.push(newTab);
@@ -4460,6 +4471,14 @@ function saveTabState(tabId, pane) {
 
     if (_lastResults) tab.results = _lastResults;
     tab.currentPage = _currentPage;
+
+    if (_activeTabAiHistory) {
+      tab.aiChatHistory = _activeTabAiHistory.slice();
+    }
+    var ctxSel = document.getElementById('ai-context-table-sel');
+    if (ctxSel) {
+      tab.aiContextTable = ctxSel.value;
+    }
   }
 }
 
@@ -4542,6 +4561,13 @@ function restoreTabState(tabId, pane) {
     } else {
       renderResults([], [], 0);
     }
+
+    _activeTabAiHistory = (tab.aiChatHistory && Array.isArray(tab.aiChatHistory)) ? tab.aiChatHistory.slice() : [];
+    updateAiContextTableDropdown();
+    var ctxSel = document.getElementById('ai-context-table-sel');
+    if (ctxSel && tab.aiContextTable) ctxSel.value = tab.aiContextTable;
+    renderActiveTabAiMessages();
+    updateAiProviderBadge();
   }
 }
 
@@ -4605,10 +4631,14 @@ function renameTab(tabId, newTitle) {
   }
 }
 
+var _draggingTabId = null;
+
 function renderTabStrip() {
   var strip = document.getElementById('tab-strip');
   if (!strip) return;
   strip.innerHTML = '';
+
+  var isDetachedWindow = !!(new URLSearchParams(window.location.search).get('window_id'));
 
   _tabs.forEach(function(t) {
     var isPrimary = (t.id === _activeTabId);
@@ -4616,32 +4646,64 @@ function renderTabStrip() {
 
     var pill = document.createElement('div');
     pill.className = 'tab-strip-item' + (isPrimary ? ' active' : '') + (isSecondary ? ' active-secondary' : '');
-    pill.title = t.title + ' (double click to rename, drag to reorder/detach)';
+    pill.title = t.title + ' (double-click to rename, drag out to detach)';
     pill.draggable = true;
 
     pill.ondragstart = function(e) {
-      e.dataTransfer.setData('text/plain', t.id);
+      saveTabState(t.id);
+      _draggingTabId = t.id;
+      var transferPayload = JSON.stringify({
+        queriiTab: true,
+        tab: t,
+        sourceWindowId: new URLSearchParams(window.location.search).get('window_id') || 'main'
+      });
+      e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData('application/json', transferPayload);
+      e.dataTransfer.setData('text/plain', 'querii_tab:' + transferPayload);
       pill.classList.add('tab-dragging');
+
+      var dz = document.getElementById('tab-detach-dropzone');
+      if (dz) dz.classList.remove('hidden');
     };
+
     pill.ondragend = function(e) {
       pill.classList.remove('tab-dragging');
-      if (e.clientX < 0 || e.clientY < 0 || e.clientX > window.innerWidth || e.clientY > window.innerHeight) {
-        detachTabToNewWindow(t.id);
-      }
+      var dz = document.getElementById('tab-detach-dropzone');
+      if (dz) dz.classList.add('hidden');
+
+      // Check if this tab was transferred to another window
+      apiCall('is_tab_transferred', t.id).then(function(transferred) {
+        if (transferred) {
+          closeTab(t.id);
+        } else if (e.clientX < 0 || e.clientY < 0 || e.clientX > window.innerWidth || e.clientY > window.innerHeight) {
+          detachTabToNewWindow(t.id);
+        }
+      }).catch(function() {
+        if (e.clientX < 0 || e.clientY < 0 || e.clientX > window.innerWidth || e.clientY > window.innerHeight) {
+          detachTabToNewWindow(t.id);
+        }
+      });
     };
+
     pill.ondragover = function(e) { e.preventDefault(); };
     pill.ondrop = function(e) {
       e.preventDefault();
-      var srcId = e.dataTransfer.getData('text/plain');
-      if (srcId && srcId !== t.id) {
-        var srcIdx = _tabs.findIndex(function(x) { return x.id === srcId; });
-        var dstIdx = _tabs.findIndex(function(x) { return x.id === t.id; });
-        if (srcIdx !== -1 && dstIdx !== -1) {
-          var moved = _tabs.splice(srcIdx, 1)[0];
-          _tabs.splice(dstIdx, 0, moved);
-          renderTabStrip();
+      var raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/json');
+      if (!raw) return;
+      if (raw.startsWith('querii_tab:')) raw = raw.slice('querii_tab:'.length);
+      try {
+        var parsed = JSON.parse(raw);
+        var srcId = parsed.tab ? parsed.tab.id : (parsed.id || raw);
+        if (srcId && srcId !== t.id) {
+          var srcIdx = _tabs.findIndex(function(x) { return x.id === srcId; });
+          var dstIdx = _tabs.findIndex(function(x) { return x.id === t.id; });
+          if (srcIdx !== -1 && dstIdx !== -1) {
+            var moved = _tabs.splice(srcIdx, 1)[0];
+            _tabs.splice(dstIdx, 0, moved);
+            renderTabStrip();
+          }
         }
-      }
+      } catch(err) {}
     };
 
     pill.onclick = function() {
@@ -4687,6 +4749,79 @@ function renderTabStrip() {
 
     strip.appendChild(pill);
   });
+
+  // Setup tab strip drop target for attaching tabs from other windows
+  strip.ondragover = function(e) {
+    e.preventDefault();
+    strip.classList.add('tab-drop-active');
+  };
+  strip.ondragleave = function(e) {
+    strip.classList.remove('tab-drop-active');
+  };
+  strip.ondrop = function(e) {
+    e.preventDefault();
+    strip.classList.remove('tab-drop-active');
+    var raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/json');
+    if (!raw) return;
+    if (raw.startsWith('querii_tab:')) raw = raw.slice('querii_tab:'.length);
+    try {
+      var parsed = JSON.parse(raw);
+      var tabData = parsed.tab || parsed;
+      if (tabData && tabData.id) {
+        var existing = _tabs.find(function(x) { return x.id === tabData.id; });
+        if (!existing) {
+          _tabs.push(tabData);
+          renderTabStrip();
+          switchTab(tabData.id);
+          apiCall('notify_tab_transferred', tabData.id);
+          toast('✓ Tab "' + (tabData.title || 'Tab') + '" attached to this window!');
+        } else {
+          switchTab(tabData.id);
+        }
+      }
+    } catch(err) {
+      console.error('Failed to attach tab:', err);
+    }
+  };
+
+  // Setup Detach dropzone event listeners
+  var dz = document.getElementById('tab-detach-dropzone');
+  if (dz) {
+    dz.ondragover = function(e) {
+      e.preventDefault();
+      dz.classList.add('drag-hover');
+    };
+    dz.ondragleave = function(e) {
+      dz.classList.remove('drag-hover');
+    };
+    dz.ondrop = function(e) {
+      e.preventDefault();
+      dz.classList.remove('drag-hover');
+      dz.classList.add('hidden');
+      if (_draggingTabId) {
+        detachTabToNewWindow(_draggingTabId);
+        _draggingTabId = null;
+      }
+    };
+  }
+
+  // Setup panes-container drop target for dragging out of tab bar
+  var pc = document.getElementById('panes-container');
+  if (pc) {
+    pc.ondragover = function(e) {
+      if (_draggingTabId) e.preventDefault();
+    };
+    pc.ondrop = function(e) {
+      if (_draggingTabId) {
+        e.preventDefault();
+        var tid = _draggingTabId;
+        _draggingTabId = null;
+        var dz2 = document.getElementById('tab-detach-dropzone');
+        if (dz2) dz2.classList.add('hidden');
+        detachTabToNewWindow(tid);
+      }
+    };
+  }
 }
 
 function detachTabToNewWindow(tabId) {
@@ -4729,7 +4864,9 @@ function openSplitView() {
   var rhSplit = document.getElementById('rh-split');
   var splitBtn = document.getElementById('btn-split-toggle');
   var primPane = document.getElementById('pane-primary');
+  var panesCont = document.getElementById('panes-container');
 
+  if (panesCont) panesCont.classList.add('is-split');
   if (secPane) secPane.classList.remove('hidden');
   if (rhSplit) rhSplit.classList.remove('hidden');
   if (primPane) primPane.style.flex = '1 1 0%';
@@ -4762,7 +4899,9 @@ function closeSplitView() {
   var rhSplit = document.getElementById('rh-split');
   var splitBtn = document.getElementById('btn-split-toggle');
   var primPane = document.getElementById('pane-primary');
+  var panesCont = document.getElementById('panes-container');
 
+  if (panesCont) panesCont.classList.remove('is-split');
   if (secPane) secPane.classList.add('hidden');
   if (rhSplit) rhSplit.classList.add('hidden');
   if (primPane) {
@@ -5045,12 +5184,483 @@ function initTabs() {
     limit: '5000',
     results: null,
     currentPage: 0,
-    sqlStatus: ''
+    sqlStatus: '',
+    aiChatHistory: [],
+    aiContextTable: '__ACTIVE__'
   }];
   _activeTabId = 'tab_1';
   _tabSeq = 1;
   renderTabStrip();
   updateSplitDropdown();
+}
+
+/* ── AI Chat Assistant (Google Gemini & NVIDIA NIM) ─────────────────── */
+var _aiSettings = {
+  provider: 'gemini',
+  geminiKey: '',
+  geminiModel: 'gemini-2.5-flash',
+  nvidiaKey: '',
+  nvidiaModel: 'meta/llama-3.3-70b-instruct'
+};
+var _activeTabAiHistory = [];
+var _aiIsSending = false;
+
+function loadAiSettings(s) {
+  if (!s) return;
+  if (s.ai_provider)     _aiSettings.provider = s.ai_provider;
+  if (s.ai_gemini_key)   _aiSettings.geminiKey = s.ai_gemini_key;
+  if (s.ai_gemini_model) _aiSettings.geminiModel = s.ai_gemini_model;
+  if (s.ai_nvidia_key)   _aiSettings.nvidiaKey = s.ai_nvidia_key;
+  if (s.ai_nvidia_model) _aiSettings.nvidiaModel = s.ai_nvidia_model;
+  updateAiProviderBadge();
+}
+
+function updateAiProviderBadge() {
+  var badge = document.getElementById('ai-provider-badge');
+  if (!badge) return;
+  if (_aiSettings.provider === 'nvidia') {
+    var shortMod = (_aiSettings.nvidiaModel || 'Llama 3.3').split('/').pop();
+    badge.textContent = 'NVIDIA · ' + shortMod;
+  } else {
+    badge.textContent = 'Gemini · ' + (_aiSettings.geminiModel || 'gemini-2.5-flash');
+  }
+}
+
+function updateAiContextTableDropdown() {
+  var sel = document.getElementById('ai-context-table-sel');
+  if (!sel) return;
+  var currentVal = sel.value || '__ACTIVE__';
+  sel.innerHTML = '';
+
+  var optActive = document.createElement('option');
+  optActive.value = '__ACTIVE__';
+  optActive.textContent = 'Active Table (' + (_activeTable || 'None') + ')';
+  sel.appendChild(optActive);
+
+  var optAll = document.createElement('option');
+  optAll.value = '__ALL__';
+  optAll.textContent = 'All Tables in DB (' + (_allSchemaData ? _allSchemaData.length : 0) + ')';
+  sel.appendChild(optAll);
+
+  if (_allSchemaData && _allSchemaData.length) {
+    var grp = document.createElement('optgroup');
+    grp.label = 'Specific Tables';
+    _allSchemaData.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t.table;
+      opt.textContent = t.table;
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  }
+
+  sel.value = currentVal;
+}
+
+function onAiContextTableChange(val) {
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (activeTab) {
+    activeTab.aiContextTable = val;
+  }
+}
+
+function clearActiveTabAiChat() {
+  if (!confirm('Clear AI conversation history for this tab?')) return;
+  _activeTabAiHistory = [];
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (activeTab) {
+    activeTab.aiChatHistory = [];
+  }
+  renderActiveTabAiMessages();
+}
+
+function renderActiveTabAiMessages() {
+  var container = document.getElementById('ai-chat-messages');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!_activeTabAiHistory || !_activeTabAiHistory.length) {
+    var welcome = document.createElement('div');
+    welcome.className = 'py-4 px-2 text-center text-[var(--text-dim)]';
+    welcome.innerHTML =
+      '<div class="text-3xl mb-2">✨</div>' +
+      '<div class="text-[12px] font-semibold text-[var(--text-head)] mb-1">Querii AI Assistant</div>' +
+      '<div class="text-[10.5px] mb-4 text-[var(--text-body)]">Ask questions in natural language. Queries will be auto-generated and safely executed!</div>' +
+      '<div class="space-y-1.5 text-left">' +
+        '<button class="ai-suggestion-chip" onclick="applyAiSuggestion(\'Show top 10 rows with highest values\')">📊 Top 10 highest values</button>' +
+        '<button class="ai-suggestion-chip" onclick="applyAiSuggestion(\'Summarize row count and key column statistics\')">📈 Summarize column statistics</button>' +
+        '<button class="ai-suggestion-chip" onclick="applyAiSuggestion(\'Find any duplicate or missing records\')">🔍 Find duplicate or missing records</button>' +
+      '</div>';
+    container.appendChild(welcome);
+    return;
+  }
+
+  _activeTabAiHistory.forEach(function(msg, idx) {
+    var bubble = document.createElement('div');
+    if (msg.role === 'user') {
+      bubble.className = 'ai-chat-bubble-user';
+      bubble.textContent = msg.content;
+    } else {
+      bubble.className = 'ai-chat-bubble-assistant';
+      bubble.innerHTML = formatAssistantMessageHtml(msg.content, idx);
+    }
+    container.appendChild(bubble);
+  });
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function applyAiSuggestion(text) {
+  var inp = document.getElementById('ai-chat-input');
+  if (inp) {
+    inp.value = text;
+    inp.focus();
+  }
+}
+
+function handleAiChatInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAiChatMessage();
+  }
+}
+
+/* ── Markdown to HTML Renderer ───────────────────────────────────────── */
+function renderMarkdown(md) {
+  if (!md) return '';
+  var text = esc(md);
+
+  // Preserve code blocks with syntax highlighting
+  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(match, lang, code) {
+    return '<pre class="ai-sql-code" style="margin:4px 0;border-radius:4px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre>';
+  });
+
+  // Headings
+  text = text.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  text = text.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  text = text.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Bold & Italic
+  text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
+
+  // Inline code
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Blockquotes
+  text = text.replace(/^\> (.*$)/gim, '<blockquote style="border-left:2px solid var(--accent);padding-left:8px;margin:4px 0;opacity:0.85">$1</blockquote>');
+
+  // Unordered lists
+  text = text.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
+  text = text.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+
+  // Paragraphs and breaks
+  text = text.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
+
+  return '<div class="ai-markdown-content"><p>' + text + '</p></div>';
+}
+
+function isReadOnlyQuery(sql) {
+  if (!sql) return false;
+  var clean = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+
+  // Check for destructive/mutating commands
+  var mutatingPatterns = [
+    /\bINSERT\s+INTO\b/i,
+    /\bUPDATE\b/i,
+    /\bDELETE\s+FROM\b/i,
+    /\bDROP\s+TABLE\b/i,
+    /\bDROP\s+VIEW\b/i,
+    /\bTRUNCATE\b/i,
+    /\bALTER\s+TABLE\b/i,
+    /\bCREATE\s+TABLE\b/i,
+    /\bCREATE\s+VIEW\b/i,
+    /\bREPLACE\s+INTO\b/i
+  ];
+
+  for (var i = 0; i < mutatingPatterns.length; i++) {
+    if (mutatingPatterns[i].test(clean)) {
+      return false;
+    }
+  }
+
+  // Must begin with read-only statement
+  return /^(SELECT|WITH|EXPLAIN|PRAGMA)\b/i.test(clean);
+}
+
+function extractSqlFromResponse(text) {
+  if (!text) return null;
+  var match = text.match(/```(?:sql|sqlite)?\s*([\s\S]*?)```/i);
+  return match ? match[1].trim() : null;
+}
+
+function formatAssistantMessageHtml(fullText, msgIdx) {
+  var sql = extractSqlFromResponse(fullText);
+  var explanatoryText = fullText;
+
+  var sqlCardHtml = '';
+  if (sql) {
+    // Remove the code block from explanatory text to avoid duplication
+    explanatoryText = fullText.replace(/```(?:sql|sqlite)?\s*[\s\S]*?```/i, '').trim();
+
+    var isSafe = isReadOnlyQuery(sql);
+    var badgeHtml = isSafe
+      ? '<span class="ai-badge-auto">⚡ Auto-executed</span>'
+      : '<span class="ai-badge-manual">🔒 Mutating query — manual run</span>';
+
+    var runBtnHtml = isSafe
+      ? '<button class="ai-sql-action-btn" onclick="runAiSqlManual(' + msgIdx + ')">▶ Run</button>'
+      : '<button class="ai-sql-action-btn font-bold text-red-600" onclick="runAiSqlManual(' + msgIdx + ')">▶ Run in Editor</button>';
+
+    sqlCardHtml =
+      '<div class="ai-sql-card">' +
+        '<div class="ai-sql-card-header">' +
+          '<span class="font-mono font-semibold text-[10px]">SQL Query</span>' +
+          badgeHtml +
+        '</div>' +
+        '<pre class="ai-sql-code"><code>' + esc(sql) + '</code></pre>' +
+        '<div class="ai-sql-actions">' +
+          '<button class="ai-sql-action-btn" onclick="copyAiSql(' + msgIdx + ')">📋 Copy</button>' +
+          '<button class="ai-sql-action-btn" onclick="loadAiSqlIntoEditor(' + msgIdx + ')">↗ Paste to Editor</button>' +
+          runBtnHtml +
+        '</div>' +
+      '</div>';
+  }
+
+  var mdHtml = explanatoryText ? renderMarkdown(explanatoryText) : '';
+  return mdHtml + sqlCardHtml;
+}
+
+function getSqlFromMsgIdx(msgIdx) {
+  if (!_activeTabAiHistory || !_activeTabAiHistory[msgIdx]) return null;
+  return extractSqlFromResponse(_activeTabAiHistory[msgIdx].content);
+}
+
+function copyAiSql(msgIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx);
+  if (sql) copyToClipboard(sql, 'SQL copied to clipboard!');
+}
+
+function loadAiSqlIntoEditor(msgIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx);
+  if (!sql) return;
+  var ed = document.getElementById('sql-editor');
+  if (ed) {
+    ed.value = sql;
+    syncSqlLines();
+    ed.focus();
+    toast('✓ SQL loaded into editor');
+  }
+}
+
+function runAiSqlManual(msgIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx);
+  if (!sql) return;
+  var ed = document.getElementById('sql-editor');
+  if (ed) {
+    ed.value = sql;
+    syncSqlLines();
+  }
+  runSql();
+}
+
+function buildAiSystemPrompt(contextChoice) {
+  var tables = [];
+  if (contextChoice === '__ALL__') {
+    tables = _allSchemaData || [];
+  } else if (contextChoice === '__ACTIVE__' || !contextChoice) {
+    var curr = (_selectedTables && _selectedTables.length) ? _selectedTables : (_activeTable ? [_activeTable] : []);
+    tables = (_allSchemaData || []).filter(function(t) { return curr.indexOf(t.table) !== -1; });
+    if (!tables.length && _allSchemaData && _allSchemaData.length) tables = [_allSchemaData[0]];
+  } else {
+    tables = (_allSchemaData || []).filter(function(t) { return t.table === contextChoice; });
+  }
+
+  var prompt = [];
+  prompt.push('You are an expert SQL analytics AI assistant embedded inside Querii, an offline desktop analytics app running an embedded SQLite 3 engine.');
+  prompt.push('');
+  prompt.push('### MANDATORY TWO-PART RESPONSE FORMAT');
+  prompt.push('Always structure your answer into TWO distinct parts:');
+  prompt.push('1. SQL Query Code Block (if data retrieval or manipulation is requested): Enclose in a ```sql ... ``` code block.');
+  prompt.push('   - READ-ONLY QUERIES (SELECT, WITH ... SELECT): The desktop app will AUTOMATICALLY execute this query in the live data table grid!');
+  prompt.push('   - MUTATING QUERIES (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP): Will NOT auto-execute for safety; user will be given a button to run manually.');
+  prompt.push('2. Short Explanation / Note: Clear, concise markdown notes, insights, or answer summary.');
+  prompt.push('');
+  prompt.push('### SQLite 3 Dialect Rules:');
+  prompt.push('- ALWAYS wrap table names and column names with double quotes: "table_name", "Column Name".');
+  prompt.push('- String literals use single quotes: \'Active\'.');
+  prompt.push('- Functions available: COUNT(), SUM(), AVG(), MIN(), MAX(), ROUND(), COALESCE(), IFNULL(), date(), datetime(), strftime(\'%Y-%m\', "col").');
+  prompt.push('- Support CTEs (WITH ... AS ...) and window functions: ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD().');
+  prompt.push('');
+  prompt.push('### Active Database Schema (' + tables.length + ' table' + (tables.length > 1 ? 's' : '') + ' in context):');
+  tables.forEach(function(t) {
+    var cols = t.columns.filter(function(c) { return !c.name.startsWith('_'); });
+    prompt.push('Table: "' + t.table + '" (' + cols.length + ' columns)');
+    prompt.push('Columns: ' + cols.map(function(c) { return '"' + c.name + '" (' + c.type + ')'; }).join(', '));
+    prompt.push('');
+  });
+
+  return prompt.join('\n');
+}
+
+function sendAiChatMessage() {
+  if (_aiIsSending) return;
+  var inp = document.getElementById('ai-chat-input');
+  var text = inp ? inp.value.trim() : '';
+  if (!text) return;
+
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (!activeTab) return;
+
+  var provider = _aiSettings.provider || 'gemini';
+  var apiKey = provider === 'nvidia' ? _aiSettings.nvidiaKey : _aiSettings.geminiKey;
+  var model = provider === 'nvidia' ? _aiSettings.nvidiaModel : _aiSettings.geminiModel;
+
+  if (!apiKey) {
+    openAiSettingsModal();
+    toast('Please enter your ' + provider.toUpperCase() + ' API key to use AI Chat.', 'warn');
+    return;
+  }
+
+  // 1. Add user message
+  _activeTabAiHistory.push({ role: 'user', content: text, time: Date.now() });
+  inp.value = '';
+  renderActiveTabAiMessages();
+
+  // 2. Add loading bubble
+  _aiIsSending = true;
+  var container = document.getElementById('ai-chat-messages');
+  var sendBtn = document.getElementById('ai-chat-send');
+  if (sendBtn) sendBtn.disabled = true;
+
+  var loadingBubble = document.createElement('div');
+  loadingBubble.className = 'ai-chat-bubble-assistant opacity-70';
+  loadingBubble.id = 'ai-loading-bubble';
+  loadingBubble.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-mono">✨ Thinking & querying database…</span>';
+  if (container) {
+    container.appendChild(loadingBubble);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  var contextChoice = activeTab.aiContextTable || '__ACTIVE__';
+  var systemPrompt = buildAiSystemPrompt(contextChoice);
+
+  // Build message chain
+  var conversationChain = _activeTabAiHistory.map(function(m) {
+    return { role: m.role, content: m.content };
+  });
+
+  apiCall('send_ai_chat', provider, model, apiKey, JSON.stringify(conversationChain), systemPrompt)
+    .then(function(res) {
+      _aiIsSending = false;
+      if (sendBtn) sendBtn.disabled = false;
+      var lb = document.getElementById('ai-loading-bubble');
+      if (lb) lb.remove();
+
+      var reply = (res && res.text) ? res.text : '';
+      if (!reply) throw new Error('Empty response from AI service.');
+
+      // 3. Save assistant reply
+      _activeTabAiHistory.push({ role: 'assistant', content: reply, time: Date.now() });
+      activeTab.aiChatHistory = _activeTabAiHistory.slice();
+
+      // 4. Inspect for SQL
+      var sql = extractSqlFromResponse(reply);
+      if (sql) {
+        var isSafe = isReadOnlyQuery(sql);
+        // Always paste into SQL editor
+        var ed = document.getElementById('sql-editor');
+        if (ed) {
+          ed.value = sql;
+          syncSqlLines();
+        }
+        if (isSafe) {
+          // Auto-execute read-only queries!
+          runSqlDirect(sql);
+          toast('⚡ AI Query executed automatically!');
+        } else {
+          toast('🔒 Mutating SQL loaded into editor — click Run to execute.', 'warn');
+        }
+      }
+
+      renderActiveTabAiMessages();
+    })
+    .catch(function(err) {
+      _aiIsSending = false;
+      if (sendBtn) sendBtn.disabled = false;
+      var lb = document.getElementById('ai-loading-bubble');
+      if (lb) lb.remove();
+
+      _activeTabAiHistory.push({
+        role: 'assistant',
+        content: '⚠️ **Error calling AI service**: ' + err.message + '\n\nPlease verify your API key in **AI Settings (⚙️)**.'
+      });
+      activeTab.aiChatHistory = _activeTabAiHistory.slice();
+      renderActiveTabAiMessages();
+      toast('AI Error: ' + err.message, 'error');
+    });
+}
+
+function openAiSettingsModal() {
+  var pSel = document.getElementById('setting-ai-provider');
+  var gKey = document.getElementById('setting-gemini-key');
+  var gMod = document.getElementById('setting-gemini-model');
+  var nKey = document.getElementById('setting-nvidia-key');
+  var nMod = document.getElementById('setting-nvidia-model');
+
+  if (pSel) pSel.value = _aiSettings.provider || 'gemini';
+  if (gKey) gKey.value = _aiSettings.geminiKey || '';
+  if (gMod) gMod.value = _aiSettings.geminiModel || 'gemini-2.5-flash';
+  if (nKey) nKey.value = _aiSettings.nvidiaKey || '';
+  if (nMod) nMod.value = _aiSettings.nvidiaModel || 'meta/llama-3.3-70b-instruct';
+
+  toggleAiProviderFields(_aiSettings.provider || 'gemini');
+  openModal('modal-ai-settings');
+}
+
+function toggleAiProviderFields(provider) {
+  var geminiBox = document.getElementById('ai-config-gemini');
+  var nvidiaBox = document.getElementById('ai-config-nvidia');
+  if (geminiBox) geminiBox.classList.toggle('hidden', provider !== 'gemini');
+  if (nvidiaBox) nvidiaBox.classList.toggle('hidden', provider !== 'nvidia');
+}
+
+function saveAiSettings() {
+  var pSel = document.getElementById('setting-ai-provider');
+  var gKey = document.getElementById('setting-gemini-key');
+  var gMod = document.getElementById('setting-gemini-model');
+  var nKey = document.getElementById('setting-nvidia-key');
+  var nMod = document.getElementById('setting-nvidia-model');
+
+  var provider = pSel ? pSel.value : 'gemini';
+  var geminiKey = gKey ? gKey.value.trim() : '';
+  var geminiModel = gMod ? gMod.value : 'gemini-2.5-flash';
+  var nvidiaKey = nKey ? nKey.value.trim() : '';
+  var nvidiaModel = nMod ? nMod.value : 'meta/llama-3.3-70b-instruct';
+
+  _aiSettings = {
+    provider: provider,
+    geminiKey: geminiKey,
+    geminiModel: geminiModel,
+    nvidiaKey: nvidiaKey,
+    nvidiaModel: nvidiaModel
+  };
+
+  apiCall('save_settings', {
+    ai_provider: provider,
+    ai_gemini_key: geminiKey,
+    ai_gemini_model: geminiModel,
+    ai_nvidia_key: nvidiaKey,
+    ai_nvidia_model: nvidiaModel
+  }).then(function() {
+    toast('✓ AI Settings saved!');
+    closeModal();
+    updateAiProviderBadge();
+  }).catch(function(e) {
+    toast('Save error: ' + e.message, 'error');
+  });
 }
 
 /* ── Resize handles ────────────────────────────────────────────────────── */
@@ -5243,6 +5853,7 @@ document.addEventListener('DOMContentLoaded', function() {
     return window.pywebview.api.get_settings();
   }).then(function(res) {
     var s = (res && res.ok && res.data) ? res.data : {};
+    loadAiSettings(s);
     var theme = s.ap_theme || 'mono';
     memSet('ap_theme', theme);
     if (typeof applyTheme === 'function') applyTheme(theme);

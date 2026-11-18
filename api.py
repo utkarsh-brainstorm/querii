@@ -73,6 +73,7 @@ def _parse_filter_groups(groups_raw: list) -> List[FilterGroup]:
 class Api:
     _pending_tab_states: Dict[str, str] = {}
     _window_creator_fn = None
+    _transferred_tab_ids = set()
 
     @classmethod
     def set_window_creator(cls, fn):
@@ -121,6 +122,158 @@ class Api:
         except Exception as e:
             return _err(str(e))
 
+    def notify_tab_transferred(self, tab_id: str) -> dict:
+        """Mark a tab as transferred to another window so source window can close it."""
+        try:
+            Api._transferred_tab_ids.add(str(tab_id))
+            return _ok(True)
+        except Exception as e:
+            return _err(str(e))
+
+    def is_tab_transferred(self, tab_id: str) -> dict:
+        """Check if a tab was transferred to another window."""
+        try:
+            tid = str(tab_id)
+            if tid in Api._transferred_tab_ids:
+                Api._transferred_tab_ids.discard(tid)
+                return _ok(True)
+            return _ok(False)
+        except Exception as e:
+            return _err(str(e))
+
+    def send_ai_chat(
+        self,
+        provider: str,
+        model: str,
+        api_key: str,
+        messages_json: str,
+        system_prompt: str,
+    ) -> dict:
+        """Call Google Gemini API or NVIDIA NIM API with conversation history."""
+        import urllib.request
+        import urllib.error
+        import json
+        import ssl
+
+        try:
+            messages = json.loads(messages_json) if isinstance(messages_json, str) else messages_json
+            if not isinstance(messages, list):
+                messages = []
+
+            # Fallback to saved API keys if not supplied in call
+            if not api_key:
+                if provider == "gemini":
+                    api_key = db.get_setting("ai_gemini_key", "").strip()
+                elif provider == "nvidia":
+                    api_key = db.get_setting("ai_nvidia_key", "").strip()
+
+            if not api_key:
+                return _err(f"No API key configured for {provider.upper()}. Please enter your API key in AI Settings.")
+
+            # SSL context for cross-platform network compatibility
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            if provider == "gemini":
+                model_name = model or db.get_setting("ai_gemini_model", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
+                contents = []
+                for m in messages:
+                    role = "user" if m.get("role") == "user" else "model"
+                    contents.append({
+                        "role": role,
+                        "parts": [{"text": str(m.get("content", ""))}]
+                    })
+
+                req_body = {
+                    "contents": contents,
+                    "systemInstruction": {
+                        "parts": [{"text": system_prompt}]
+                    },
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "maxOutputTokens": 3000
+                    }
+                }
+
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(req_body).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+
+                try:
+                    with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
+                        res_json = json.loads(resp.read().decode("utf-8"))
+                        candidates = res_json.get("candidates", [])
+                        if not candidates:
+                            return _err("Gemini returned no candidates.")
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        reply_text = "".join(p.get("text", "") for p in parts)
+                        return _ok({"text": reply_text, "model": model_name, "provider": "gemini"})
+                except urllib.error.HTTPError as he:
+                    err_body = he.read().decode("utf-8", errors="replace")
+                    try:
+                        err_parsed = json.loads(err_body)
+                        msg = err_parsed.get("error", {}).get("message", err_body)
+                    except Exception:
+                        msg = err_body or str(he)
+                    return _err(f"Gemini API Error ({he.code}): {msg}")
+
+            elif provider == "nvidia":
+                model_name = model or db.get_setting("ai_nvidia_model", "meta/llama-3.3-70b-instruct").strip() or "meta/llama-3.3-70b-instruct"
+                url = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+                api_msgs = [{"role": "system", "content": system_prompt}]
+                for m in messages:
+                    api_msgs.append({
+                        "role": m.get("role", "user"),
+                        "content": str(m.get("content", ""))
+                    })
+
+                req_body = {
+                    "model": model_name,
+                    "messages": api_msgs,
+                    "temperature": 0.2,
+                    "max_tokens": 3000
+                }
+
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(req_body).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    },
+                    method="POST"
+                )
+
+                try:
+                    with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
+                        res_json = json.loads(resp.read().decode("utf-8"))
+                        choices = res_json.get("choices", [])
+                        if not choices:
+                            return _err("NVIDIA API returned no response choices.")
+                        reply_text = choices[0].get("message", {}).get("content", "")
+                        return _ok({"text": reply_text, "model": model_name, "provider": "nvidia"})
+                except urllib.error.HTTPError as he:
+                    err_body = he.read().decode("utf-8", errors="replace")
+                    try:
+                        err_parsed = json.loads(err_body)
+                        msg = err_parsed.get("error", {}).get("message", err_body)
+                    except Exception:
+                        msg = err_body or str(he)
+                    return _err(f"NVIDIA API Error ({he.code}): {msg}")
+
+            else:
+                return _err(f"Unsupported AI provider '{provider}'. Must be 'gemini' or 'nvidia'.")
+
+        except Exception as e:
+            return _err(str(e))
+
     # ----------------------------------------------------------------
     # Settings
     # ----------------------------------------------------------------
@@ -131,6 +284,8 @@ class Api:
                 "org_name", "org_logo_b64", "org_logo_sq_b64",
                 "ap_theme", "ap_zoom", "ap_custom_reports", "ap_pdf_dir",
                 "pdf_custom_css", "pdf_dev_mode",
+                "ai_provider", "ai_gemini_key", "ai_gemini_model",
+                "ai_nvidia_key", "ai_nvidia_model",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:

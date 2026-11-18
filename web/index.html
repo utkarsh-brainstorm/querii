@@ -226,11 +226,16 @@
         </div>
       </div>
 
+      <!-- Detach drop zone (shown while dragging a tab out of the tab bar) -->
+      <div id="tab-detach-dropzone" class="hidden flex-none flex items-center justify-center p-2 mb-1.5 border-2 border-dashed border-[var(--accent)] bg-[var(--accent-bg)] rounded-xl text-[11px] font-semibold text-[var(--accent)] transition-all select-none">
+        ⧉ Drop tab here to detach into a new window
+      </div>
+
       <!-- Panes Container (Single pane or side-by-side dual panes) -->
       <div id="panes-container" class="flex-1 flex overflow-hidden min-h-0 gap-0">
 
         <!-- PANE A (Primary) -->
-        <div id="pane-primary" class="flex-1 flex flex-col overflow-hidden min-w-[280px] focused-pane" onclick="setFocusedPane('primary')">
+        <div id="pane-primary" class="flex-1 flex flex-col overflow-hidden min-w-[280px]" onclick="setFocusedPane('primary')">
           <!-- SQL Bar -->
           <div id="sql-panel" class="flex-none flex flex-col bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden" style="height: 180px; min-height: 80px;">
             <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
@@ -363,12 +368,14 @@
     <!-- Resize handle R -->
     <div class="resize-handle" id="rh-right"></div>
 
-    <!-- RIGHT: Schema + Reports -->
-    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm" style="width:270px;min-width:180px;max-width:440px">
+    <!-- RIGHT: Schema + AI Assistant -->
+    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm" style="width:310px;min-width:220px;max-width:540px">
       <!-- Tab bar -->
       <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)]">
-        <button class="right-tab active" id="rt-schema"  onclick="switchRightTab('schema')">Schema</button>
-        <button class="right-tab"        id="rt-reports" onclick="switchRightTab('reports')">Reports</button>
+        <button class="right-tab active flex-1" id="rt-schema" onclick="switchRightTab('schema')">Schema</button>
+        <button class="right-tab flex-1 flex items-center justify-center gap-1" id="rt-ai" onclick="switchRightTab('ai')">
+          <span>✨ AI Chat</span>
+        </button>
       </div>
 
       <!-- Schema tab -->
@@ -384,14 +391,47 @@
         </div>
       </div>
 
-      <!-- Reports tab -->
-      <div id="right-tab-reports" class="hidden flex-1 flex flex-col overflow-hidden">
-        <div class="px-3 py-2 border-b border-[var(--border)] flex items-center justify-between">
-          <span class="text-[11px] font-semibold text-[var(--text-head)]">Saved Reports</span>
-          <button class="text-[11px] text-[var(--accent)] hover:underline font-medium" onclick="openCustomReportModal()">＋ Add</button>
+      <!-- AI Chatbot Tab (Replaces Reports) -->
+      <div id="right-tab-ai" class="hidden flex-1 flex flex-col overflow-hidden bg-[var(--bg-surface)]">
+        <!-- AI Top Toolbar -->
+        <div class="px-2.5 py-1.5 border-b border-[var(--border)] flex items-center justify-between gap-1.5 shrink-0 bg-[var(--bg-muted)]">
+          <div class="flex items-center gap-1 min-w-0 flex-1">
+            <span class="text-[10px] text-[var(--text-dim)] shrink-0 font-medium">Context:</span>
+            <select id="ai-context-table-sel" class="select-sm text-[10px] h-6 flex-1 min-w-0 truncate" onchange="onAiContextTableChange(this.value)" title="Choose which tables are provided in the AI context">
+              <option value="__ACTIVE__">Active Table Only</option>
+              <option value="__ALL__">All Tables in DB</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button class="btn-ghost text-[10px] h-6 px-1.5 text-[var(--text-dim)] hover:text-red-500" title="Clear conversation history for this tab" onclick="clearActiveTabAiChat()">🗑</button>
+            <button class="btn-ghost text-[10px] h-6 px-1.5 text-[var(--text-dim)] hover:text-[var(--accent)]" title="AI Settings (Gemini / NVIDIA API Keys & Models)" onclick="openAiSettingsModal()">⚙️</button>
+          </div>
         </div>
-        <div class="flex-1 overflow-y-auto py-0.5">
-          <div id="quick-custom" class="px-2 mt-0.5"></div>
+
+        <!-- AI Messages Stream -->
+        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+          <!-- Populated dynamically from tab's aiChatHistory -->
+        </div>
+
+        <!-- AI Chat Input Area -->
+        <div class="border-t border-[var(--border)] p-2 bg-[var(--bg-surface)] shrink-0 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between text-[9.5px] text-[var(--text-dim)] px-0.5">
+            <span id="ai-provider-badge" class="font-mono truncate">Gemini · gemini-2.5-flash</span>
+            <span class="opacity-70">Enter: send · Shift+Enter: newline</span>
+          </div>
+          <div class="flex items-end gap-1.5">
+            <textarea id="ai-chat-input"
+                      class="input-sm flex-1 text-[11px] resize-none overflow-y-auto"
+                      style="height:52px;min-height:36px;max-height:120px;padding:6px 8px;line-height:1.4"
+                      placeholder="Ask AI anything about your data... (Enter to send)"
+                      onkeydown="handleAiChatInputKey(event)"></textarea>
+            <button id="ai-chat-send"
+                    class="btn-primary shrink-0 h-8 px-3 rounded-lg flex items-center justify-center text-[12px]"
+                    title="Send message (Enter)"
+                    onclick="sendAiChatMessage()">
+              ➤
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1156,6 +1196,69 @@ DROP TABLE old_data;"></textarea>
       </div>
     </div>
   </div><!-- /ultra-dev-overlay -->
+
+  <!-- AI ASSISTANT SETTINGS MODAL -->
+  <div id="modal-ai-settings" class="modal hidden" style="width:480px;max-width:95vw">
+    <div class="modal-header">
+      <span class="flex items-center gap-1.5 font-bold">✨ AI Assistant Settings</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="px-5 py-4 space-y-4 text-[11.5px]">
+      <div>
+        <label class="block text-[11px] font-semibold text-[var(--text-head)] mb-1">Active AI Provider</label>
+        <select id="setting-ai-provider" class="select-sm w-full h-8" onchange="toggleAiProviderFields(this.value)">
+          <option value="gemini">Google Gemini (Recommended — Ultra-fast & High context)</option>
+          <option value="nvidia">NVIDIA NIM (Llama 3.3, Nemotron, Mistral)</option>
+        </select>
+      </div>
+
+      <!-- Gemini Configuration -->
+      <div id="ai-config-gemini" class="space-y-2.5 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)]">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-[var(--text-head)]">Google Gemini API</span>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-[10.5px] text-[var(--accent)] hover:underline font-medium">Get Free Gemini Key ↗</a>
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Gemini API Key</label>
+          <input type="password" id="setting-gemini-key" class="input-sm w-full font-mono text-[11px] h-7" placeholder="AIzaSy..." autocomplete="off">
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Model</label>
+          <select id="setting-gemini-model" class="select-sm w-full h-7">
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Fastest, latest model)</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash (Standard flash)</option>
+            <option value="gemini-1.5-pro">gemini-1.5-pro (Deep reasoning)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- NVIDIA Configuration -->
+      <div id="ai-config-nvidia" class="hidden space-y-2.5 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)]">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-[var(--text-head)]">NVIDIA NIM API</span>
+          <a href="https://build.nvidia.com/" target="_blank" class="text-[10.5px] text-[var(--accent)] hover:underline font-medium">Get NVIDIA Key ↗</a>
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">NVIDIA API Key</label>
+          <input type="password" id="setting-nvidia-key" class="input-sm w-full font-mono text-[11px] h-7" placeholder="nvapi-..." autocomplete="off">
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Model</label>
+          <select id="setting-nvidia-model" class="select-sm w-full h-7">
+            <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct (Recommended)</option>
+            <option value="meta/llama-3.1-70b-instruct">meta/llama-3.1-70b-instruct</option>
+            <option value="nvidia/nemotron-4-340b-instruct">nvidia/nemotron-4-340b-instruct</option>
+            <option value="mistralai/mixtral-8x22b-instruct-v0.1">mistralai/mixtral-8x22b-instruct-v0.1</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+        <button class="btn-ghost text-[11px] px-3 h-7" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary text-[11px] px-4 h-7" onclick="saveAiSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
 
   <!-- TODDLER-PROOF SAFETY MODAL FOR DESTRUCTIVE DML / DDL -->
   <div id="modal-safety-warning" class="modal hidden" style="width:520px;max-width:95vw;border:2px solid #ef4444;box-shadow:0 12px 36px rgba(239,68,68,0.3)">
