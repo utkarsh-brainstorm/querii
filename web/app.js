@@ -4652,6 +4652,8 @@ var _activeTabId = 'tab_1';
 var _secondaryTabId = null;
 var _focusedPane = 'primary';
 var _splitActive = false;
+var _tabSeq = 1;
+var _lastResultsB = null;
 var _saveSessionDebounceTid = null;
 function schedulePersistedSessionSave() {
   if (_saveSessionDebounceTid) clearTimeout(_saveSessionDebounceTid);
@@ -4686,7 +4688,13 @@ function restorePersistedSession() {
         _secondaryTabId = sess.secondaryTabId || (_tabs[1] ? _tabs[1].id : null);
         _splitActive = !!sess.splitActive;
         _focusedPane = sess.focusedPane || 'primary';
-        _tabSeq = _tabs.length;
+
+        var maxSeq = 1;
+        _tabs.forEach(function(t) {
+          var num = parseInt(String(t.id || '').replace('tab_', ''), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        });
+        _tabSeq = maxSeq;
 
         var validTables = (_allSchemaData || []).map(function(t) { return t.table; });
         if (validTables.length === 0) {
@@ -6632,17 +6640,18 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    schema.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t.table;
+      opt.textContent = t.table + '  (' + t.columns.filter(function(c) { return !c.name.startsWith('_'); }).length + ' cols)';
+      if (sel) sel.appendChild(opt);
+    });
+
     renderLeftPanelTableMultiSelect();
     updateAiContextTableDropdown();
 
     restorePersistedSession().then(function(restored) {
       if (!restored) {
-        schema.forEach(function(t) {
-          var opt = document.createElement('option');
-          opt.value = t.table;
-          opt.textContent = t.table + '  (' + t.columns.filter(function(c) { return !c.name.startsWith('_'); }).length + ' cols)';
-          if (sel) sel.appendChild(opt);
-        });
         if (sel) sel.value = schema[0].table;
         _activeTable = schema[0].table;
         _selectedTables = [_activeTable];
