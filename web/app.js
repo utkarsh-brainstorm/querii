@@ -6347,16 +6347,119 @@ function isReadOnlyQuery(sql) {
   return /^(SELECT|WITH|EXPLAIN|PRAGMA)\b/i.test(clean);
 }
 
+function extractAllSqlFromResponse(text) {
+  if (!text) return [];
+  var queries = [];
+
+  // 1. All markdown code blocks marked as sql/sqlite or generic SQL
+  var codeBlockRegex = /```(?:sql|sqlite)?\s*([\s\S]*?)```/gi;
+  var match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    var rawBlock = match[1].trim();
+    if (rawBlock && !/^(json|html|css|python|bash|sh)\b/i.test(rawBlock)) {
+      queries.push(rawBlock);
+    }
+  }
+
+  // 2. Action Input with SQL if present in text
+  var actionInputRegex = /Action Input:\s*\{[\s\S]*?"sql"\s*:\s*"((?:\\.|[^"\\])*)"/gi;
+  while ((match = actionInputRegex.exec(text)) !== null) {
+    try {
+      var unescapedSql = JSON.parse('"' + match[1] + '"');
+      if (unescapedSql && unescapedSql.trim() && queries.indexOf(unescapedSql.trim()) === -1) {
+        queries.push(unescapedSql.trim());
+      }
+    } catch(e) {
+      var rawSql = match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').trim();
+      if (rawSql && queries.indexOf(rawSql) === -1) queries.push(rawSql);
+    }
+  }
+
+  // 3. Fallback: if no code block was found, check if text has unclosed ```sql
+  if (queries.length === 0) {
+    var unclosedMatch = text.match(/```(?:sql|sqlite)?\s*([\s\S]+)$/i);
+    if (unclosedMatch && unclosedMatch[1].trim()) {
+      queries.push(unclosedMatch[1].trim());
+    }
+  }
+
+  return queries;
+}
+
 function extractSqlFromResponse(text) {
-  if (!text) return null;
-  var match = text.match(/```(?:sql|sqlite)?\s*([\s\S]*?)```/i);
-  return match ? match[1].trim() : null;
+  var all = extractAllSqlFromResponse(text);
+  return all.length > 0 ? all[0] : null;
+}
+
+function executeAiQueriesInEditor(queries) {
+  if (!queries || queries.length === 0) return Promise.resolve();
+
+  var ed = document.getElementById('sql-editor');
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+
+  // Execute queries sequentially in the SQL Editor so user sees each step happening live on screen!
+  var chain = Promise.resolve();
+
+  queries.forEach(function(sql, index) {
+    chain = chain.then(function() {
+      return new Promise(function(resolve) {
+        var delay = index === 0 ? 50 : 700;
+        setTimeout(function() {
+          // 1. Load this query into the SQL editor in front of user
+          if (ed) {
+            ed.value = sql;
+            syncSqlLines();
+            ed.scrollTop = 0;
+          }
+          if (activeTab) activeTab.lastExecutedSql = sql;
+          _lastExecutedSql = sql;
+
+          setSqlStatus('Executing (' + (index + 1) + '/' + queries.length + ')…');
+
+          // 2. Execute live through standard runner
+          apiCall('run_sql', sql)
+            .then(function(d) {
+              if (d.message && (!d.columns || d.columns.length === 0)) {
+                setSqlStatus(d.message);
+                var createdTableMatch = sql.match(/CREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_]+)["']?/i);
+                var newlyCreatedTable = d.new_table || (createdTableMatch ? createdTableMatch[1] : null);
+                refreshSchema(newlyCreatedTable, { skipFilter: true, preserveEditor: true });
+                renderMutationSuccess(d.message, newlyCreatedTable);
+                toast('✓ Query ' + (index + 1) + ': ' + d.message);
+              } else {
+                setSqlStatus((d.count || 0).toLocaleString() + ' rows' + (d.affected ? ' (' + d.affected + ' affected)' : ''));
+                renderResults(d.columns || [], d.rows || [], d.count || 0);
+                if (d.is_mutation || d.new_table) {
+                  refreshSchema(d.new_table || null, { skipFilter: true, preserveEditor: true });
+                }
+                toast('✓ Query ' + (index + 1) + ': ' + (d.count || 0) + ' rows');
+              }
+              schedulePersistedSessionSave();
+              resolve();
+            })
+            .catch(function(err) {
+              setSqlStatus('⚠ ' + err.message);
+              toast('Query ' + (index + 1) + ' failed: ' + err.message, 'error');
+              resolve();
+            });
+        }, delay);
+      });
+    });
+  });
+
+  return chain;
 }
 
 function formatAssistantMessageHtml(msgObj, msgIdx) {
   var fullText = typeof msgObj === 'string' ? msgObj : (msgObj.content || '');
   var reasoning = (typeof msgObj === 'object' && msgObj.reasoning) ? msgObj.reasoning : '';
   var agentSteps = (typeof msgObj === 'object' && msgObj.agent_steps) ? msgObj.agent_steps : [];
+
+  // Extract inline Thought if reasoning is empty
+  var thoughtMatch = fullText.match(/Thought:\s*([\s\S]*?)(?=\nAction:|\n```|$)/i);
+  if (thoughtMatch && !reasoning) {
+    reasoning = thoughtMatch[1].trim();
+  }
 
   var reasoningHtml = '';
   if (reasoning) {
@@ -6384,59 +6487,63 @@ function formatAssistantMessageHtml(msgObj, msgIdx) {
       '</details>';
   }
 
-  var sql = extractSqlFromResponse(fullText);
-  var explanatoryText = fullText;
+  var queries = extractAllSqlFromResponse(fullText);
 
-  var sqlCardHtml = '';
-  if (sql) {
-    explanatoryText = fullText.replace(/```(?:sql|sqlite)?\s*[\s\S]*?```/i, '').trim();
+  // Clean raw thought and action tags from explanatory text
+  var cleanText = fullText
+    .replace(/```(?:sql|sqlite)?\s*[\s\S]*?```/gi, '')
+    .replace(/Thought:\s*[\s\S]*?(?=\nAction:|\n\n|$)/gi, '')
+    .replace(/Action:\s*[a-zA-Z0-9_]+/gi, '')
+    .replace(/Action Input:\s*\{[\s\S]*?\}/gi, '')
+    .replace(/Action Input:[^\n]+/gi, '')
+    .trim();
 
-    var isSafe = isReadOnlyQuery(sql);
-    var badgeHtml = isSafe
-      ? '<span class="ai-badge-auto">⚡ Auto-executed</span>'
-      : '<span class="ai-badge-manual">🔒 Mutating query — manual run</span>';
+  var sqlCardsHtml = '';
+  if (queries.length > 0) {
+    sqlCardsHtml = queries.map(function(sql, qIdx) {
+      var cardTitle = queries.length === 1 ? 'SQL Query' : ('SQL Query ' + (qIdx + 1));
+      var badgeHtml = '<span class="ai-badge-auto">⚡ Auto-executed in Editor</span>';
 
-    var runBtnHtml = isSafe
-      ? '<button class="ai-sql-action-btn" onclick="runAiSqlManual(' + msgIdx + ')">▶ Run</button>'
-      : '<button class="ai-sql-action-btn font-bold text-red-600" onclick="runAiSqlManual(' + msgIdx + ')">▶ Run in Editor</button>';
-
-    sqlCardHtml =
-      '<div class="ai-sql-card">' +
+      return '<div class="ai-sql-card">' +
         '<div class="ai-sql-card-header">' +
           '<div style="display:flex;align-items:center;gap:6px">' +
-            '<span class="font-mono font-semibold text-[10px]">SQL Query</span>' +
+            '<span class="font-mono font-semibold text-[10px]">' + esc(cardTitle) + '</span>' +
             badgeHtml +
           '</div>' +
-          '<button class="ai-codeblock-copy-btn" onclick="window.copyCodeblock(this)" title="Copy SQL">' +
+          '<button class="ai-codeblock-copy-btn" onclick="copyAiSql(' + msgIdx + ', ' + qIdx + ')" title="Copy SQL">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
             '<span>Copy</span>' +
           '</button>' +
         '</div>' +
         '<pre class="ai-sql-code"><code>' + esc(sql) + '</code></pre>' +
         '<div class="ai-sql-actions">' +
-          '<button class="ai-sql-action-btn" onclick="copyAiSql(' + msgIdx + ')">📋 Copy</button>' +
-          '<button class="ai-sql-action-btn" onclick="loadAiSqlIntoEditor(' + msgIdx + ')">↗ Paste to Editor</button>' +
-          runBtnHtml +
+          '<button class="ai-sql-action-btn" onclick="copyAiSql(' + msgIdx + ', ' + qIdx + ')">📋 Copy</button>' +
+          '<button class="ai-sql-action-btn" onclick="loadAiSqlIntoEditor(' + msgIdx + ', ' + qIdx + ')">↗ Paste to Editor</button>' +
+          '<button class="ai-sql-action-btn font-bold text-accent" onclick="runAiSqlManual(' + msgIdx + ', ' + qIdx + ')">▶ Run in Editor</button>' +
         '</div>' +
       '</div>';
+    }).join('');
   }
 
-  var mdHtml = explanatoryText ? renderMarkdown(explanatoryText) : '';
-  return reasoningHtml + stepsHtml + mdHtml + sqlCardHtml;
+  var mdHtml = cleanText ? renderMarkdown(cleanText) : '';
+  return reasoningHtml + stepsHtml + mdHtml + sqlCardsHtml;
 }
 
-function getSqlFromMsgIdx(msgIdx) {
+function getSqlFromMsgIdx(msgIdx, qIdx) {
   if (!_activeTabAiHistory || !_activeTabAiHistory[msgIdx]) return null;
-  return extractSqlFromResponse(_activeTabAiHistory[msgIdx].content);
+  var queries = extractAllSqlFromResponse(_activeTabAiHistory[msgIdx].content);
+  if (!queries || queries.length === 0) return null;
+  var idx = (qIdx !== undefined && qIdx >= 0 && qIdx < queries.length) ? qIdx : 0;
+  return queries[idx];
 }
 
-function copyAiSql(msgIdx) {
-  var sql = getSqlFromMsgIdx(msgIdx);
+function copyAiSql(msgIdx, qIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx, qIdx);
   if (sql) copyToClipboard(sql, 'SQL copied to clipboard!');
 }
 
-function loadAiSqlIntoEditor(msgIdx) {
-  var sql = getSqlFromMsgIdx(msgIdx);
+function loadAiSqlIntoEditor(msgIdx, qIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx, qIdx);
   if (!sql) return;
   var ed = document.getElementById('sql-editor');
   if (ed) {
@@ -6447,8 +6554,8 @@ function loadAiSqlIntoEditor(msgIdx) {
   }
 }
 
-function runAiSqlManual(msgIdx) {
-  var sql = getSqlFromMsgIdx(msgIdx);
+function runAiSqlManual(msgIdx, qIdx) {
+  var sql = getSqlFromMsgIdx(msgIdx, qIdx);
   if (!sql) return;
   var ed = document.getElementById('sql-editor');
   if (ed) {
@@ -6478,10 +6585,12 @@ function buildAiSystemPrompt(contextChoice) {
   prompt.push('');
   prompt.push('### MANDATORY TWO-PART RESPONSE FORMAT');
   prompt.push('Always structure your answer into TWO distinct parts:');
-  prompt.push('1. SQL Query Code Block (if data retrieval or manipulation is requested): Enclose in a ```sql ... ``` code block.');
-  prompt.push('   - READ-ONLY QUERIES (SELECT, WITH ... SELECT): The desktop app will AUTOMATICALLY execute this query in the live data table grid!');
-  prompt.push('   - MUTATING QUERIES (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP): Will NOT auto-execute for safety; user will be given a button to run manually.');
-  prompt.push('2. Short Explanation / Note: Clear, concise markdown notes, insights, or answer summary.');
+  prompt.push('1. Short Explanation / Note: Clear, concise markdown notes, insights, or answer summary.');
+  prompt.push('2. SQL Query Code Block(s): Enclose all SQL in ```sql ... ``` code blocks.');
+  prompt.push('   - The desktop app will AUTOMATICALLY execute your SQL queries sequentially in the live SQL Editor in front of the user!');
+  prompt.push('   - If multiple steps are required (e.g. Step 1: Create table and insert sample rows; Step 2: Query and verify data), put each step in its own separate ```sql ... ``` block.');
+  prompt.push('   - The SQL Editor will load each query, run it on screen, show mutations/rows in the live results table, and advance to the next step so the user clearly sees what is happening.');
+  prompt.push('   - DO NOT output raw Thought: or Action: tags in your final answer — put all SQL in ```sql ... ``` code blocks.');
   prompt.push('');
   prompt.push('### SQLite 3 Dialect Rules:');
   prompt.push('- ALWAYS wrap table names and column names with double quotes: "table_name", "Column Name".');
@@ -6556,6 +6665,17 @@ window._onAiAgentStepLive = function(step) {
       else if (step.input.tables) argPreview = 'tables: ' + (Array.isArray(step.input.tables) ? step.input.tables.join(', ') : step.input.tables);
       else argPreview = JSON.stringify(step.input);
     }
+
+    // Reflect query live in SQL Editor in front of user
+    if (step.input && step.input.sql) {
+      var liveEd = document.getElementById('sql-editor');
+      if (liveEd) {
+        liveEd.value = step.input.sql;
+        syncSqlLines();
+      }
+      setSqlStatus('Agent executing ' + (step.action || 'SQL') + '…');
+    }
+
     stepCard.innerHTML =
       '<div class="ai-live-action-top">' +
         '<span class="ai-live-spinner"></span>' +
@@ -6691,21 +6811,10 @@ function sendAiChatMessage() {
       });
       activeTab.aiChatHistory = _activeTabAiHistory.slice();
 
-      // 4. Inspect for SQL
-      var sql = extractSqlFromResponse(reply);
-      if (sql) {
-        var isSafe = isReadOnlyQuery(sql);
-        var ed = document.getElementById('sql-editor');
-        if (ed) {
-          ed.value = sql;
-          syncSqlLines();
-        }
-        if (isSafe) {
-          runSqlDirect(sql);
-          toast('⚡ AI Query executed automatically!');
-        } else {
-          toast('🔒 Mutating SQL loaded into editor — click Run to execute.', 'warn');
-        }
+      // 4. Sequentially execute all extracted queries in the live SQL Editor in front of user
+      var queries = extractAllSqlFromResponse(reply);
+      if (queries && queries.length > 0) {
+        executeAiQueriesInEditor(queries);
       }
 
       saveActiveTabAiSessionToHistory();

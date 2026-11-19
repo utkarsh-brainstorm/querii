@@ -448,6 +448,34 @@ class Api:
         except Exception as e:
             return f"Tool Execution Error: {str(e)}"
 
+    def _clean_final_agent_reply(self, text: str) -> str:
+        """Strip internal ReAct Thought/Action artifacts and recover any unexecuted SQL."""
+        if not text:
+            return ""
+        import re
+        import json
+        # Extract any SQL in Action Input: {"sql": "..."} that wasn't formatted as codeblock
+        action_sql_match = re.search(r'Action Input:\s*\{[\s\S]*?"sql"\s*:\s*"((?:\\.|[^"\\])*)"', text)
+        extracted_action_sql = ""
+        if action_sql_match:
+            try:
+                extracted_action_sql = json.loads('"' + action_sql_match.group(1) + '"')
+            except Exception:
+                extracted_action_sql = action_sql_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+
+        # Remove Thought: ..., Action: ..., Action Input: ...
+        cleaned = re.sub(r'Thought:\s*[\s\S]*?(?=\nAction:|\n\n|$)', '', text)
+        cleaned = re.sub(r'Action:\s*[a-zA-Z0-9_]+', '', cleaned)
+        cleaned = re.sub(r'Action Input:\s*\{[\s\S]*?\}', '', cleaned)
+        cleaned = re.sub(r'Action Input:[^\n]+', '', cleaned).strip()
+
+        if extracted_action_sql and "```sql" not in cleaned and extracted_action_sql.strip() not in cleaned:
+            cleaned += f"\n\n```sql\n{extracted_action_sql.strip()}\n```"
+        elif extracted_action_sql and extracted_action_sql.strip() not in cleaned:
+            cleaned += f"\n\n```sql\n{extracted_action_sql.strip()}\n```"
+
+        return cleaned
+
     def _notify_frontend_agent_step(self, step_data: dict) -> None:
         """Push real-time agent execution step update to the frontend UI."""
         try:
@@ -837,6 +865,8 @@ class Api:
                             if "Final Answer:" in final_text:
                                 final_text = final_text.split("Final Answer:", 1)[1].strip()
 
+                            final_text = self._clean_final_agent_reply(final_text)
+
                             fallback_occurred = (candidate_p != provider)
                             fallback_note = ""
                             if fallback_occurred:
@@ -857,6 +887,8 @@ class Api:
                     final_text = last_reply
                     if "Final Answer:" in final_text:
                         final_text = final_text.split("Final Answer:", 1)[1].strip()
+
+                    final_text = self._clean_final_agent_reply(final_text)
 
                     fallback_occurred = (candidate_p != provider)
                     fallback_note = f"Served by {candidate_p.upper()} ({p_model})"
