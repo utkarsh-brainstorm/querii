@@ -47,6 +47,8 @@ var _selectedTables  = [];      // for multi-table / JOIN mode
 var _joinClauses     = [];      // [{table1, col1, table2, col2, id}]
 var _tableColumns    = [];      // [{name, type, category, operators}]
 var _lastResults     = null;
+var _lastExecutedSql = '';
+var _lastExecutedSqlB = '';
 var _filterGroups    = [];      // [{id, joiner, items:[{_type,id,joiner,field,...}|{_type:'group',...}]}]
 var _groupCounter    = 0;
 var _itemCounter     = 0;
@@ -5040,12 +5042,14 @@ function saveTabState(tabId, pane) {
     if (edB) tab.sql = edB.value;
     if (stB) tab.sqlStatus = stB.textContent;
     if (_lastResultsB) tab.results = _lastResultsB;
+    tab.lastExecutedSql = _lastExecutedSqlB || tab.lastExecutedSql || (edB ? edB.value : '');
   } else {
     var edA = document.getElementById('sql-editor');
     var stA = document.getElementById('sql-status');
     if (edA) tab.sql = edA.value;
     if (stA) tab.sqlStatus = stA.textContent;
     tab.activeTable = _activeTable;
+    tab.lastExecutedSql = _lastExecutedSql || tab.lastExecutedSql || (edA ? edA.value : '');
     tab.selectedTables = _selectedTables.slice();
     tab.joinClauses = JSON.parse(JSON.stringify(_joinClauses));
     tab.tableColumns = _tableColumns.slice();
@@ -5094,6 +5098,7 @@ function restoreTabState(tabId, pane) {
     var stB = document.getElementById('sql-status-b');
     if (edB) { edB.value = tab.sql || ''; syncSqlLinesSecondary(); }
     if (stB) setSqlStatusSecondary(tab.sqlStatus || '');
+    _lastExecutedSqlB = tab.lastExecutedSql || tab.sql || '';
     if (tab.results) {
       renderResultsSecondary(tab.results.columns || [], tab.results.rows || [], tab.results.count || (tab.results.rows ? tab.results.rows.length : 0));
     } else {
@@ -5103,6 +5108,7 @@ function restoreTabState(tabId, pane) {
     var edA = document.getElementById('sql-editor');
     if (edA) { edA.value = tab.sql || ''; syncSqlLines(); }
     setSqlStatus(tab.sqlStatus || '');
+    _lastExecutedSql = tab.lastExecutedSql || tab.sql || '';
 
     _activeTable = tab.activeTable || '';
     _selectedTables = tab.selectedTables && tab.selectedTables.length ? tab.selectedTables.slice() : (_activeTable ? [_activeTable] : []);
@@ -5627,6 +5633,10 @@ function runSqlSecondary() {
 
 function runSqlSecondaryDirect(sql) {
   setSqlStatusSecondary('Running…');
+  _lastExecutedSqlB = sql;
+  var secTab = _tabs.find(function(t) { return t.id === _secondaryTabId; });
+  if (secTab) secTab.lastExecutedSql = sql;
+
   apiCall('run_sql', sql)
     .then(function(d) {
       if (d.message && (!d.columns || d.columns.length === 0)) {
