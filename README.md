@@ -66,6 +66,9 @@ Querii uses SQLite embedded directly in-process via C extensions, eliminating ne
 - **Write-Ahead Logging (WAL)**: `PRAGMA journal_mode = WAL` allows readers and writers to operate concurrently without read lock contention.
 - **Memory-Mapped I/O**: `PRAGMA mmap_size = 268435456` (256 MB) maps database pages directly into the process address space, bypassing userspace buffer copying during sequential scans and aggregations.
 - **Crash-Resilient Termination**: Upon application exit or window destruction, the runtime coordinates `PRAGMA wal_checkpoint(TRUNCATE)` to flush WAL logs back into the primary database file, preventing unbounded WAL growth and guaranteeing transaction consistency even under abrupt power loss.
+- **Quote- & Comment-Aware SQL Splitter**: Implements a dedicated lexical tokenizer (`split_sql_statements`) in `core/db.py` that separates multi-statement scripts while respecting single quotes, escaped quotes (`''`, `\'`), double quotes, backticks, line comments (`--`), and block comments (`/* ... */`).
+- **Atomic Multi-Statement Transactional Execution**: Executes complex multi-statement SQL scripts (DDL + DML + CTE queries) atomically inside a single SQLite transaction (`BEGIN TRANSACTION` ... `COMMIT`). If any statement fails, the entire transaction rolls back cleanly.
+- **Accurate Changes Tracking & Auto-Grid Rendering**: Tracks `conn.total_changes` before and after execution to capture mutation counts across recursive CTEs (`WITH RECURSIVE ... INSERT`) and batch updates. Automatically queries newly created or seeded tables (`SELECT * FROM "<target>" LIMIT 200`) to immediately render records in the UI grid and synchronize schema trees.
 - **AST Relational Predicate Compiler**: Transforms visual conditions into parameterized SQLite ASTs. Supports column-to-column comparisons (e.g. `col_a >= col_b`, `col_a LIKE '%' || col_b || '%'`), nested boolean groups (`AND`/`OR` trees), and extended `HAVING` operators (`BETWEEN`, `NOT BETWEEN`, `IS NULL`, `IS NOT NULL`, `LIKE`, `IN`).
 
 ### 3.2. Multi-Tab Session Coordination & Detached Window Management
@@ -74,29 +77,38 @@ Querii implements a tabbed concurrency model designed for comparative data analy
 - **Split-View Comparison**: Dual-pane vertical editor split allows simultaneous execution of two queries against separate tables. Left and right sidebars dynamically follow the currently focused pane.
 - **Tear-Off Windows**: Tabs can be torn off into independent native desktop windows via drag-and-drop or pop-out controls. The drag-drop handler uses a custom payload format (`application/x-querii-tab`) to prevent desktop environments from treating tab tears as file drag events (which previously created unwanted `.txt` desktop files).
 - **In-Memory Base Query Sorting**: Clicking column headers to sort does not mutate the active SQL editor text or reset the visual builder. Instead, the runtime tracks `_lastExecutedSql` per tab and synthesizes sorted queries (`ORDER BY "<col>" ASC/DESC`) in background memory, preserving the user's active workspace.
+- **Bidirectional Table Selection Synchronization**: Centralized selection state coordinates the File menu (`#modal-filelist`), Left panel selector (`#table-select`), AI context selector (`#ai-context-table-sel`), and Schema tree (`#schema-tree`). Switching tables anywhere immediately synchronizes all application surfaces.
 
-### 3.3. Autonomous ReAct Agent Loop & Multi-Provider Failover Queue
-To assist with data discovery across irregular, unfamiliar schemas, Querii incorporates a localized ReAct (Reasoning + Action) agent loop:
-- **Strict Read-Only Sandboxing**: The agent possesses zero write or schema-mutating permissions. The tool execution loop strictly forbids `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `REPLACE`, `TRUNCATE`, `ATTACH`, and `DETACH`.
-- **Dynamic Inspection Tools**:
-  - `db_list_tables`: Discovers user tables while hiding internal system metadata (`app_settings`, `query_log`, `ai_chat_sessions`).
-  - `db_get_schema`: Fetches exact column names, inferred types, and primary key constraints.
-  - `db_sample_data`: Peeks at localized row distributions.
-  - `db_multi_table_stats`: Computes row counts, column counts, and storage footprints across multiple tables in a single turn.
-  - `db_find_relationships`: Detects potential foreign key pairings and join paths across disparate tables by analyzing column naming patterns and key signatures.
-  - `db_column_correlations`: Inspects distinct counts, null ratios, and pairwise joint distributions between columns.
-  - `db_explain_query_plan`: Evaluates index usage, full table scans, and temporary B-tree allocations via SQLite's bytecode compiler.
-- **Provider Priority Fallback Queue**: Supports user-defined failover ordering across three distinct providers:
-  1. **OpenRouter**: Meta-router accessing top free models (`openrouter/free`, `meta-llama/llama-3.3-70b-instruct:free`, `deepseek/deepseek-r1:free`, `qwen/qwen-2.5-coder-32b-instruct:free`).
-  2. **Google Gemini**: Low-latency, high-context window (`gemini-2.5-flash`, `gemini-1.5-pro`).
-  3. **NVIDIA NIM**: Self-hosted or cloud inference (`nvidia/nemotron-3-ultra-550b-a55b` with reasoning tokens).
-  If the active provider encounters HTTP 429 rate limiting, quota exhaustion, or network timeout, the runtime intercepts the error and failovers down the priority queue without user interruption.
+### 3.3. Autonomous Agentic Engine, Sequential In-Editor Runner & Live Stepper
+To assist with data discovery and autonomous table generation, Querii incorporates a localized, visual-first ReAct (Reasoning + Action) agent loop:
+- **Sequential In-Editor Execution Pipeline**: Rather than executing queries invisibly in background processes, the agent executes directly in front of the user in `#sql-editor`. For multi-step tasks (e.g. Step 1: Create and populate a table; Step 2: Run verification queries), Step 1 is loaded into the editor and executed live. After a visual transition, Step 2 is loaded and executed, allowing the user to follow every query and results table mutation live on screen.
+- **Real-Time Thinking & Execution Stepper**: Backend IPC streams step-by-step agent transitions (`thinking`, `executing`, `done`, `error`) to the frontend via `window._onAiAgentStepLive`. The chat interface renders pulsing activity badges, step counters, tool execution spinners, argument previews, and observation summaries.
+- **Closed-Loop Self-Correction**: When SQLite encounters an error (e.g. schema mismatch or syntax error), `db_execute_sql` returns structured diagnostics back to the agent loop. The agent reasons about the error, refines its SQL, and re-executes automatically before finalizing its response.
+- **Strict Software-Side Security Sandbox**: The agent possesses zero access to application source code (`main.py`, `api.py`, `core`, `web`) or shell commands. SQLite runtime guards block `ATTACH DATABASE`, `load_extension`, and dropping internal management tables (`import_log`, `sqlite_sequence`).
+- **Dynamic Inspection & Verification Tools**:
+  - `db_execute_sql`: Safely executes DDL/DML and exploratory queries with mutation counts and sample previews.
+  - `db_validate_sql`: Tests SQL syntax against SQLite's query planner.
+  - `db_list_tables`, `db_get_schema`, `db_sample_data`: Inspects user tables and column data distributions.
+  - `db_multi_table_stats`, `db_find_relationships`: Computes row counts and identifies potential join paths.
+  - `db_column_correlations`, `db_explain_query_plan`: Analyzes pairwise column distributions and bytecode scan costs.
+- **Multi-Provider Priority Queue & Auto-Healing**:
+  - **OpenRouter**: Meta-router with automatic on-the-fly migration of deprecated free slugs to `openrouter/free`.
+  - **Google Gemini**: Auto-fallback from `gemini-2.5-flash` to `gemini-2.0-flash` on HTTP 429 quota exhaustion.
+  - **NVIDIA NIM**: Native thinking tokens (`chat_template_kwargs`) with automatic HTTP 400 parameter auto-healing retries.
+  - **8,192 Max Output Tokens**: High-capacity output window preventing code truncation across dense schemas.
+- **Interactive Multi-Card Chat UI**: Every generated query receives an individual card with `⚡ Auto-executed in Editor`, `📋 Copy`, `↗ Paste to Editor`, and `▶ Run in Editor` action buttons, while internal `Thought:` and `Action:` artifacts are strictly stripped from human prose.
 
 ### 3.4. Continuous-Substring Token-Aware PDF Typesetting Pipeline
 To produce executive, audit-ready PDF documents from arbitrary SQL result sets without relying on third-party SaaS report builders:
 - **Dual-Pass Column Width Solver**: Evaluates physical sheet geometry (A4, Letter, Legal; Landscape and Portrait) and distributes column widths based on maximum token length, font metrics, and cell padding.
 - **Continuous Substring Header Heuristic**: Detects long tabular header strings and dynamically compresses or formats them to prevent vertical row bloat and unwanted text wrapping across page breaks.
 - **Non-Mutating Virtual Matrix**: Allows configuring watermark overlays, header/footer branding, and column visibility in live preview mode without writing changes to the underlying database.
+- **In-Memory Ultra Dev Mode**: Full interactive code editor providing hot-reloading preview across `style.css`, `data.csv`, and `render.py` with fast in-memory row filtering (`removeRowsWhere` / `keepRowsWhere`).
+
+### 3.5. Accessible Design System & Theming Architecture
+- **Zero White-on-Yellow Contrast**: WCAG AAA-compliant Accessible High-Contrast theme guarantees all primary buttons, active pills, drag dropzones, and chat bubbles use bold black text (`#000000`) on yellow (`#facc15`), completely eliminating legibility loss.
+- **7 Built-in Themes**: `Mono`, `Professional`, `Dark`, `Light Blue`, `Minimal`, `Apple Minimal`, and `Accessible High-Contrast`.
+- **Zebra Row Alternation**: Calibrated `--table-row-alt` subtle contrast across all themes ensures seamless horizontal row tracking across 100+ columns.
 
 ---
 

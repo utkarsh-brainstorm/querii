@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=Querii
-AppVersion=4.3
+AppVersion=5.0-beta
 AppPublisher=Heisenberg
 AppPublisherURL=https://github.com/utkarsh-brainstorm/querii
 DefaultDirName={autopf}\Querii

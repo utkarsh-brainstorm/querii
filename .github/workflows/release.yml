@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-15-intel, macos-14, windows-latest]
+        os: [ubuntu-latest, macos-13, macos-14, windows-latest]
       fail-fast: false
 
     steps:
@@ -123,32 +125,55 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v4.3' }}
-          name: Querii Version 4.3
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v5.0-beta' }}
+          name: Querii Version 5.0-beta (Official Release)
           fail_on_unmatched_files: false
           body: |
-            ## ⚡ Querii Version 4.3 (Official Release)
+            ## ⚡ Querii Version 5.0-beta (Official Release)
 
-            **Querii Version 4.3** introduces intelligent continuous substring token column auto-sizing, frictionless reddish deletion animations in CSV Studio, accessible alternating row striping across all 7 UI themes, and complete 4-platform compilation (Linux, macOS ARM64, macOS x86_64, Windows Setup with uninstaller).
+            **Querii Version 5.0-beta** delivers an architectural evolution with sequential in-editor AI execution, real-time agentic thinking steppers with self-correction, transactional multi-statement SQL script execution, autonomous provider priority queue failover (OpenRouter, Gemini, NVIDIA NIM), bidirectional table selection synchronization, accessible high-contrast theming, and complete 4-platform native compilation (Linux, macOS Apple Silicon ARM64, macOS Intel x86_64, Windows Setup with uninstaller).
 
             ---
 
-            ### 🚀 What's New in Version 4.3
+            ### 🚀 What's New in Version 5.0-beta
 
-            #### 1. 📐 Continuous Substring Column Auto-Sizing & Header Cleanliness
-            - **Longest Substring Token Width Calculation**: Column widths are now determined by the longest continuous non-whitespace substring across all cell values (excluding attribute name), ensuring that long surnames, identifiers, and large numeric values fit without breaking.
-            - **Smart Header Truncation**: When header names exceed content capacity, headers are gracefully truncated (`abcd..`) to perfectly fit the column width.
-            - **Automatic Underscore Replacement**: Attribute names containing `_` are automatically cleaned into spaced labels across PDF and Ultra Dev mode.
-            - **Preserved User Overrides**: Auto-sizing computes once upon export or entering Ultra Dev Mode; manual slider and header edits are strictly preserved without retriggering recalculation.
+            #### 1. 🎬 Sequential In-Editor AI Execution & Visual Screen Feedback
+            - **Live Editor Streaming**: When the AI assistant generates multi-step workflows (e.g. creating tables, seeding mock data, and querying results), queries are sequentially loaded into `#sql-editor` and executed on screen in front of the user with live line synchronization.
+            - **Sequential Pipeline**: Executes Step 1 live (mutations/rows populate the data grid and schema tree), waits a 700ms visual transition, loads Step 2 into the editor, and executes it so the user actually sees every step happening live.
+            - **Interactive Multi-Card Chat UI**: Every generated query receives its own dedicated card in the chat bubble equipped with `⚡ Auto-executed in Editor`, `📋 Copy`, `↗ Paste to Editor`, and `▶ Run in Editor` action buttons.
+            - **Clean Human Prose**: Internal agentic artifacts (`Thought:`, `Action:`, `Action Input:`) are strictly stripped from chat messages; internal reasoning is cleanly nested inside expandable accordions.
 
-            #### 2. 🎬 Non-Blocking Reddish Vanishing Deletion in CSV Studio
-            - **Zero Confirmation Dialogs**: Instant row and column deletion with zero annoying popup interruptions.
-            - **Smooth Vanishing Animation**: Fast (160ms) soft-red fade-out and collapse transition (`.ce-row-vanishing`, `.ce-col-vanishing`) providing immediate visual feedback as rows and columns snap smoothly into place.
+            #### 2. ⚡ Real-Time Thinking Stepper & Self-Correcting ReAct Agent
+            - **Live Execution Stepper**: Backend IPC broadcasts step-by-step agent transitions (`thinking`, `executing`, `done`, `error`) to the frontend in real-time with pulsing activity dots, step counters, tool execution spinners, and observation summaries.
+            - **Closed-Loop Self-Correction**: When SQLite encounters syntax errors or missing attributes, `db_execute_sql` feeds structured error diagnostics back to the agent loop, allowing the model to analyze the error, refine its query, and verify the fix before finalizing output.
+            - **Strict Software-Side Security Sandbox**: Whitelisted execution strictly blocks `ATTACH DATABASE`, `load_extension`, shell commands, filesystem escapes, or dropping internal system tables.
 
-            #### 3. 🎨 Accessible Alternating Contrast Rows in All Themes
-            - **Zebra Row Contrast**: Meticulously calibrated `--table-row-alt` subtle contrast across all 7 built-in themes (`Mono`, `Professional`, `Dark`, `Light Blue`, `Minimal`, `Apple Minimal`, `Accessible High-Contrast`), ensuring easy horizontal row-following across wide datasets.
+            #### 3. 📜 Transactional Multi-Statement SQL Script Execution
+            - **Quote- & Comment-Aware SQL Splitter**: Custom tokenizer parses complex multi-statement SQL scripts while preserving single/double quotes, backticks, `--` line comments, and `/*...*/` block comments.
+            - **Atomic Multi-Statement Transactions**: Executes multi-statement DDL/DML batches inside `BEGIN TRANSACTION ... COMMIT` so scripts like `CREATE TABLE ...; INSERT INTO ...; CREATE INDEX ...;` execute cleanly without throwing *"You can only execute one statement at a time"*.
+            - **Accurate Changes Tracking**: Tracks `conn.total_changes` before and after execution to capture rowcounts from recursive CTEs (`WITH RECURSIVE ... INSERT`) and bulk inserts.
+            - **Instant Schema Sync & Grid Display**: Auto-queries newly created/populated tables and populates the data table grid while automatically selecting the table in the schema and left panel.
 
-            #### 4. 📦 Complete 4-Platform Native Compilations
+            #### 4. 🌐 Multi-Provider AI Fallback Priority Queue & Auto-Healing
+            - **Priority Queue Failover**: Configure seamless failover across OpenRouter, Google Gemini, and NVIDIA NIM. If a provider hits HTTP 429 quota limits or network errors, requests automatically failover down the queue.
+            - **Auto-Healing Providers**:
+              - *NVIDIA NIM*: Directly embeds top-level `chat_template_kwargs: {"enable_thinking": True}` with automatic HTTP 400 auto-healing retries.
+              - *OpenRouter*: Automatically migrates deprecated free slugs to `openrouter/free` with on-the-fly auto-retry.
+              - *Gemini*: Automatically failovers from `gemini-2.5-flash` to `gemini-2.0-flash` on rate-limits.
+            - **Expanded 8,192 Token Window**: Prevents truncation on massive table definitions and dense analytical outputs.
+
+            #### 5. 🔄 Bidirectional Table Selection Synchronization
+            - Centralized selection state coordinates the File menu (`#modal-filelist`), Left panel selector (`#table-select`), AI context selector (`#ai-context-table-sel`), and Schema tree (`#schema-tree`). Switching tables anywhere synchronizes the entire application immediately.
+
+            #### 6. 🧮 Advanced Query Builder Operators & State-Preserving Sort
+            - **Extended HAVING Operators**: Supports `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `NOT BETWEEN`, `IS NULL`, `IS NOT NULL`, `LIKE`, and `IN` with dual-input bounds.
+            - **Column-to-Column Comparisons**: Toggle right-hand operands between literal values and table column identifiers in WHERE clauses without quotes.
+            - **In-Memory Sort**: Sorting column headers synthesizes `ORDER BY` on in-memory `_lastExecutedSql` without modifying the user's active SQL editor text or Visual Builder state.
+
+            #### 7. 🎨 Accessible High-Contrast Theme (Zero White-on-Yellow)
+            - Meticulously calibrated high-contrast accessible theme eliminating all `#ffffff` on `#facc15` contrast issues across user chat bubbles, active pills, drag dropzones, and button hover states.
+
+            #### 8. 📦 Complete 4-Platform Native Compilations
             - **Linux (x86_64)**: Lightweight pure-Python ZipApp with zero system GTK conflicts.
             - **macOS Apple Silicon (arm64)**: Native compilation for Apple Silicon M1, M2, M3, and M4 Macs.
             - **macOS Intel (x86_64)**: Native compilation for Intel-based Macs.
@@ -160,8 +185,7 @@ jobs:
 
             | Platform | Architecture | File | Notes |
             |---|---|---|---|
-            | 🐧 Linux (AppImage) | x86_64 | `Querii-x86_64.AppImage` | Universal zero-dependency standalone bundle (runs on any distro) |
-            | 🐧 Linux (ZipApp) | x86_64 | `querii-Linux.tar.gz` | Lightweight pure-Python ZipApp |
+            | 🐧 Linux (ZipApp) | x86_64 | `querii-Linux.tar.gz` | Lightweight standalone Python ZipApp |
             | 🍎 macOS | Apple Silicon (M1/M2/M3/M4) | `querii-macOS-arm64.tar.gz` | Extract and run `querii-macOS-arm64` |
             | 🍎 macOS | Intel (x86_64) | `querii-macOS-x86_64.tar.gz` | Extract and run `querii-macOS-x86_64` |
             | 🪟 Windows | x64 | `querii-windows-setup.exe` | Windows Installer with Start Menu, Desktop & Uninstall shortcuts |
@@ -172,6 +196,5 @@ jobs:
             > - macOS: `~/Library/Application Support/Querii/`
           files: |
             binaries/*.tar.gz
-            binaries/*.AppImage
             binaries/querii-windows-setup.exe
 
