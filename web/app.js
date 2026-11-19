@@ -6202,13 +6202,68 @@ function handleAiChatInputKey(e) {
 }
 
 /* ── Markdown to HTML Renderer ───────────────────────────────────────── */
+window.copyCodeblock = function(btn) {
+  if (!btn) return;
+  var container = btn.closest('.ai-codeblock-container') || btn.closest('.ai-sql-card');
+  var codeEl = container ? container.querySelector('pre code') : null;
+  var text = codeEl ? codeEl.textContent : '';
+  if (!text) {
+    var preEl = container ? container.querySelector('pre') : null;
+    text = preEl ? preEl.textContent : '';
+  }
+  if (!text) return;
+
+  if (typeof copyToClipboard === 'function') {
+    copyToClipboard(text, '✓ Code copied to clipboard!');
+  } else {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      if (typeof toast === 'function') toast('✓ Code copied to clipboard!');
+    } catch(e) {}
+  }
+
+  var span = btn.querySelector('span');
+  var origText = btn.getAttribute('data-orig-text') || (span ? span.textContent : btn.textContent);
+  btn.setAttribute('data-orig-text', origText);
+  if (span) span.textContent = 'Copied!';
+  else btn.textContent = '✓ Copied!';
+  btn.classList.add('copied');
+
+  setTimeout(function() {
+    if (span) span.textContent = origText;
+    else btn.textContent = origText;
+    btn.classList.remove('copied');
+  }, 2000);
+};
+
 function renderMarkdown(md) {
   if (!md) return '';
   var text = esc(md);
 
-  // Preserve code blocks with syntax highlighting
-  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(match, lang, code) {
-    return '<pre class="ai-sql-code" style="margin:4px 0;border-radius:4px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre>';
+  // Preserve code blocks with syntax header and copy button
+  text = text.replace(/```([a-zA-Z0-9_-]*)\s*\n?([\s\S]*?)```/g, function(match, lang, code) {
+    var displayLang = (lang || 'code').toUpperCase();
+    return '<div class="ai-codeblock-container">' +
+      '<div class="ai-codeblock-header">' +
+        '<span class="ai-codeblock-lang">' + esc(displayLang) + '</span>' +
+        '<button class="ai-codeblock-copy-btn" onclick="window.copyCodeblock(this)" title="Copy code">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+          '<span>Copy</span>' +
+        '</button>' +
+      '</div>' +
+      '<pre class="ai-sql-code"><code>' + code.trim() + '</code></pre>' +
+    '</div>';
   });
 
   // Headings
@@ -6236,6 +6291,7 @@ function renderMarkdown(md) {
 
   return '<div class="ai-markdown-content"><p>' + text + '</p></div>';
 }
+window.renderMarkdown = renderMarkdown;
 
 function isReadOnlyQuery(sql) {
   if (!sql) return false;
@@ -6321,8 +6377,14 @@ function formatAssistantMessageHtml(msgObj, msgIdx) {
     sqlCardHtml =
       '<div class="ai-sql-card">' +
         '<div class="ai-sql-card-header">' +
-          '<span class="font-mono font-semibold text-[10px]">SQL Query</span>' +
-          badgeHtml +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<span class="font-mono font-semibold text-[10px]">SQL Query</span>' +
+            badgeHtml +
+          '</div>' +
+          '<button class="ai-codeblock-copy-btn" onclick="window.copyCodeblock(this)" title="Copy SQL">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+            '<span>Copy</span>' +
+          '</button>' +
         '</div>' +
         '<pre class="ai-sql-code"><code>' + esc(sql) + '</code></pre>' +
         '<div class="ai-sql-actions">' +

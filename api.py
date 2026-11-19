@@ -382,8 +382,30 @@ class Api:
                     "total_returned": len(rows)
                 }, indent=2, default=str)
 
+            elif tool_name == "pdf_read_dev_file":
+                fname = str(args.get("filename", "") or args.get("file", "") or args.get("name", "")).strip()
+                clean_name = os.path.basename(fname)
+                allowed_dev_files = {"data.csv", "style.css", "render.py"}
+                if clean_name not in allowed_dev_files or fname != clean_name:
+                    return (
+                        "Permission Denied: Access to application source code (main.py, api.py, core, web) "
+                        "or any system files is strictly prohibited by application security policy. "
+                        "Only 'style.css', 'data.csv', and 'render.py' within the temporary dev directory may be accessed."
+                    )
+                try:
+                    content = read_dev_file(clean_name)
+                    return content[:4000] if content else "(dev file empty or not generated yet)"
+                except Exception as e:
+                    return f"Error reading dev file: {e}"
+
+            elif tool_name == "pdf_list_dev_files":
+                return json.dumps(["style.css", "data.csv", "render.py"])
+
+            elif any(k in tool_name.lower() for k in ["file", "disk", "shell", "exec", "eval", "code", "system", "os", "run", "process", "cmd"]):
+                return "Permission Denied: System commands and arbitrary file system access outside dev files are strictly blocked by application security sandbox."
+
             else:
-                return f"Error: Unknown tool '{tool_name}'."
+                return f"Error: Tool '{tool_name}' is not recognized or not authorized in read-only inspection mode."
         except Exception as e:
             return f"Tool Execution Error: {str(e)}"
 
@@ -453,7 +475,10 @@ class Api:
                 "- db_column_correlations: Check distinct, nulls & pairwise frequency distribution between two columns. Input: {\"table\": \"tbl\", \"col1\": \"colA\", \"col2\": \"colB\"}\n"
                 "- db_inspect_column: Check nulls, distinct, min/max & top values for a single column. Input: {\"table\": \"tbl\", \"column\": \"col\"}\n"
                 "- db_explain_query_plan: Inspect SQLite index usage and scan cost of a query. Input: {\"sql\": \"SELECT ...\"}\n"
-                "- db_readonly_query: Run exploratory SELECT query. Input: {\"sql\": \"SELECT ... LIMIT 20\"}\n\n"
+                "- db_readonly_query: Run exploratory SELECT query. Input: {\"sql\": \"SELECT ... LIMIT 20\"}\n"
+                "- pdf_read_dev_file: Read temporary PDF dev file. Input: {\"filename\": \"style.css\" (or \"data.csv\", \"render.py\")}\n"
+                "- pdf_list_dev_files: List available PDF dev files. Input: {}\n\n"
+                "CRITICAL SECURITY RESTRICTION: You are strictly sandboxed. You have ZERO access to application source code (main.py, api.py, core, web) or system files. Only the 3 whitelisted PDF dev files (style.css, data.csv, render.py) can be read. Any out-of-bounds request is blocked by software runtime security.\n"
                 "CRITICAL: Do NOT call a tool for straightforward queries where table context is already sufficient. Only use tools when specific stats, distinct values, relationships, or missing schema details are necessary. Mutating operations (INSERT, UPDATE, DELETE, DROP, ALTER) are strictly forbidden in dynamic inspection.\n"
                 "When you have the required information, output your final answer directly following the standard 2-part format (explanation + code block)."
             )
@@ -1414,16 +1439,22 @@ class Api:
             return _err(e)
 
     def read_dev_file(self, name: str) -> dict:
-        """Read a dev file by name (data.csv / style.css / render.py)."""
+        """Read a dev file by name (data.csv / style.css / render.py) with strict security sandboxing."""
         try:
-            return _ok(read_dev_file(name))
+            clean_name = os.path.basename(str(name).strip())
+            if clean_name not in {"data.csv", "style.css", "render.py"} or str(name).strip() != clean_name:
+                return _err("Permission Denied: Access forbidden. Only style.css, data.csv, and render.py can be accessed.")
+            return _ok(read_dev_file(clean_name))
         except Exception as e:
             return _err(e)
 
     def write_dev_file(self, name: str, content: str) -> dict:
-        """Save updated content to a dev file."""
+        """Save updated content to a dev file with strict security sandboxing."""
         try:
-            write_dev_file_content(name, content)
+            clean_name = os.path.basename(str(name).strip())
+            if clean_name not in {"data.csv", "style.css", "render.py"} or str(name).strip() != clean_name:
+                return _err("Permission Denied: Access forbidden. Only style.css, data.csv, and render.py can be modified.")
+            write_dev_file_content(clean_name, content)
             return _ok(True)
         except Exception as e:
             return _err(e)

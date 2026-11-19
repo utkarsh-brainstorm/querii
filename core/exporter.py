@@ -1340,18 +1340,25 @@ write_dev_files = open_dev_files
 
 def read_dev_file(name: str) -> str:
     allowed = {"data.csv", "style.css", "render.py"}
-    if name not in allowed:
-        raise ValueError(f"Unknown dev file: {name}")
-    p = _DEV_DIR / name
+    clean_name = os.path.basename(str(name).strip())
+    if clean_name not in allowed or str(name).strip() != clean_name:
+        raise PermissionError(f"Access forbidden: Dev file '{name}' is not in allowed sandbox.")
+    p = (_DEV_DIR / clean_name).resolve()
+    if p.parent != _DEV_DIR.resolve():
+        raise PermissionError(f"Access forbidden: Path traversal detected in '{name}'.")
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
 def write_dev_file_content(name: str, content: str) -> None:
     allowed = {"data.csv", "style.css", "render.py"}
-    if name not in allowed:
-        raise ValueError(f"Unknown dev file: {name}")
+    clean_name = os.path.basename(str(name).strip())
+    if clean_name not in allowed or str(name).strip() != clean_name:
+        raise PermissionError(f"Access forbidden: Dev file '{name}' cannot be modified.")
+    p = (_DEV_DIR / clean_name).resolve()
+    if p.parent != _DEV_DIR.resolve():
+        raise PermissionError(f"Access forbidden: Path traversal detected in '{name}'.")
     _DEV_DIR.mkdir(parents=True, exist_ok=True)
-    (_DEV_DIR / name).write_text(content, encoding="utf-8")
+    p.write_text(content, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

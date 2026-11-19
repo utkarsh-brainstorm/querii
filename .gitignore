@@ -23,6 +23,7 @@ squashfs-root/
 *.xls
 *.xlsx
 *.xlsm
+*.pdf
 
 # Debug & development artifacts
 debug.log

@@ -1333,6 +1333,15 @@ window._devUndoAiChange = function() {
   if (_devPreviousAiState.colWidths) {
     _dev.colWidths = JSON.parse(JSON.stringify(_devPreviousAiState.colWidths));
   }
+  if (_devPreviousAiState.colHeaders) {
+    _dev.colHeaders = JSON.parse(JSON.stringify(_devPreviousAiState.colHeaders));
+  }
+  if (_devPreviousAiState.shortenHeaders !== undefined) {
+    _dev.shortenHeaders = _devPreviousAiState.shortenHeaders;
+  }
+  if (_devPreviousAiState.fileBuf) {
+    _dev.fileBuf = Object.assign({}, _devPreviousAiState.fileBuf);
+  }
   if (_devPreviousAiState.extraBlankRows !== undefined) {
     _dev.extraBlankRows = _devPreviousAiState.extraBlankRows;
   }
@@ -1341,9 +1350,20 @@ window._devUndoAiChange = function() {
   var undoBtn = document.getElementById('dev-ai-undo-btn');
   if (undoBtn) undoBtn.classList.add('hidden');
 
+  // Sync to all custom CSS boxes and file editor
+  var devCss = document.getElementById('dev-css-editor');
+  if (devCss) devCss.value = _dev.css;
+  var pdfCss = document.getElementById('pdf-custom-css');
+  if (pdfCss) pdfCss.value = _dev.css;
+  var sPdfCss = document.getElementById('s-pdf-custom-css');
+  if (sPdfCss) sPdfCss.value = _dev.css;
+  var fileEd = document.getElementById('dev-file-editor');
+  if (fileEd && _dev.fileTab) fileEd.value = _dev.fileBuf[_dev.fileTab] || '';
+  if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = _dev.css;
+
   _devRenderAll();
   _devUpdatePaperBadge();
-  _devRefreshPreviewDebounced(100);
+  _devRefreshPreviewDebounced(50);
   _dToast('✓ Previous design restored!');
 };
 
@@ -1357,7 +1377,7 @@ window._devSendAiMessage = function() {
   input.value = '';
 
   var userEl = document.createElement('div');
-  userEl.style.cssText = 'align-self:flex-end;max-width:88%;background:#7c3aed;color:#ffffff;padding:8px 12px;border-radius:10px 10px 2px 10px;word-break:break-word;font-size:11px;line-height:1.4';
+  userEl.style.cssText = 'align-self:flex-end;max-width:88%;background:#7c3aed;color:#ffffff;padding:8px 12px;border-radius:10px 10px 2px 10px;word-break:break-word;font-size:11px;line-height:1.4;user-select:text;-webkit-user-select:text';
   userEl.textContent = text;
   msgs.appendChild(userEl);
   msgs.scrollTop = msgs.scrollHeight;
@@ -1376,27 +1396,62 @@ window._devSendAiMessage = function() {
     inclWatermark: _dev.inclWatermark,
     inclLogo: _dev.inclLogo,
     colWidths: JSON.parse(JSON.stringify(_dev.colWidths || {})),
-    extraBlankRows: _dev.extraBlankRows || 0
+    colHeaders: JSON.parse(JSON.stringify(_dev.colHeaders || {})),
+    shortenHeaders: _dev.shortenHeaders,
+    extraBlankRows: _dev.extraBlankRows || 0,
+    fileBuf: Object.assign({}, _dev.fileBuf || {})
   };
 
   _devAiHistory.push({ role: 'user', content: text });
 
-  var systemPrompt = "You are the Querii PDF Design Specialist. " +
-    "Your job is to customize the PDF layout, typography, column widths, font sizes, margins, watermark, or CSS based on the user's prompt without breaking existing working content.\n" +
-    "CURRENT PDF STATE:\n" +
+  var currentCss = (_dev.fileBuf && _dev.fileBuf['style.css']) || _dev.css || '/* default custom CSS */';
+  var currentScript = (_dev.fileBuf && _dev.fileBuf['render.py']) || '# render.py standalone script';
+  var currentData = (_dev.fileBuf && _dev.fileBuf['data.csv']) || '';
+  var dataPreview = currentData;
+  if (dataPreview.length > 2500) {
+    var dLines = dataPreview.split('\n');
+    dataPreview = dLines.slice(0, 30).join('\n') + '\n... [' + (dLines.length - 30) + ' more rows in data.csv]';
+  }
+
+  var systemPrompt = "You are the Querii PDF Design Specialist & Report Layout Intelligence Agent.\n" +
+    "You have full temporary in-memory access to customize the PDF layout, typography, column widths, header labels, table rules, and all 3 dev workspace files (style.css, render.py, and data.csv).\n" +
+    "IMPORTANT: All your changes are applied dynamically in-memory to the live preview and buffers; the original disk files are never overwritten unless the user explicitly saves.\n\n" +
+    "=== 3 DEV WORKSPACE FILES (IN-MEMORY ACCESS) ===\n" +
+    "1. `style.css` (active CSS rules applied to live preview):\n```css\n" + currentCss + "\n```\n\n" +
+    "2. `render.py` (standalone Python export script using core.exporter):\n```python\n" + currentScript + "\n```\n\n" +
+    "3. `data.csv` (active exported preview dataset):\n```csv\n" + (dataPreview || "(empty)") + "\n```\n\n" +
+    "=== CURRENT PDF LAYOUT STATE ===\n" +
     "- Orientation: " + _dev.orient + "\n" +
     "- Page Size: " + _dev.pageSize + "\n" +
     "- Watermark: " + (_dev.inclWatermark !== false ? "Enabled" : "Disabled") + "\n" +
     "- Logo: " + (_dev.inclLogo !== false ? "Enabled" : "Disabled") + "\n" +
+    "- Auto-shorten Headers: " + (_dev.shortenHeaders !== false ? "true" : "false") + "\n" +
     "- Columns: " + JSON.stringify(_dev.cols) + "\n" +
-    "- Column Widths: " + JSON.stringify(_dev.colWidths) + "\n" +
-    "- Current Custom CSS:\n" + (_dev.css || '/* default */') + "\n\n" +
-    "INSTRUCTIONS:\n" +
+    "- Column Widths (%): " + JSON.stringify(_dev.colWidths) + "\n" +
+    "- Column Header Overrides: " + JSON.stringify(_dev.colHeaders || {}) + "\n\n" +
+    "=== HOW QUERII HANDLES LARGE COLUMN NAMES & TABLE LAYOUT (ENGINE RULES) ===\n" +
+    "1. TOKEN-AWARE COLUMN SIZING HEURISTIC:\n" +
+    "   - Column base widths are computed using the longest continuous non-whitespace token across row data values (maxTokenLen), NOT just the header length: `effectiveWidth = max(maxTokenLen, 4)`.\n" +
+    "   - Underscores in column names are automatically converted to spaces.\n" +
+    "2. AUTO-SHORTEN HEADER HEURISTIC (`shortenHeaders`):\n" +
+    "   - When `shortenHeaders: true` (default), if a column header's character length exceeds its data's effective width, the engine truncates the header text and appends '..' (e.g. `transaction_id` with short values 1..10 will truncate to 'tr..' or 'trans..').\n" +
+    "   - To disable this truncation and show full headers, set `\"shortenHeaders\": false` in your JSON config block!\n" +
+    "3. COLUMN WIDTHS & HEADERS OVERRIDES:\n" +
+    "   - You can explicitly assign percentage widths using `\"colWidths\": {\"col_name\": 30, ...}` (must sum to ~100%).\n" +
+    "   - You can provide cleaner, friendly column titles using `\"colHeaders\": {\"raw_col_name\": \"Clean Title\"}`.\n" +
+    "4. ADVANCED CSS STYLING:\n" +
+    "   - Table cells: `table.data-table th, table.data-table td { font-size: 8.5px; padding: 4px 6px; word-break: break-word; overflow-wrap: break-word; }`\n" +
+    "   - Target column: `th.col-<col_name>, td.col-<col_name> { text-align: right; width: 25%; }`\n" +
+    "   - Typography, colors, alternating rows: `tbody tr:nth-child(even) { background-color: #f8fafc; }`\n" +
+    "   - Page rules: `@page { size: A4 portrait; margin: 12mm 10mm; }`\n" +
+    "   - Watermarks: `.watermark { opacity: 0.08; font-size: 48px; color: #64748b; }`\n\n" +
+    "=== OUTPUT FORMAT INSTRUCTIONS ===\n" +
     "1. Explain what styling or layout changes you made clearly and concisely in markdown.\n" +
-    "2. If you modify CSS (colors, fonts, padding, borders, headers, zebra striping, margins), provide the updated CSS in a ```css ... ``` block.\n" +
-    "3. If you modify page settings (orientation, watermark, logo, column widths), output a JSON block ```json ... ``` with only the changed fields, for example:\n" +
-    "```json\n{\n  \"orient\": \"landscape\",\n  \"inclWatermark\": false,\n  \"colWidths\": {\"col_name\": 25}\n}\n```\n" +
-    "Keep existing table structure and class names intact.";
+    "2. If you modify or propose new CSS, provide the complete or updated CSS in a ```css ... ``` block. The editor will automatically paste this into the Custom CSS box and live-reload the preview.\n" +
+    "3. If you modify page settings (orientation, watermark, logo, column widths, column headers, shortenHeaders), output a JSON block ```json ... ``` with only the changed fields, for example:\n" +
+    "```json\n{\n  \"orient\": \"landscape\",\n  \"shortenHeaders\": false,\n  \"colHeaders\": {\"my_col\": \"Clean Name\"},\n  \"colWidths\": {\"my_col\": 35},\n  \"inclWatermark\": false\n}\n```\n" +
+    "4. If you modify the python runner or csv data, output ```python ... ``` or ```csv ... ``` blocks.\n" +
+    "SECURITY CONSTRAINT: You only have access to the temporary dev files (style.css, render.py, data.csv). You have zero access to the underlying application source code.";
 
   var provider = (typeof _aiSettings !== 'undefined' && _aiSettings.provider) ? _aiSettings.provider : 'gemini';
   var model = provider === 'nvidia' ? ((typeof _aiSettings !== 'undefined' && _aiSettings.nvidiaModel) ? _aiSettings.nvidiaModel : 'nvidia/nemotron-3-ultra-550b-a55b') : ((typeof _aiSettings !== 'undefined' && _aiSettings.geminiModel) ? _aiSettings.geminiModel : 'gemini-2.5-flash');
@@ -1407,9 +1462,49 @@ window._devSendAiMessage = function() {
       var reply = (res && res.text) || 'Done!';
       _devAiHistory.push({ role: 'model', content: reply });
 
-      var cssMatch = reply.match(/```css\s*([\s\S]*?)```/i);
+      var cssMatch = reply.match(/```(?:css|style)\s*([\s\S]*?)```/i);
+      if (!cssMatch) {
+        var anyCodeMatch = reply.match(/```(?:[a-z0-9_-]*\s*)?([\s\S]*?)```/i);
+        if (anyCodeMatch && (anyCodeMatch[1].indexOf('{') !== -1 && anyCodeMatch[1].indexOf(':') !== -1 && anyCodeMatch[1].indexOf(';') !== -1)) {
+          if (!anyCodeMatch[1].trim().startsWith('{') || anyCodeMatch[1].indexOf('font-') !== -1 || anyCodeMatch[1].indexOf('color') !== -1 || anyCodeMatch[1].indexOf('table') !== -1) {
+            cssMatch = anyCodeMatch;
+          }
+        }
+      }
       if (cssMatch && cssMatch[1].trim()) {
-        _dev.css = cssMatch[1].trim();
+        var newCss = cssMatch[1].trim();
+        _dev.css = newCss;
+        if (!_dev.fileBuf) _dev.fileBuf = {};
+        _dev.fileBuf['style.css'] = newCss;
+
+        // Auto-paste into all Custom CSS textareas across the app
+        var devCss = document.getElementById('dev-css-editor');
+        if (devCss) devCss.value = newCss;
+        var pdfCss = document.getElementById('pdf-custom-css');
+        if (pdfCss) pdfCss.value = newCss;
+        var sPdfCss = document.getElementById('s-pdf-custom-css');
+        if (sPdfCss) sPdfCss.value = newCss;
+        var fileEd = document.getElementById('dev-file-editor');
+        if (fileEd && _dev.fileTab === 'style.css') fileEd.value = newCss;
+        if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = newCss;
+      }
+
+      var pyMatch = reply.match(/```(?:python|py)\s*([\s\S]*?)```/i);
+      if (pyMatch && pyMatch[1].trim()) {
+        var newPy = pyMatch[1].trim();
+        if (!_dev.fileBuf) _dev.fileBuf = {};
+        _dev.fileBuf['render.py'] = newPy;
+        var fileEd = document.getElementById('dev-file-editor');
+        if (fileEd && _dev.fileTab === 'render.py') fileEd.value = newPy;
+      }
+
+      var csvMatch = reply.match(/```csv\s*([\s\S]*?)```/i);
+      if (csvMatch && csvMatch[1].trim()) {
+        var newCsv = csvMatch[1].trim();
+        if (!_dev.fileBuf) _dev.fileBuf = {};
+        _dev.fileBuf['data.csv'] = newCsv;
+        var fileEd = document.getElementById('dev-file-editor');
+        if (fileEd && _dev.fileTab === 'data.csv') fileEd.value = newCsv;
       }
 
       var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*```/i);
@@ -1420,6 +1515,13 @@ window._devSendAiMessage = function() {
           if (cfg.pageSize) _dev.pageSize = cfg.pageSize;
           if (cfg.inclWatermark !== undefined) _dev.inclWatermark = !!cfg.inclWatermark;
           if (cfg.inclLogo !== undefined) _dev.inclLogo = !!cfg.inclLogo;
+          if (cfg.shortenHeaders !== undefined) _dev.shortenHeaders = !!cfg.shortenHeaders;
+          if (cfg.colHeaders && typeof cfg.colHeaders === 'object') {
+            _dev.colHeaders = _dev.colHeaders || {};
+            for (var ch in cfg.colHeaders) {
+              _dev.colHeaders[ch] = String(cfg.colHeaders[ch]);
+            }
+          }
           if (cfg.colWidths && typeof cfg.colWidths === 'object') {
             for (var k in cfg.colWidths) {
               _dev.colWidths[k] = parseInt(cfg.colWidths[k], 10) || 0;
@@ -1431,25 +1533,33 @@ window._devSendAiMessage = function() {
 
       _devRenderAll();
       _devUpdatePaperBadge();
-      _devRefreshPreviewDebounced(100);
+      _devRefreshPreviewDebounced(50);
 
       var undoBtn = document.getElementById('dev-ai-undo-btn');
       if (undoBtn) undoBtn.classList.remove('hidden');
 
-      var cleanNote = reply.replace(/```css[\s\S]*?```/gi, '').replace(/```json[\s\S]*?```/gi, '').trim();
-      if (!cleanNote) cleanNote = 'Design changes applied to live preview!';
-
       var botEl = document.createElement('div');
-      botEl.style.cssText = 'align-self:flex-start;max-width:92%;background:#f8fafc;color:#1e293b;padding:10px 12px;border-radius:10px 10px 10px 2px;border:1px solid #e2e8f0;font-size:11px;line-height:1.45';
-      botEl.innerHTML = '<div style="margin-bottom:6px;font-weight:600;color:#6b21a8;display:flex;align-items:center;gap:4px"><span>✨ Applied to Live Preview</span></div>' +
-        '<div>' + (typeof renderMarkdown === 'function' ? renderMarkdown(cleanNote) : cleanNote.replace(/\n/g, '<br>')) + '</div>';
+      botEl.className = 'ai-chat-bubble-assistant';
+      botEl.style.cssText = 'align-self:flex-start;max-width:96%;background:#f8fafc;color:#1e293b;padding:10px 12px;border-radius:10px 10px 10px 2px;border:1px solid #e2e8f0;font-size:11px;line-height:1.45;user-select:text;-webkit-user-select:text';
+
+      var changesSummary = [];
+      if (cssMatch) changesSummary.push('Custom CSS pasted & applied');
+      if (jsonMatch) changesSummary.push('Layout & headers adjusted');
+      if (pyMatch) changesSummary.push('render.py updated in-memory');
+      if (csvMatch) changesSummary.push('data.csv updated in-memory');
+      var badgeText = changesSummary.length ? ('✨ Live Preview Updated (' + changesSummary.join(' · ') + ')') : '✨ Applied to Live Preview (In-Memory)';
+
+      var mdRenderer = (typeof renderMarkdown === 'function') ? renderMarkdown : (window.renderMarkdown || function(s){ return String(s).replace(/\n/g, '<br>'); });
+
+      botEl.innerHTML = '<div style="margin-bottom:6px;font-weight:600;color:#6b21a8;display:flex;align-items:center;gap:4px"><span>' + _dEsc(badgeText) + '</span></div>' +
+        '<div>' + mdRenderer(reply) + '</div>';
       msgs.appendChild(botEl);
       msgs.scrollTop = msgs.scrollHeight;
     })
     .catch(function(err) {
       if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
       var errEl = document.createElement('div');
-      errEl.style.cssText = 'align-self:flex-start;max-width:88%;background:#fef2f2;color:#b91c1c;padding:8px 12px;border-radius:10px 10px 10px 2px;border:1px solid #fecaca;font-size:11px';
+      errEl.style.cssText = 'align-self:flex-start;max-width:88%;background:#fef2f2;color:#b91c1c;padding:8px 12px;border-radius:10px 10px 10px 2px;border:1px solid #fecaca;font-size:11px;user-select:text;-webkit-user-select:text';
       errEl.textContent = '⚠ AI Error: ' + (err.message || String(err));
       msgs.appendChild(errEl);
       msgs.scrollTop = msgs.scrollHeight;
