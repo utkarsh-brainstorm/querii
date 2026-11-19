@@ -6259,7 +6259,15 @@ window.copyCodeblock = function(btn) {
 
 function renderMarkdown(md) {
   if (!md) return '';
-  var text = esc(md);
+  var raw = String(md);
+
+  // Auto-close unclosed code block fences so truncated/unclosed code blocks render cleanly
+  var fenceCount = (raw.match(/```/g) || []).length;
+  if (fenceCount % 2 !== 0) {
+    raw = raw + '\n```';
+  }
+
+  var text = esc(raw);
 
   // Preserve code blocks with syntax header and copy button
   text = text.replace(/```([a-zA-Z0-9_-]*)\s*\n?([\s\S]*?)```/g, function(match, lang, code) {

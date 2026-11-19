@@ -539,7 +539,7 @@ class Api:
                                 "model": p_model,
                                 "messages": api_msgs,
                                 "temperature": 0.2,
-                                "max_tokens": 3500
+                                "max_tokens": 8192
                             }
 
                             req = urllib.request.Request(
@@ -582,7 +582,7 @@ class Api:
                                 },
                                 "generationConfig": {
                                     "temperature": 0.2,
-                                    "maxOutputTokens": 3500
+                                    "maxOutputTokens": 8192
                                 }
                             }
 
@@ -618,7 +618,7 @@ class Api:
                                 "model": p_model,
                                 "messages": api_msgs,
                                 "temperature": 0.2,
-                                "max_tokens": 3500
+                                "max_tokens": 8192
                             }
 
                             if "nemotron" in p_model.lower():

@@ -1335,6 +1335,7 @@ window._devUndoAiChange = function() {
   _dev.css = _devPreviousAiState.css || '';
   _dev.orient = _devPreviousAiState.orient || _dev.orient;
   _dev.pageSize = _devPreviousAiState.pageSize || _dev.pageSize;
+  _dev.scale = (_devPreviousAiState.scale !== undefined) ? _devPreviousAiState.scale : _dev.scale;
   _dev.inclWatermark = (_devPreviousAiState.inclWatermark !== undefined) ? _devPreviousAiState.inclWatermark : _dev.inclWatermark;
   _dev.inclLogo = (_devPreviousAiState.inclLogo !== undefined) ? _devPreviousAiState.inclLogo : _dev.inclLogo;
   _dev.colVisible = _devPreviousAiState.colVisible ? new Set(_devPreviousAiState.colVisible) : null;
@@ -1390,6 +1391,22 @@ window._devUndoAiChange = function() {
   _dToast('✓ Previous design restored!');
 };
 
+function _devParseCsvLine(text) {
+  var row = [''], r = 0, q = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charAt(i), cc = text.charAt(i+1);
+    if (c === '"') {
+      if (q && cc === '"') { row[r] += '"'; i++; }
+      else { q = !q; }
+    } else if (c === ',' && !q) {
+      row[++r] = '';
+    } else {
+      row[r] += c;
+    }
+  }
+  return row;
+}
+
 window._devSendAiMessage = function() {
   var input = document.getElementById('dev-ai-input');
   var msgs = document.getElementById('dev-ai-messages');
@@ -1418,6 +1435,7 @@ window._devSendAiMessage = function() {
     css: _dev.css,
     orient: _dev.orient,
     pageSize: _dev.pageSize,
+    scale: _dev.scale,
     inclWatermark: _dev.inclWatermark,
     inclLogo: _dev.inclLogo,
     colVisible: _dev.colVisible ? new Set(_dev.colVisible) : null,
@@ -1451,26 +1469,62 @@ window._devSendAiMessage = function() {
     }
   }
 
+  // Parse summary of rows & categorical values from data.csv so AI knows full dataset distribution
+  var totalRowsCount = 0;
+  var categoricalSummary = [];
+  try {
+    var allLines = currentData.trim().split(/\r?\n/);
+    if (allLines.length > 1) {
+      totalRowsCount = allLines.length - 1;
+      var rawHdr = allLines[0].replace(/^\uFEFF/, '');
+      var hdrs = _devParseCsvLine(rawHdr).map(function(h){ return h.trim(); });
+      var colValuesMap = {};
+      hdrs.forEach(function(h) { colValuesMap[h] = new Set(); });
+
+      for (var li = 1; li < allLines.length; li++) {
+        var rVals = _devParseCsvLine(allLines[li]);
+        for (var ci = 0; ci < hdrs.length; ci++) {
+          var v = (rVals[ci] || '').trim();
+          if (v && colValuesMap[hdrs[ci]] && colValuesMap[hdrs[ci]].size < 35) {
+            colValuesMap[hdrs[ci]].add(v);
+          }
+        }
+      }
+
+      hdrs.forEach(function(h) {
+        var s = colValuesMap[h];
+        if (s && s.size > 1 && s.size <= 25) {
+          var arr = Array.from(s);
+          categoricalSummary.push('- Column "' + h + '" distinct values (' + s.size + '): ' + JSON.stringify(arr));
+        }
+      });
+    }
+  } catch(e) {}
+
   var dataPreview = currentData;
-  if (dataPreview.length > 5000) {
+  if (dataPreview.length > 4000) {
     var dLines = dataPreview.split('\n');
-    dataPreview = dLines.slice(0, 60).join('\n') + '\n... [' + (dLines.length - 60) + ' more rows in data.csv]';
+    dataPreview = dLines.slice(0, 30).join('\n') + '\n... [' + (dLines.length - 30) + ' more rows in data.csv]';
   }
 
   var visColsArr = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); });
 
   var systemPrompt = "You are the Querii PDF Design Specialist & Report Control Agent.\n" +
-    "You have full temporary in-memory access to modify the report's document title, organisation name, page settings, columns, column headers, column widths, table styles, and all 3 dev workspace files (style.css, render.py, data.csv).\n" +
+    "You have full temporary in-memory access to modify the report's document title, organisation name, page settings, columns, column headers, column widths, table styles, and dev workspace files (style.css, render.py, data.csv).\n" +
     "IMPORTANT: All changes are applied dynamically in-memory to the live preview and UI input fields; original disk files remain untouched unless the user explicitly saves.\n\n" +
     "=== 3 DEV WORKSPACE FILES (IN-MEMORY ACCESS) ===\n" +
     "1. `style.css` (active CSS rules applied to live preview):\n```css\n" + currentCss + "\n```\n\n" +
     "2. `render.py` (standalone Python export script using core.exporter):\n```python\n" + currentScript + "\n```\n\n" +
     "3. `data.csv` (active exported dataset):\n```csv\n" + (dataPreview || "(empty)") + "\n```\n\n" +
+    "=== CURRENT DATASET & METRICS ===\n" +
+    "- Total Rows in data.csv: " + totalRowsCount + "\n" +
+    (categoricalSummary.length ? ("- Categorical Column Distributions across entire dataset:\n" + categoricalSummary.join("\n") + "\n") : "") +
     "=== CURRENT PDF REPORT STATE ===\n" +
     "- Document Title: \"" + (_dev.title || 'Query Results') + "\"\n" +
     "- Organisation Name: \"" + (_dev.orgName || '') + "\"\n" +
     "- Orientation: " + _dev.orient + "\n" +
     "- Page Size: " + _dev.pageSize + "\n" +
+    "- Content Scale: " + (_dev.scale || 1.0) + "\n" +
     "- Watermark: " + (_dev.inclWatermark !== false ? "Enabled" : "Disabled") + "\n" +
     "- Logo: " + (_dev.inclLogo !== false ? "Enabled" : "Disabled") + "\n" +
     "- Auto-shorten Headers: " + (_dev.shortenHeaders !== false ? "true" : "false") + "\n" +
@@ -1478,51 +1532,71 @@ window._devSendAiMessage = function() {
     "- Currently Visible Columns (" + visColsArr.length + "): " + JSON.stringify(visColsArr) + "\n" +
     "- Column Widths (%): " + JSON.stringify(_dev.colWidths) + "\n" +
     "- Column Header Overrides: " + JSON.stringify(_dev.colHeaders || {}) + "\n\n" +
-    "=== HOW QUERII HANDLES LARGE COLUMN NAMES, SIZING & ROWS (ENGINE RULES) ===\n" +
-    "1. TOKEN-AWARE COLUMN SIZING HEURISTIC:\n" +
-    "   - Column base widths are computed using the longest continuous non-whitespace token across row data values (maxTokenLen), NOT just the header length: `effectiveWidth = max(maxTokenLen, 4)`.\n" +
-    "   - Underscores in column names are automatically converted to spaces.\n" +
-    "   - You MUST read the values in `data.csv` to choose appropriate column widths that fit the actual cell data!\n" +
-    "2. AUTO-SHORTEN HEADER HEURISTIC (`shortenHeaders`):\n" +
-    "   - When `shortenHeaders: true` (default), if a column header's character length exceeds its data's effective width, the engine truncates the header text and appends '..' (e.g. `transaction_id` with short values 1..10 will truncate to 'tr..' or 'trans..').\n" +
-    "   - To disable truncation and keep full column titles, set `\"shortenHeaders\": false` in your JSON config block!\n" +
-    "3. COLUMN REMOVAL & FILTERING:\n" +
-    "   - If the user asks to REMOVE or HIDE columns (or keep only certain columns), provide the updated array of visible columns in `\"cols\": [...]` or `\"removeCols\": [...]` in your JSON block. The editor will automatically uncheck removed columns and rebalance remaining widths to 100%.\n" +
-    "4. COLUMN RENAMING & SIZING:\n" +
-    "   - To rename columns, provide `\"colHeaders\": {\"col_name\": \"New Clean Title\"}` in your JSON block.\n" +
-    "   - To resize columns, provide `\"colWidths\": {\"col_name\": percentage}` in your JSON block (must sum to ~100%).\n" +
-    "5. ROW REMOVAL & DATA FILTERING:\n" +
-    "   - If the user asks to remove, filter, or modify rows in the table, provide the complete updated CSV in a ```csv ... ``` codeblock! The live preview and exported report will immediately reflect the modified dataset.\n" +
-    "6. DOCUMENT TITLE & ORGANISATION:\n" +
-    "   - If the user asks to change document title or company/organisation name, set `\"title\": \"...\"` and `\"orgName\": \"...\"` in your JSON block.\n\n" +
-    "=== DETERMINISTIC OUTPUT FORMAT RULES ===\n" +
-    "1. Always output a ```json ... ``` codeblock when modifying any document setting, title, orgName, columns, widths, or headers:\n" +
+    "=== STRICT DESIGN RULES & FIELD MAPPING ===\n" +
+    "1. STRICT OBEDIENCE TO USER DIRECTIVES:\n" +
+    "   - You MUST apply every requested design change. When the user asks for 'make header back black', you MUST set the table header background to pure black (#000000). Never refuse, never say it is 'already navy', never keep old colors when the user requests a change!\n" +
+    "2. JSON CONFIGURATION CAPABILITIES:\n" +
+    "   You can modify almost every aspect of the document in your ```json ... ``` codeblock:\n" +
+    "   - \"orient\": \"portrait\" or \"landscape\"\n" +
+    "   - \"pageSize\": \"A4\", \"A3\", or \"Letter\"\n" +
+    "   - \"scale\": 0.8 (content scale factor, e.g. 0.8 for compact/small to fit everything clearly)\n" +
+    "   - \"headerBg\": \"#000000\" (table header background color)\n" +
+    "   - \"headerColor\": \"#ffffff\" (table header text color)\n" +
+    "   - \"fontSize\": \"8pt\" (table font size, e.g. \"7.5pt\" or \"8pt\" to fit wide tables)\n" +
+    "   - \"cols\": [\"col1\", \"col2\"] (explicit list of visible columns)\n" +
+    "   - \"removeCols\": [\"Section\", \"colB\"] (columns to hide/remove)\n" +
+    "   - \"colHeaders\": {\"col_name\": \"New Clean Title\"} (renamed column headers)\n" +
+    "   - \"colWidths\": {\"col_name\": percentage} (percentages summing to ~100%)\n" +
+    "   - \"shortenHeaders\": false (disable truncation to display full column names)\n" +
+    "   - \"removeRowsWhere\": {\"Class\": [\"1st\", \"2nd\", \"3rd\", \"4th\", \"5th\", \"6th\", \"7th\", \"8th\", \"9th\", \"10th\", \"11th\", \"12th\"]} (Querii automatically filters all matching rows across data.csv!)\n" +
+    "   - \"keepRowsWhere\": {\"Class\": [\"10th\"]} (keep only rows matching criteria)\n" +
+    "3. TARGETED CSS OVERRIDES:\n" +
+    "   - Do NOT regurgitate the full 200-line template! Only output concise, targeted CSS overrides for requested styling in a ```css ... ``` block. For example:\n" +
+    "     ```css\n" +
+    "     :root {\n" +
+    "       --table-head-bg: #000000 !important;\n" +
+    "       --table-head-text: #ffffff !important;\n" +
+    "     }\n" +
+    "     .data-table thead th {\n" +
+    "       background: #000000 !important;\n" +
+    "       color: #ffffff !important;\n" +
+    "       font-size: 8pt !important;\n" +
+    "     }\n" +
+    "     .data-table tbody td {\n" +
+    "       font-size: 8pt !important;\n" +
+    "     }\n" +
+    "     ```\n" +
+    "     Targeted CSS rules are automatically merged into style.css and will win the cascade over the base template.\n" +
+    "4. DETERMINISTIC JSON FORMAT:\n" +
     "```json\n" +
     "{\n" +
     "  \"title\": \"My Custom Title\",\n" +
     "  \"orgName\": \"Company Name\",\n" +
-    "  \"orient\": \"portrait\" or \"landscape\",\n" +
-    "  \"pageSize\": \"A4\" or \"A3\" or \"Letter\",\n" +
-    "  \"cols\": [\"col1\", \"col2\"],          // Visible columns (omitted columns are removed/hidden)\n" +
-    "  \"removeCols\": [\"col_to_remove\"],    // Optional explicit list of columns to remove\n" +
-    "  \"colHeaders\": {\"col1\": \"New Title\"}, // Renamed column headers\n" +
-    "  \"colWidths\": {\"col1\": 40, \"col2\": 60}, // Width % summing to 100%\n" +
-    "  \"shortenHeaders\": false,\n" +
-    "  \"inclWatermark\": false,\n" +
-    "  \"inclLogo\": true,\n" +
-    "  \"extraBlankRows\": 0\n" +
+    "  \"orient\": \"landscape\",\n" +
+    "  \"pageSize\": \"A4\",\n" +
+    "  \"scale\": 0.8,\n" +
+    "  \"headerBg\": \"#000000\",\n" +
+    "  \"fontSize\": \"8pt\",\n" +
+    "  \"removeCols\": [\"Section\", \"SMS/WhatsApp No\", \"Student Address\", \"City/Post\", \"District\", \"Student Status\"],\n" +
+    "  \"colWidths\": {\"scholar_no\": 6, \"Student Name\": 20, ...},\n" +
+    "  \"removeRowsWhere\": {\"Class\": [\"1st\", \"2nd\", \"3rd\", \"4th\", \"5th\", \"6th\", \"7th\", \"8th\", \"9th\", \"10th\", \"11th\", \"12th\"]},\n" +
+    "  \"shortenHeaders\": false\n" +
     "}\n" +
     "```\n" +
-    "2. If proposing styling changes (colors, borders, zebra striping, typography, padding), output a complete or updated CSS in a ```css ... ``` codeblock.\n" +
-    "3. If updating rows or data, output a ```csv ... ``` codeblock.\n" +
-    "4. If updating the Python export script, output a ```python ... ``` codeblock.\n" +
-    "5. Provide a clear, concise markdown note explaining all the adjustments you made.\n" +
-    "SECURITY CONSTRAINT: You only have access to the temporary dev workspace files. Application source code is strictly sandboxed.";
+    "5. Provide a clear, concise note explaining all changes made.";
 
   var provider = (typeof _aiSettings !== 'undefined' && _aiSettings.provider) ? _aiSettings.provider : 'gemini';
   var model = provider === 'nvidia' ? ((typeof _aiSettings !== 'undefined' && _aiSettings.nvidiaModel) ? _aiSettings.nvidiaModel : 'nvidia/nemotron-3-ultra-550b-a55b') : ((typeof _aiSettings !== 'undefined' && _aiSettings.geminiModel) ? _aiSettings.geminiModel : 'gemini-2.5-flash');
 
-  _dApi('send_ai_chat', provider, model, '', JSON.stringify(_devAiHistory), systemPrompt, false)
+  var apiKey = '';
+  if (typeof _aiSettings !== 'undefined') {
+    if (provider === 'nvidia') apiKey = _aiSettings.nvidiaKey || '';
+    else if (provider === 'openrouter') apiKey = _aiSettings.openrouterKey || '';
+    else apiKey = _aiSettings.geminiKey || '';
+  }
+  var fallbackChain = (typeof _aiSettings !== 'undefined' && _aiSettings.fallbackChain) ? _aiSettings.fallbackChain : ['openrouter', 'gemini', 'nvidia'];
+
+  _dApi('send_ai_chat', provider, model, apiKey, JSON.stringify(_devAiHistory), systemPrompt, false, fallbackChain)
     .then(function(res) {
       if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
       var reply = (res && res.text) || 'Done!';
@@ -1531,10 +1605,16 @@ window._devSendAiMessage = function() {
       var changesSummary = [];
 
       // ── 1. Deterministic JSON Config Processing ──
-      var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*```/i);
+      var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*(?:```|$)/i);
+      if (!jsonMatch) {
+        var rawJsonMatch = reply.match(/(\{[\s\r\n]*"(?:orient|pageSize|cols|removeCols|colWidths|colHeaders|title|orgName|headerBg|fontSize|removeRowsWhere)"[\s\S]*?\})\s*(?:```|$)/i);
+        if (rawJsonMatch) jsonMatch = rawJsonMatch;
+      }
+
       if (jsonMatch) {
         try {
-          var cfg = JSON.parse(jsonMatch[1]);
+          var cleanJsonStr = jsonMatch[1].replace(/,\s*([}\]])/g, '$1');
+          var cfg = JSON.parse(cleanJsonStr);
 
           // Document Title
           if (cfg.title !== undefined && typeof cfg.title === 'string' && cfg.title.trim()) {
@@ -1543,7 +1623,7 @@ window._devSendAiMessage = function() {
             if (devTitleInp) devTitleInp.value = _dev.title;
             var pdfTitleInp = document.getElementById('pdf-title');
             if (pdfTitleInp) pdfTitleInp.value = _dev.title;
-            changesSummary.push('Title updated to "' + _dev.title + '"');
+            changesSummary.push('Title: "' + _dev.title + '"');
           }
 
           // Organisation Name
@@ -1566,6 +1646,53 @@ window._devSendAiMessage = function() {
           if (cfg.pageSize && ['A4', 'A3', 'Letter'].indexOf(cfg.pageSize) !== -1) {
             _dev.pageSize = cfg.pageSize;
             changesSummary.push('Paper ' + cfg.pageSize);
+          }
+
+          // Content Scale (Zoom / Shrink to fit)
+          if (cfg.scale !== undefined) {
+            var sc = parseFloat(cfg.scale);
+            if (!isNaN(sc) && sc >= 0.4 && sc <= 2.0) {
+              _dev.scale = sc;
+              changesSummary.push('Scale ' + Math.round(sc * 100) + '%');
+            }
+          }
+
+          // Header Background color
+          if (cfg.headerBg && typeof cfg.headerBg === 'string') {
+            var bgVal = cfg.headerBg.trim();
+            if (bgVal.toLowerCase() === 'black') bgVal = '#000000';
+            var hRule = ':root { --table-head-bg: ' + bgVal + ' !important; }\n' +
+                        '.data-table thead th { background: ' + bgVal + ' !important; }';
+            _dev.css = (_dev.css ? (_dev.css.trim() + '\n\n' + hRule) : hRule);
+            if (!_dev.fileBuf) _dev.fileBuf = {};
+            _dev.fileBuf['style.css'] = _dev.css;
+            changesSummary.push('Header background ' + bgVal);
+          }
+
+          // Header Text color
+          if (cfg.headerColor && typeof cfg.headerColor === 'string') {
+            var tcVal = cfg.headerColor.trim();
+            if (tcVal.toLowerCase() === 'white') tcVal = '#ffffff';
+            var tRule = ':root { --table-head-text: ' + tcVal + ' !important; }\n' +
+                        '.data-table thead th { color: ' + tcVal + ' !important; }';
+            _dev.css = (_dev.css ? (_dev.css.trim() + '\n\n' + tRule) : tRule);
+            if (!_dev.fileBuf) _dev.fileBuf = {};
+            _dev.fileBuf['style.css'] = _dev.css;
+            changesSummary.push('Header text ' + tcVal);
+          }
+
+          // Table Font Size
+          if (cfg.fontSize) {
+            var fsVal = String(cfg.fontSize).trim();
+            if (fsVal === 'small') fsVal = '8pt';
+            else if (fsVal === 'tiny') fsVal = '7pt';
+            else if (fsVal === 'normal') fsVal = '8.5pt';
+            else if (/^\d+(\.\d+)?$/.test(fsVal)) fsVal = fsVal + 'pt';
+            var fRule = '.data-table, .data-table thead th, .data-table tbody td { font-size: ' + fsVal + ' !important; }';
+            _dev.css = (_dev.css ? (_dev.css.trim() + '\n\n' + fRule) : fRule);
+            if (!_dev.fileBuf) _dev.fileBuf = {};
+            _dev.fileBuf['style.css'] = _dev.css;
+            changesSummary.push('Font size ' + fsVal);
           }
 
           // Watermark & Logo
@@ -1632,6 +1759,118 @@ window._devSendAiMessage = function() {
             }
           }
 
+          // Row Removal / Filtering across data.csv
+          if (cfg.removeRowsWhere && typeof cfg.removeRowsWhere === 'object') {
+            var csvStr = (_dev.fileBuf && _dev.fileBuf['data.csv']) || currentData;
+            var cLines = csvStr.trim().split(/\r?\n/);
+            if (cLines.length > 1) {
+              var hdrLine = cLines[0].replace(/^\uFEFF/, '');
+              var hArr = _devParseCsvLine(hdrLine).map(function(h){ return h.trim(); });
+              var filteredLines = [cLines[0]];
+              var removedCount = 0;
+
+              for (var rowIdx = 1; rowIdx < cLines.length; rowIdx++) {
+                var rowVals = _devParseCsvLine(cLines[rowIdx]);
+                var shouldRemove = false;
+
+                for (var filterCol in cfg.removeRowsWhere) {
+                  var targetIdx = hArr.findIndex(function(h){
+                    return h.toLowerCase() === filterCol.toLowerCase() ||
+                           h.replace(/[^a-zA-Z0-9]/g,'').toLowerCase() === filterCol.replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+                  });
+                  if (targetIdx !== -1) {
+                    var cellVal = (rowVals[targetIdx] || '').trim().toLowerCase();
+                    var filterVals = cfg.removeRowsWhere[filterCol];
+                    if (!Array.isArray(filterVals)) filterVals = [filterVals];
+                    var matches = filterVals.some(function(fv) {
+                      var needle = String(fv).trim().toLowerCase();
+                      if (!needle) return false;
+                      return cellVal === needle ||
+                             cellVal.indexOf(needle) !== -1 ||
+                             cellVal.replace(/[^0-9]/g, '') === needle.replace(/[^0-9]/g, '');
+                    });
+                    if (matches) {
+                      shouldRemove = true;
+                      break;
+                    }
+                  }
+                }
+
+                if (shouldRemove) {
+                  removedCount++;
+                } else {
+                  filteredLines.push(cLines[rowIdx]);
+                }
+              }
+
+              if (removedCount > 0) {
+                var updatedCsv = filteredLines.join('\n');
+                if (!_dev.fileBuf) _dev.fileBuf = {};
+                _dev.fileBuf['data.csv'] = updatedCsv;
+                var fileEd = document.getElementById('dev-file-editor');
+                if (fileEd && _dev.fileTab === 'data.csv') fileEd.value = updatedCsv;
+                changesSummary.push(removedCount + ' row' + (removedCount > 1 ? 's' : '') + ' filtered from data.csv');
+              }
+            }
+          }
+
+          // Row Keeping / Filtering across data.csv
+          if (cfg.keepRowsWhere && typeof cfg.keepRowsWhere === 'object') {
+            var csvStr = (_dev.fileBuf && _dev.fileBuf['data.csv']) || currentData;
+            var cLines = csvStr.trim().split(/\r?\n/);
+            if (cLines.length > 1) {
+              var hdrLine = cLines[0].replace(/^\uFEFF/, '');
+              var hArr = _devParseCsvLine(hdrLine).map(function(h){ return h.trim(); });
+              var filteredLines = [cLines[0]];
+              var keptCount = 0;
+              var removedCount = 0;
+
+              for (var rowIdx = 1; rowIdx < cLines.length; rowIdx++) {
+                var rowVals = _devParseCsvLine(cLines[rowIdx]);
+                var shouldKeep = true;
+
+                for (var filterCol in cfg.keepRowsWhere) {
+                  var targetIdx = hArr.findIndex(function(h){
+                    return h.toLowerCase() === filterCol.toLowerCase() ||
+                           h.replace(/[^a-zA-Z0-9]/g,'').toLowerCase() === filterCol.replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+                  });
+                  if (targetIdx !== -1) {
+                    var cellVal = (rowVals[targetIdx] || '').trim().toLowerCase();
+                    var keepVals = cfg.keepRowsWhere[filterCol];
+                    if (!Array.isArray(keepVals)) keepVals = [keepVals];
+                    var matches = keepVals.some(function(kv) {
+                      var needle = String(kv).trim().toLowerCase();
+                      if (!needle) return false;
+                      return cellVal === needle ||
+                             cellVal.indexOf(needle) !== -1 ||
+                             cellVal.replace(/[^0-9]/g, '') === needle.replace(/[^0-9]/g, '');
+                    });
+                    if (!matches) {
+                      shouldKeep = false;
+                      break;
+                    }
+                  }
+                }
+
+                if (shouldKeep) {
+                  filteredLines.push(cLines[rowIdx]);
+                  keptCount++;
+                } else {
+                  removedCount++;
+                }
+              }
+
+              if (removedCount > 0) {
+                var updatedCsv = filteredLines.join('\n');
+                if (!_dev.fileBuf) _dev.fileBuf = {};
+                _dev.fileBuf['data.csv'] = updatedCsv;
+                var fileEd = document.getElementById('dev-file-editor');
+                if (fileEd && _dev.fileTab === 'data.csv') fileEd.value = updatedCsv;
+                changesSummary.push('Kept ' + keptCount + ' rows (' + removedCount + ' filtered)');
+              }
+            }
+          }
+
           // Extra Blank Rows
           if (cfg.extraBlankRows !== undefined) {
             _dev.extraBlankRows = Math.max(0, parseInt(cfg.extraBlankRows, 10) || 0);
@@ -1641,37 +1880,54 @@ window._devSendAiMessage = function() {
         }
       }
 
-      // ── 2. Deterministic CSS Processing ──
-      var cssMatch = reply.match(/```(?:css|style)\s*([\s\S]*?)```/i);
+      // ── 2. Deterministic CSS Processing (with auto-repair) ──
+      var cssMatch = reply.match(/```(?:css|style)\s*([\s\S]*?)(?:```|$)/i);
       if (!cssMatch) {
-        var anyCodeMatch = reply.match(/```(?:[a-z0-9_-]*\s*)?([\s\S]*?)```/i);
-        if (anyCodeMatch && (anyCodeMatch[1].indexOf('{') !== -1 && anyCodeMatch[1].indexOf(':') !== -1 && anyCodeMatch[1].indexOf(';') !== -1)) {
+        var anyCodeMatch = reply.match(/```(?:[a-z0-9_-]*\s*)?([\s\S]*?)(?:```|$)/i);
+        if (anyCodeMatch && (anyCodeMatch[1].indexOf('{') !== -1 && anyCodeMatch[1].indexOf(':') !== -1)) {
           if (!anyCodeMatch[1].trim().startsWith('{') || anyCodeMatch[1].indexOf('font-') !== -1 || anyCodeMatch[1].indexOf('color') !== -1 || anyCodeMatch[1].indexOf('table') !== -1) {
             cssMatch = anyCodeMatch;
           }
         }
       }
-      if (cssMatch && cssMatch[1].trim()) {
-        var newCss = cssMatch[1].trim();
-        _dev.css = newCss;
-        if (!_dev.fileBuf) _dev.fileBuf = {};
-        _dev.fileBuf['style.css'] = newCss;
 
-        // Auto-paste into all Custom CSS textareas across the app
-        var devCss = document.getElementById('dev-css-editor');
-        if (devCss) devCss.value = newCss;
-        var pdfCss = document.getElementById('pdf-custom-css');
-        if (pdfCss) pdfCss.value = newCss;
-        var sPdfCss = document.getElementById('s-pdf-custom-css');
-        if (sPdfCss) sPdfCss.value = newCss;
-        var fileEd = document.getElementById('dev-file-editor');
-        if (fileEd && _dev.fileTab === 'style.css') fileEd.value = newCss;
-        if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = newCss;
+      if (cssMatch && cssMatch[1].trim()) {
+        var rawCss = cssMatch[1].trim();
+        // Clean trailing dangling property if truncated (e.g. "letter-spacing:" or "color:")
+        rawCss = rawCss.replace(/[a-zA-Z0-9_-]+\s*:\s*$/, '').trim();
+        // Balance unclosed braces
+        var openBraces = (rawCss.match(/{/g) || []).length;
+        var closeBraces = (rawCss.match(/}/g) || []).length;
+        while (closeBraces < openBraces) {
+          rawCss += '\n}';
+          closeBraces++;
+        }
+
+        // If rawCss is a targeted override (doesn't contain the full template structure)
+        if (_dev.css && _dev.css.indexOf('.document-frame') !== -1 && rawCss.indexOf('.document-frame') === -1) {
+          _dev.css = _dev.css.trim() + '\n\n/* ── AI Style Override ── */\n' + rawCss;
+        } else {
+          _dev.css = rawCss;
+        }
+
+        if (!_dev.fileBuf) _dev.fileBuf = {};
+        _dev.fileBuf['style.css'] = _dev.css;
         changesSummary.push('Custom CSS applied');
       }
 
+      // Sync CSS to all textareas across the app
+      var devCss = document.getElementById('dev-css-editor');
+      if (devCss) devCss.value = _dev.css;
+      var pdfCss = document.getElementById('pdf-custom-css');
+      if (pdfCss) pdfCss.value = _dev.css;
+      var sPdfCss = document.getElementById('s-pdf-custom-css');
+      if (sPdfCss) sPdfCss.value = _dev.css;
+      var fileEd = document.getElementById('dev-file-editor');
+      if (fileEd && _dev.fileTab === 'style.css') fileEd.value = _dev.css;
+      if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = _dev.css;
+
       // ── 3. Deterministic Python runner script processing ──
-      var pyMatch = reply.match(/```(?:python|py)\s*([\s\S]*?)```/i);
+      var pyMatch = reply.match(/```(?:python|py)\s*([\s\S]*?)(?:```|$)/i);
       if (pyMatch && pyMatch[1].trim()) {
         var newPy = pyMatch[1].trim();
         if (!_dev.fileBuf) _dev.fileBuf = {};
@@ -1681,18 +1937,19 @@ window._devSendAiMessage = function() {
         changesSummary.push('render.py updated in-memory');
       }
 
-      // ── 4. Deterministic CSV dataset processing (row removals/filtering) ──
-      var csvMatch = reply.match(/```csv\s*([\s\S]*?)```/i);
+      // ── 4. Deterministic CSV dataset processing (complete block replacement) ──
+      var csvMatch = reply.match(/```csv\s*([\s\S]*?)(?:```|$)/i);
       if (csvMatch && csvMatch[1].trim()) {
         var newCsv = csvMatch[1].trim();
         if (!_dev.fileBuf) _dev.fileBuf = {};
         _dev.fileBuf['data.csv'] = newCsv;
         var fileEd = document.getElementById('dev-file-editor');
         if (fileEd && _dev.fileTab === 'data.csv') fileEd.value = newCsv;
-        changesSummary.push('data.csv rows updated');
+        changesSummary.push('data.csv updated in-memory');
       }
 
       // ── 5. Re-render UI inputs & Live Preview ──
+      _devSyncPageSizeInCode(_dev.pageSize, _dev.orient);
       _devRenderDocControls();
       _devRenderColControls();
       _devRenderAll();
@@ -1708,10 +1965,14 @@ window._devSendAiMessage = function() {
 
       var badgeText = changesSummary.length ? ('✨ Live Preview Updated (' + changesSummary.join(' · ') + ')') : '✨ Applied to Live Preview (In-Memory)';
 
+      var cleanReply = reply;
+      var tickCount = (cleanReply.match(/```/g) || []).length;
+      if (tickCount % 2 !== 0) cleanReply += '\n```';
+
       var mdRenderer = (typeof renderMarkdown === 'function') ? renderMarkdown : (window.renderMarkdown || function(s){ return String(s).replace(/\n/g, '<br>'); });
 
       botEl.innerHTML = '<div style="margin-bottom:6px;font-weight:600;color:#6b21a8;display:flex;align-items:center;gap:4px"><span>' + _dEsc(badgeText) + '</span></div>' +
-        '<div>' + mdRenderer(reply) + '</div>';
+        '<div>' + mdRenderer(cleanReply) + '</div>';
       msgs.appendChild(botEl);
       msgs.scrollTop = msgs.scrollHeight;
     })
