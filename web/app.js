@@ -5857,7 +5857,13 @@ function loadAiSettings(s) {
   if (!s) return;
   if (s.ai_provider)         _aiSettings.provider = s.ai_provider;
   if (s.ai_openrouter_key)   _aiSettings.openrouterKey = s.ai_openrouter_key;
-  if (s.ai_openrouter_model) _aiSettings.openrouterModel = s.ai_openrouter_model;
+  if (s.ai_openrouter_model) {
+    var om = s.ai_openrouter_model;
+    if (om === 'meta-llama/llama-3.3-70b-instruct:free' || om === 'deepseek/deepseek-r1:free') {
+      om = 'openrouter/free';
+    }
+    _aiSettings.openrouterModel = om;
+  }
   if (s.ai_gemini_key)       _aiSettings.geminiKey = s.ai_gemini_key;
   if (s.ai_gemini_model)     _aiSettings.geminiModel = s.ai_gemini_model;
   if (s.ai_nvidia_key)       _aiSettings.nvidiaKey = s.ai_nvidia_key;

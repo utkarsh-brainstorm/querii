@@ -535,8 +535,14 @@ class Api:
                                     "content": str(m.get("content", ""))
                                 })
 
+                            active_p_model = p_model or "openrouter/free"
+                            # Auto-migrate dead free slugs to openrouter/free
+                            if ":free" in active_p_model and any(k in active_p_model.lower() for k in ["llama", "deepseek", "qwen"]):
+                                if "meta-llama/llama-3.3-70b-instruct" in active_p_model or "deepseek/deepseek-r1" in active_p_model:
+                                    active_p_model = "openrouter/free"
+
                             req_body = {
-                                "model": p_model,
+                                "model": active_p_model,
                                 "messages": api_msgs,
                                 "temperature": 0.2,
                                 "max_tokens": 8192
@@ -554,19 +560,42 @@ class Api:
                                 method="POST"
                             )
 
-                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
-                                res_json = json.loads(resp.read().decode("utf-8"))
-                                choices = res_json.get("choices", [])
-                                if not choices:
-                                    raise RuntimeError("OpenRouter returned no response choices.")
-                                msg_obj = choices[0].get("message", {})
-                                raw_reply = msg_obj.get("content", "") or ""
-                                r_content = msg_obj.get("reasoning_content", "") or ""
-                                if r_content:
-                                    overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
+                            try:
+                                with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                    res_json = json.loads(resp.read().decode("utf-8"))
+                            except urllib.error.HTTPError as or_he:
+                                err_text = or_he.read().decode("utf-8", errors="replace")
+                                # Auto-heal: If model is 404 or unavailable for free, automatically retry with openrouter/free
+                                if (or_he.code == 404 or "unavailable for free" in err_text.lower() or "not found" in err_text.lower()) and active_p_model != "openrouter/free":
+                                    req_body["model"] = "openrouter/free"
+                                    retry_req = urllib.request.Request(
+                                        url,
+                                        data=json.dumps(req_body).encode("utf-8"),
+                                        headers={
+                                            "Content-Type": "application/json",
+                                            "Authorization": f"Bearer {p_key}",
+                                            "HTTP-Referer": "https://querii.desktop",
+                                            "X-Title": "Querii Analytics",
+                                        },
+                                        method="POST"
+                                    )
+                                    with urllib.request.urlopen(retry_req, timeout=50, context=ctx) as resp:
+                                        res_json = json.loads(resp.read().decode("utf-8"))
+                                else:
+                                    raise urllib.error.HTTPError(or_he.url, or_he.code, err_text, or_he.hdrs, None)
+
+                            choices = res_json.get("choices", [])
+                            if not choices:
+                                raise RuntimeError("OpenRouter returned no response choices.")
+                            msg_obj = choices[0].get("message", {})
+                            raw_reply = msg_obj.get("content", "") or ""
+                            r_content = msg_obj.get("reasoning_content", "") or ""
+                            if r_content:
+                                overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
 
                         elif candidate_p == "gemini":
-                            url = f"https://generativelanguage.googleapis.com/v1beta/models/{p_model}:generateContent?key={p_key}"
+                            gem_model = p_model or "gemini-2.5-flash"
+                            url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={p_key}"
                             contents = []
                             for m in current_messages:
                                 role = "user" if m.get("role") == "user" else "model"
@@ -593,17 +622,39 @@ class Api:
                                 method="POST"
                             )
 
-                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
-                                res_json = json.loads(resp.read().decode("utf-8"))
-                                candidates = res_json.get("candidates", [])
-                                if not candidates:
-                                    raise RuntimeError("Gemini returned no candidates.")
-                                parts = candidates[0].get("content", {}).get("parts", [])
-                                thought_parts = [p.get("text", "") for p in parts if p.get("thought")]
-                                if thought_parts:
-                                    step_thought = "".join(thought_parts).strip()
-                                    overall_reasoning = (overall_reasoning + "\n" + step_thought).strip()
-                                raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+                            try:
+                                with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                    res_json = json.loads(resp.read().decode("utf-8"))
+                            except urllib.error.HTTPError as ghe:
+                                err_text = ghe.read().decode("utf-8", errors="replace")
+                                # If 429 quota on 2.5-flash, auto-retry with 2.0-flash
+                                if ghe.code == 429 and gem_model == "gemini-2.5-flash":
+                                    gem_model = "gemini-2.0-flash"
+                                    retry_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={p_key}"
+                                    retry_req = urllib.request.Request(
+                                        retry_url,
+                                        data=json.dumps(req_body).encode("utf-8"),
+                                        headers={"Content-Type": "application/json"},
+                                        method="POST"
+                                    )
+                                    try:
+                                        with urllib.request.urlopen(retry_req, timeout=50, context=ctx) as resp:
+                                            res_json = json.loads(resp.read().decode("utf-8"))
+                                    except urllib.error.HTTPError as ghe2:
+                                        err_text2 = ghe2.read().decode("utf-8", errors="replace")
+                                        raise urllib.error.HTTPError(ghe2.url, ghe2.code, err_text2, ghe2.hdrs, None)
+                                else:
+                                    raise urllib.error.HTTPError(ghe.url, ghe.code, err_text, ghe.hdrs, None)
+
+                            candidates = res_json.get("candidates", [])
+                            if not candidates:
+                                raise RuntimeError("Gemini returned no candidates.")
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            thought_parts = [p.get("text", "") for p in parts if p.get("thought")]
+                            if thought_parts:
+                                step_thought = "".join(thought_parts).strip()
+                                overall_reasoning = (overall_reasoning + "\n" + step_thought).strip()
+                            raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought"))
 
                         elif candidate_p == "nvidia":
                             url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -622,9 +673,7 @@ class Api:
                             }
 
                             if "nemotron" in p_model.lower():
-                                req_body["extra_body"] = {
-                                    "chat_template_kwargs": {"enable_thinking": True}
-                                }
+                                req_body["chat_template_kwargs"] = {"enable_thinking": True}
 
                             req = urllib.request.Request(
                                 url,
@@ -636,16 +685,37 @@ class Api:
                                 method="POST"
                             )
 
-                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
-                                res_json = json.loads(resp.read().decode("utf-8"))
-                                choices = res_json.get("choices", [])
-                                if not choices:
-                                    raise RuntimeError("NVIDIA API returned no response choices.")
-                                msg_obj = choices[0].get("message", {})
-                                raw_reply = msg_obj.get("content", "") or ""
-                                r_content = msg_obj.get("reasoning_content", "") or ""
-                                if r_content:
-                                    overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
+                            try:
+                                with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                    res_json = json.loads(resp.read().decode("utf-8"))
+                            except urllib.error.HTTPError as nhe:
+                                err_text = nhe.read().decode("utf-8", errors="replace")
+                                # Auto-heal: If chat_template_kwargs or max_tokens caused HTTP 400
+                                if nhe.code == 400 and ("chat_template_kwargs" in req_body or req_body.get("max_tokens", 0) > 4096):
+                                    req_body.pop("chat_template_kwargs", None)
+                                    req_body["max_tokens"] = 4096
+                                    retry_req = urllib.request.Request(
+                                        url,
+                                        data=json.dumps(req_body).encode("utf-8"),
+                                        headers={
+                                            "Content-Type": "application/json",
+                                            "Authorization": f"Bearer {p_key}"
+                                        },
+                                        method="POST"
+                                    )
+                                    with urllib.request.urlopen(retry_req, timeout=50, context=ctx) as resp:
+                                        res_json = json.loads(resp.read().decode("utf-8"))
+                                else:
+                                    raise urllib.error.HTTPError(nhe.url, nhe.code, err_text, nhe.hdrs, None)
+
+                            choices = res_json.get("choices", [])
+                            if not choices:
+                                raise RuntimeError("NVIDIA API returned no response choices.")
+                            msg_obj = choices[0].get("message", {})
+                            raw_reply = msg_obj.get("content", "") or ""
+                            r_content = msg_obj.get("reasoning_content", "") or ""
+                            if r_content:
+                                overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
 
                         # Extract <think> if present in raw content
                         if "<think>" in raw_reply and "</think>" in raw_reply:

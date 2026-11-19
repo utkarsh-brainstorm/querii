@@ -1278,12 +1278,13 @@ DROP TABLE old_data;"></textarea>
         <div>
           <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Model</label>
           <select id="setting-openrouter-model" class="select-sm w-full h-7">
-            <option value="openrouter/free">openrouter/free (Auto-routed Best Free Model)</option>
-            <option value="meta-llama/llama-3.3-70b-instruct:free">meta-llama/llama-3.3-70b-instruct:free (High-accuracy reasoning)</option>
-            <option value="deepseek/deepseek-r1:free">deepseek/deepseek-r1:free (Open DeepSeek R1 Reasoning)</option>
-            <option value="google/gemini-2.0-flash-exp:free">google/gemini-2.0-flash-exp:free (Google Experimental Flash)</option>
-            <option value="qwen/qwen-2.5-coder-32b-instruct:free">qwen/qwen-2.5-coder-32b-instruct:free (Specialized Code / SQL)</option>
-            <option value="mistralai/mistral-small-24b-instruct-2501:free">mistralai/mistral-small-24b-instruct-2501:free (Compact Fast)</option>
+            <option value="openrouter/free">openrouter/free (Auto-routed Best Free Model — Recommended)</option>
+            <option value="nvidia/nemotron-3-ultra-550b-a55b:free">nvidia/nemotron-3-ultra-550b-a55b:free (Nemotron Ultra 550B Free)</option>
+            <option value="nvidia/nemotron-3.5-lightning:free">nvidia/nemotron-3.5-lightning:free (Nemotron 3.5 Lightning Fast Free)</option>
+            <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it:free (Google Gemma 4 31B Free)</option>
+            <option value="google/gemma-4-26b-a4b-it:free">google/gemma-4-26b-a4b-it:free (Google Gemma 4 26B Free)</option>
+            <option value="inclusionai/ling-3.2-flash:free">inclusionai/ling-3.2-flash:free (Ling 3.2 Flash Free)</option>
+            <option value="baidu/ernie-5.5-flash-preview:free">baidu/ernie-5.5-flash-preview:free (Baidu Ernie 5.5 Flash Free)</option>
           </select>
         </div>
       </div>
@@ -1302,6 +1303,7 @@ DROP TABLE old_data;"></textarea>
           <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Model</label>
           <select id="setting-gemini-model" class="select-sm w-full h-7">
             <option value="gemini-2.5-flash">gemini-2.5-flash (Fastest, latest model)</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash (High quota limit, standard)</option>
             <option value="gemini-1.5-flash">gemini-1.5-flash (Standard flash)</option>
             <option value="gemini-1.5-pro">gemini-1.5-pro (Deep reasoning)</option>
           </select>
