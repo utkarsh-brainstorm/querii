@@ -47,7 +47,7 @@
     <div class="flex items-center gap-2.5 shrink-0">
       <img src="app_icon.png" alt="Querii Icon" class="w-6 h-6 rounded-md shadow-sm object-cover border border-[var(--border)] shrink-0" />
       <span class="font-semibold text-[15px] text-nav-main tracking-tight">Querii</span>
-      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">Version 4.3</span>
+      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">Version 5.0-beta</span>
     </div>
     <div class="flex-1 flex justify-center">
       <div id="org-name-display" class="text-[13px] font-semibold text-nav-main tracking-wide hidden"></div>
@@ -172,17 +172,26 @@
           <!-- HAVING -->
           <div>
             <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
-            <div class="flex items-center gap-1.5">
-              <input id="having-agg" type="text" class="input-sm flex-1 font-mono" placeholder="e.g. COUNT(*)" />
-              <select id="having-op" class="select-sm" style="width:55px">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <input id="having-agg" type="text" class="input-sm flex-1 font-mono min-w-[80px]" placeholder="e.g. COUNT(*)" oninput="onHavingChange()" />
+              <select id="having-op" class="select-sm" style="width:105px" onchange="onHavingOpChange()">
                 <option value=">">&gt;</option>
                 <option value=">=">&gt;=</option>
                 <option value="<">&lt;</option>
                 <option value="<=">&lt;=</option>
                 <option value="=">=</option>
+                <option value="!=">!=</option>
+                <option value="BETWEEN">BETWEEN</option>
+                <option value="NOT BETWEEN">NOT BETWEEN</option>
+                <option value="IS NULL">IS NULL</option>
+                <option value="IS NOT NULL">IS NOT NULL</option>
+                <option value="LIKE">LIKE</option>
+                <option value="IN">IN</option>
               </select>
-              <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="3" />
-              <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
+              <input id="having-val" type="text" value="" class="input-sm flex-1 min-w-[50px]" placeholder="val" oninput="onHavingChange()" />
+              <span id="having-and-label" class="text-[10px] text-[var(--text-dim)] hidden font-mono">and</span>
+              <input id="having-val2" type="text" value="" class="input-sm flex-1 min-w-[50px] hidden" placeholder="val 2" oninput="onHavingChange()" />
+              <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0" title="Clear HAVING clause">✕</button>
             </div>
           </div>
         </div>
@@ -410,7 +419,7 @@
         </div>
 
         <!-- AI Messages Stream -->
-        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5">
           <!-- Populated dynamically from tab's aiChatHistory -->
         </div>
 
@@ -784,7 +793,7 @@ DROP TABLE old_data;"></textarea>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <h3 class="font-bold text-[var(--text-main)] text-[18px] tracking-tight">Querii</h3>
-              <span class="text-[10px] font-mono bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-dim)] px-2 py-0.5 rounded-full font-semibold">Version 4.3</span>
+              <span class="text-[10px] font-mono bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-dim)] px-2 py-0.5 rounded-full font-semibold">Version 5.0-beta</span>
             </div>
             <p class="text-[11px] text-[var(--text-dim)] mt-0.5">Professional Local-First SQL Database Studio & Executive Report Engine</p>
           </div>
@@ -1250,9 +1259,33 @@ DROP TABLE old_data;"></textarea>
       <div>
         <label class="block text-[11px] font-semibold text-[var(--text-head)] mb-1">Active AI Provider</label>
         <select id="setting-ai-provider" class="select-sm w-full h-8" onchange="toggleAiProviderFields(this.value)">
+          <option value="openrouter">OpenRouter (Free Top Models & Meta Router)</option>
           <option value="gemini">Google Gemini (Recommended — Ultra-fast & High context)</option>
-          <option value="nvidia">NVIDIA NIM (Llama 3.3, Nemotron, Mistral)</option>
+          <option value="nvidia">NVIDIA NIM (Nemotron Ultra 550B, Llama 3.3)</option>
         </select>
+      </div>
+
+      <!-- OpenRouter Configuration -->
+      <div id="ai-config-openrouter" class="hidden space-y-2.5 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)]">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-[var(--text-head)]">OpenRouter API</span>
+          <a href="https://openrouter.ai/keys" target="_blank" class="text-[10.5px] text-[var(--accent)] hover:underline font-medium">Get Free OpenRouter Key ↗</a>
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">OpenRouter API Key</label>
+          <input type="password" id="setting-openrouter-key" class="input-sm w-full font-mono text-[11px] h-7" placeholder="sk-or-v1-..." autocomplete="off">
+        </div>
+        <div>
+          <label class="block text-[10px] text-[var(--text-dim)] mb-0.5">Model</label>
+          <select id="setting-openrouter-model" class="select-sm w-full h-7">
+            <option value="openrouter/free">openrouter/free (Auto-routed Best Free Model)</option>
+            <option value="meta-llama/llama-3.3-70b-instruct:free">meta-llama/llama-3.3-70b-instruct:free (High-accuracy reasoning)</option>
+            <option value="deepseek/deepseek-r1:free">deepseek/deepseek-r1:free (Open DeepSeek R1 Reasoning)</option>
+            <option value="google/gemini-2.0-flash-exp:free">google/gemini-2.0-flash-exp:free (Google Experimental Flash)</option>
+            <option value="qwen/qwen-2.5-coder-32b-instruct:free">qwen/qwen-2.5-coder-32b-instruct:free (Specialized Code / SQL)</option>
+            <option value="mistralai/mistral-small-24b-instruct-2501:free">mistralai/mistral-small-24b-instruct-2501:free (Compact Fast)</option>
+          </select>
+        </div>
       </div>
 
       <!-- Gemini Configuration -->
@@ -1294,6 +1327,20 @@ DROP TABLE old_data;"></textarea>
             <option value="nvidia/nemotron-4-340b-instruct">nvidia/nemotron-4-340b-instruct</option>
             <option value="mistralai/mixtral-8x22b-instruct-v0.1">mistralai/mixtral-8x22b-instruct-v0.1</option>
           </select>
+        </div>
+      </div>
+
+      <!-- Provider Fallback Priority Queue -->
+      <div class="space-y-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)]">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-[11px] text-[var(--text-head)]">⚡ Fallback Priority Queue</span>
+          <span class="text-[10px] text-[var(--text-dim)]">Auto-failover on 429/quota</span>
+        </div>
+        <div class="text-[10px] text-[var(--text-dim)] leading-tight">
+          If your primary provider encounters rate limits or errors, Querii automatically fails over in this priority order:
+        </div>
+        <div id="ai-fallback-list" class="space-y-1.5 pt-1">
+          <!-- Rendered dynamically by renderFallbackPriorityQueue() -->
         </div>
       </div>
 

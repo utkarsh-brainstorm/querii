@@ -101,7 +101,7 @@ def _run_app() -> None:
             icon_path = os.path.join(ROOT, "web", "app_icon.ico")
 
     window = webview.create_window(
-        title            = "Querii Version 4.3 — Sheet to SQL",
+        title            = "Querii Version 5.0-beta — Sheet to SQL",
         url              = f"file://{html_path}",
         js_api           = api,
         width            = 1024,

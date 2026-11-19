@@ -817,52 +817,100 @@ function openLeftPanelTablePopover(trigger) {
   setTimeout(function() { searchInput.focus(); }, 15);
 }
 
-function applyLeftPanelTableSelectionChange() {
+function syncTableSelection(tables, options) {
+  options = options || {};
+  var allTables = (_allSchemaData || []).map(function(t) { return t.table; });
+
+  if (!Array.isArray(tables)) {
+    if (tables === '__ALL__') {
+      tables = allTables.slice();
+    } else if (!tables || tables === '__NONE__') {
+      tables = [];
+    } else {
+      tables = [String(tables)];
+    }
+  }
+
+  // Deduplicate and filter to valid tables if schema is loaded
+  var uniqueTables = [];
+  tables.forEach(function(t) {
+    if (t && uniqueTables.indexOf(t) === -1) {
+      if (!allTables.length || allTables.indexOf(t) !== -1) {
+        uniqueTables.push(t);
+      }
+    }
+  });
+
+  _selectedTables = uniqueTables.slice();
+  _activeTable = _selectedTables.length > 0 ? _selectedTables[0] : '';
+
+  // 1. Update Active Tab session
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (activeTab) {
+    activeTab.selectedTables = _selectedTables.slice();
+    activeTab.activeTable = _activeTable;
+    if (allTables.length > 0 && _selectedTables.length === allTables.length) {
+      activeTab.aiContextTables = '__ALL__';
+    } else if (_selectedTables.length === 0) {
+      activeTab.aiContextTables = [];
+    } else {
+      activeTab.aiContextTables = _selectedTables.slice();
+    }
+  }
+
+  // 2. Synchronize Left Panel Selector
   renderLeftPanelTableMultiSelect();
 
-  var atb = document.getElementById('active-table-badge');
-  var atn = document.getElementById('active-table-name');
-  var btd = document.getElementById('btn-drop-table');
-  var feh = document.getElementById('filter-empty-hint');
+  // 3. Synchronize AI Context Selector
+  renderAiContextMultiSelect();
 
-  if (!_selectedTables || _selectedTables.length === 0) {
-    _activeTable = '';
+  // 4. Update Header Badges & Hints
+  updateTableBadge();
+  var btd = document.getElementById('btn-drop-table');
+  if (btd) btd.classList.toggle('hidden', _selectedTables.length > 1);
+  var feh = document.getElementById('filter-empty-hint');
+  if (feh) feh.classList.toggle('hidden', _selectedTables.length > 0);
+
+  // 5. Synchronize Schema Tree and Center Schema Reference
+  renderSchemaTree(_allSchemaData);
+  refreshOpenSchemaPanel();
+
+  // 6. Synchronize File List Modal Checkboxes if open
+  var fileListCbs = document.querySelectorAll('.table-checkbox');
+  if (fileListCbs.length) {
+    fileListCbs.forEach(function(cb) {
+      var t = cb.getAttribute('data-table');
+      cb.checked = (_selectedTables.indexOf(t) !== -1);
+      var tr = cb.closest('tr');
+      if (tr) tr.classList.toggle('selected-row', cb.checked);
+    });
+  }
+
+  // 7. Update columns & builder
+  if (!_activeTable) {
     _tableColumns = [];
-    if (atb) atb.classList.add('hidden');
-    if (btd) btd.classList.add('hidden');
-    if (feh) feh.classList.remove('hidden');
-    renderSchemaTree([]);
-    refreshOpenSchemaPanel();
     _selectPills = [];
     _groupByPills = [];
     renderSelectPills();
     renderGroupByPills();
     clearFilterGroups();
   } else {
-    _activeTable = _selectedTables[0];
-    if (atn) atn.textContent = _selectedTables.length === 1 ? _activeTable : (_selectedTables.length + ' tables');
-    if (atb) atb.classList.remove('hidden');
-    if (btd) btd.classList.toggle('hidden', _selectedTables.length > 1);
-    if (feh) feh.classList.add('hidden');
-
-    renderSchemaTree(_allSchemaData);
-    refreshOpenSchemaPanel();
-
     apiCall('get_table_columns', _activeTable)
       .then(function(cols) {
         _tableColumns = cols || [];
         rebuildSortDropdown();
         buildAggDropdowns();
+        if (options.onTableChange) {
+          onTableChange();
+        }
       }).catch(function(){});
   }
 
-  // Update active tab object without altering AI context table
-  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
-  if (activeTab) {
-    activeTab.selectedTables = (_selectedTables || []).slice();
-    activeTab.activeTable = _activeTable || '';
-  }
   schedulePersistedSessionSave();
+}
+
+function applyLeftPanelTableSelectionChange() {
+  syncTableSelection(_selectedTables);
 }
 
 function refreshSchema(selectTable, options) {
@@ -1297,7 +1345,7 @@ function _buildSchemaHtml(schema, isEditor) {
     var sampleSql = 'SELECT ' + colNames + '\nFROM "' + t.table + '"\nLIMIT 100';
     html += '<div class="schema-table" style="margin-bottom:10px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--bg-muted);border-radius:4px 4px 0 0;border:1px solid var(--border);border-bottom:0">' +
-      '<span style="font-weight:600;font-size:11px;color:var(--text-head);font-family:monospace">📋 ' + esc(t.table) + '</span>' +
+      '<span style="font-weight:600;font-size:11px;color:var(--text-head);font-family:monospace;cursor:pointer" onclick="syncTableSelection([\'' + esc(t.table) + '\'], {onTableChange:true})" title="Click to focus this table alone">📋 ' + esc(t.table) + '</span>' +
       '<span style="font-size:10px;color:var(--text-dim)">' + userCols.length + ' cols</span></div>' +
       '<div style="border:1px solid var(--border);border-radius:0 0 4px 4px;overflow:hidden">';
     userCols.forEach(function(c) {
@@ -1746,10 +1794,16 @@ function buildConditionEl(cond, ci, gid) {
   html += '<select class="select-sm" style="font-family:monospace;font-size:11px" id="ff-' + cond.id + '" ' +
     'onchange=\'onCondFieldChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)\'>' + fieldOpts + '</select>';
 
-  // Op select (populated by updateFilterOps)
-  html += '<div style="display:flex;gap:3px">';
+  cond.rhs_type = cond.rhs_type || 'value';
+
+  // Op select + RHS mode toggle button
+  html += '<div style="display:flex;gap:3px;align-items:center">';
   html += '<select class="select-sm" style="flex:1" id="fo-' + cond.id + '" ' +
     'onchange=\'onCondOpChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',this.value)\'></select>';
+  html += '<button type="button" class="btn-ghost" style="font-size:9.5px;padding:1px 5px;height:22px;border:1px solid var(--border);border-radius:4px;white-space:nowrap" ' +
+    'onclick=\'toggleCondRhsType(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ')\' ' +
+    'title="Switch condition between literal value and table column">' +
+    (cond.rhs_type === 'column' ? '⊞ Col' : '123 Val') + '</button>';
   html += '</div>';
   html += '<div id="fv-' + cond.id + '" style="margin-top:2px"></div>';
   html += '</div>';
@@ -1781,6 +1835,21 @@ function populateCondOps(cond, gid) {
   renderCondValue(cond, gid);
 }
 
+function toggleCondRhsType(gid, iid) {
+  var group = findGroup(_filterGroups, gid);
+  if (!group) return;
+  var cond = group.items.find(function(it) { return it.id === iid; });
+  if (!cond) return;
+  cond.rhs_type = (cond.rhs_type === 'column' ? 'value' : 'column');
+  cond.value = '';
+  cond.value2 = '';
+  var oldRow = document.getElementById('fi-' + iid);
+  if (oldRow && oldRow.parentNode) {
+    var newRow = buildConditionEl(cond, 0, gid);
+    oldRow.parentNode.replaceChild(newRow, oldRow);
+  }
+}
+
 function renderCondValue(cond, gid) {
   var vDiv = document.getElementById('fv-' + cond.id);
   if (!vDiv) return;
@@ -1788,6 +1857,20 @@ function renderCondValue(cond, gid) {
   var cat = cond.category;
 
   if (op === 'is empty' || op === 'is not empty') { vDiv.innerHTML = ''; return; }
+
+  if (cond.rhs_type === 'column') {
+    // Column-to-Column Comparison mode
+    var colOpts = '<option value="">— Select Target Column —</option>' +
+      _tableColumns.map(function(c) {
+        var val = (_selectedTables.length > 1) ? _activeTable + '.' + c.name : c.name;
+        return '<option value="' + esc(val) + '"' + (val === cond.value ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.type + ')</option>';
+      }).join('');
+    vDiv.innerHTML = '<select id="fv1-' + cond.id + '" class="select-sm font-mono text-[11px]" style="width:100%" ' +
+      'onchange=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val1",this.value)\'>' +
+      colOpts + '</select>';
+    return;
+  }
+
   var changeAttr = 'onchange=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val1",this.value)\' ' +
                    'oninput=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val1",this.value)\'';
   var changeAttr2 = 'onchange=\'onCondValueChange(' + JSON.stringify(gid) + ',' + JSON.stringify(cond.id) + ',"val2",this.value)\'';
@@ -1920,7 +2003,32 @@ function generateSqlPreview() {
         var op = item.operator;
         var val1 = item.value || '';
         var val2 = item.value2 || '';
-        if (op === 'is empty') {
+        if (item.rhs_type === 'column') {
+          var rCol = val1.indexOf('.') !== -1 ? val1 : '"' + val1 + '"';
+          if (op === 'contains') {
+            parts.push("LOWER(" + fld + ") LIKE '%' || LOWER(" + rCol + ") || '%'");
+          } else if (op === 'not contains') {
+            parts.push("LOWER(" + fld + ") NOT LIKE '%' || LOWER(" + rCol + ") || '%'");
+          } else if (op === 'starts with') {
+            parts.push("LOWER(" + fld + ") LIKE LOWER(" + rCol + ") || '%'");
+          } else if (op === 'ends with') {
+            parts.push("LOWER(" + fld + ") LIKE '%' || LOWER(" + rCol + ")");
+          } else if (op === 'not equals') {
+            parts.push(fld + ' != ' + rCol);
+          } else if (op === 'equals') {
+            parts.push(fld + ' = ' + rCol);
+          } else if (op === 'greater than') {
+            parts.push(fld + ' > ' + rCol);
+          } else if (op === 'less than') {
+            parts.push(fld + ' < ' + rCol);
+          } else if (op === 'greater or equal') {
+            parts.push(fld + ' >= ' + rCol);
+          } else if (op === 'less or equal') {
+            parts.push(fld + ' <= ' + rCol);
+          } else {
+            parts.push(fld + ' ' + op + ' ' + rCol);
+          }
+        } else if (op === 'is empty') {
           parts.push('(' + fld + ' IS NULL OR ' + fld + " = '')");
         } else if (op === 'is not empty') {
           parts.push('(' + fld + ' IS NOT NULL AND ' + fld + " != '')");
@@ -1951,11 +2059,23 @@ function generateSqlPreview() {
 
   if (_groupByPills.length) {
     sql += '\nGROUP BY ' + _groupByPills.map(function(p) { return p.expr; }).join(', ');
-    var havingAgg = ((document.getElementById('having-agg') || {}).value || '').trim();
-    var havingOp  = (document.getElementById('having-op') || {}).value || '>';
-    var havingVal = ((document.getElementById('having-val') || {}).value || '').trim();
-    if (havingAgg && havingVal) {
-      sql += '\nHAVING ' + havingAgg + ' ' + havingOp + ' ' + havingVal;
+    var havingAgg  = ((document.getElementById('having-agg') || {}).value || '').trim();
+    var havingOp   = (document.getElementById('having-op') || {}).value || '>';
+    var havingVal  = ((document.getElementById('having-val') || {}).value || '').trim();
+    var havingVal2 = ((document.getElementById('having-val2') || {}).value || '').trim();
+    if (havingAgg) {
+      if (havingOp === 'IS NULL' || havingOp === 'IS NOT NULL') {
+        sql += '\nHAVING ' + havingAgg + ' ' + havingOp;
+      } else if ((havingOp === 'BETWEEN' || havingOp === 'NOT BETWEEN') && havingVal && havingVal2) {
+        sql += '\nHAVING ' + havingAgg + ' ' + havingOp + ' ' + havingVal + ' AND ' + havingVal2;
+      } else if (havingOp === 'IN' && havingVal) {
+        sql += '\nHAVING ' + havingAgg + ' IN (' + havingVal + ')';
+      } else if (havingOp === 'LIKE' && havingVal) {
+        var lVal = (havingVal.startsWith("'") && havingVal.endsWith("'")) ? havingVal : "'" + havingVal.replace(/'/g, "''") + "'";
+        sql += '\nHAVING ' + havingAgg + ' LIKE ' + lVal;
+      } else if (havingVal) {
+        sql += '\nHAVING ' + havingAgg + ' ' + havingOp + ' ' + havingVal;
+      }
     }
   }
 
@@ -1999,6 +2119,7 @@ function serializeGroupItem(item) {
     joiner:       item.joiner || 'AND',
     category:     item.category,
     table_prefix: item.table_prefix || '',
+    rhs_type:     item.rhs_type || 'value',
   };
 }
 
@@ -2066,8 +2187,47 @@ function removeSelectPill(i)  { _selectPills.splice(i, 1);  renderSelectPills();
 function removeGroupByPill(i) { _groupByPills.splice(i, 1); renderGroupByPills(); }
 function clearHaving() {
   var a = document.getElementById('having-agg'); if (a) a.value = '';
-  var v = document.getElementById('having-val'); if (v) v.value = '';
+  var v1 = document.getElementById('having-val'); if (v1) v1.value = '';
+  var v2 = document.getElementById('having-val2'); if (v2) v2.value = '';
+  var op = document.getElementById('having-op'); if (op) op.value = '>';
+  var andLbl = document.getElementById('having-and-label'); if (andLbl) andLbl.classList.add('hidden');
+  if (v2) { v2.classList.add('hidden'); v2.style.display = 'none'; }
+  if (v1) v1.style.display = 'block';
+  runFilter();
 }
+
+function onHavingOpChange() {
+  var opEl = document.getElementById('having-op');
+  var op = opEl ? opEl.value : '>';
+  var v1 = document.getElementById('having-val');
+  var v2 = document.getElementById('having-val2');
+  var andLbl = document.getElementById('having-and-label');
+
+  if (op === 'BETWEEN' || op === 'NOT BETWEEN') {
+    if (v1) { v1.style.display = 'block'; v1.placeholder = 'min'; }
+    if (andLbl) andLbl.classList.remove('hidden');
+    if (v2) { v2.classList.remove('hidden'); v2.style.display = 'block'; v2.placeholder = 'max'; }
+  } else if (op === 'IS NULL' || op === 'IS NOT NULL') {
+    if (v1) v1.style.display = 'none';
+    if (andLbl) andLbl.classList.add('hidden');
+    if (v2) { v2.classList.add('hidden'); v2.style.display = 'none'; }
+  } else {
+    if (v1) {
+      v1.style.display = 'block';
+      if (op === 'LIKE') v1.placeholder = "'%val%'";
+      else if (op === 'IN') v1.placeholder = "1, 2, 3";
+      else v1.placeholder = "val";
+    }
+    if (andLbl) andLbl.classList.add('hidden');
+    if (v2) { v2.classList.add('hidden'); v2.style.display = 'none'; }
+  }
+  onHavingChange();
+}
+
+function onHavingChange() {
+  runFilter();
+}
+
 function toggleAggSection() {
   var sec  = document.getElementById('agg-section');
   var icon = document.getElementById('agg-toggle-icon');
@@ -2087,10 +2247,25 @@ function runFilter() {
   var selExprs  = _selectPills.map(function(p) { return p.expr; });
   var selLabels = _selectPills.map(function(p) { return p.label; });
   var grpExprs  = _groupByPills.map(function(p) { return p.expr; });
-  var havingAgg = ((document.getElementById('having-agg') || {}).value || '').trim();
-  var havingOp  = (document.getElementById('having-op') || {}).value || '>';
-  var havingVal = ((document.getElementById('having-val') || {}).value || '').trim();
-  var having    = (havingAgg && havingVal) ? havingAgg + ' ' + havingOp + ' ' + havingVal : '';
+  var havingAgg  = ((document.getElementById('having-agg') || {}).value || '').trim();
+  var havingOp   = (document.getElementById('having-op') || {}).value || '>';
+  var havingVal  = ((document.getElementById('having-val') || {}).value || '').trim();
+  var havingVal2 = ((document.getElementById('having-val2') || {}).value || '').trim();
+  var having     = '';
+  if (havingAgg) {
+    if (havingOp === 'IS NULL' || havingOp === 'IS NOT NULL') {
+      having = havingAgg + ' ' + havingOp;
+    } else if ((havingOp === 'BETWEEN' || havingOp === 'NOT BETWEEN') && havingVal && havingVal2) {
+      having = havingAgg + ' ' + havingOp + ' ' + havingVal + ' AND ' + havingVal2;
+    } else if (havingOp === 'IN' && havingVal) {
+      having = havingAgg + ' IN (' + havingVal + ')';
+    } else if (havingOp === 'LIKE' && havingVal) {
+      var lVal = (havingVal.startsWith("'") && havingVal.endsWith("'")) ? havingVal : "'" + havingVal.replace(/'/g, "''") + "'";
+      having = havingAgg + ' LIKE ' + lVal;
+    } else if (havingVal) {
+      having = havingAgg + ' ' + havingOp + ' ' + havingVal;
+    }
+  }
 
   var isSec = (_focusedPane === 'secondary' && _splitActive);
   if (isSec) {
@@ -2113,11 +2288,17 @@ function runFilter() {
     if (isSec) {
       var edB = document.getElementById('sql-editor-b');
       if (edB && d.sql) { edB.value = d.sql; syncSqlLinesSecondary(); }
+      _lastExecutedSqlB = d.sql;
+      var secTab = _tabs.find(function(t) { return t.id === _secondaryTabId; });
+      if (secTab) secTab.lastExecutedSql = d.sql;
       setSqlStatusSecondary((d.count || 0).toLocaleString() + ' rows');
       renderResultsSecondary(d.columns || [], d.rows || [], d.count || 0);
     } else {
       var ed = document.getElementById('sql-editor');
       if (ed && d.sql) { ed.value = d.sql; syncSqlLines(); }
+      _lastExecutedSql = d.sql;
+      var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+      if (activeTab) activeTab.lastExecutedSql = d.sql;
       setSqlStatus((d.count || 0).toLocaleString() + ' rows');
       renderResults(d.columns || [], d.rows || [], d.count || 0);
     }
@@ -2324,6 +2505,10 @@ function renderMutationSuccess(message, table) {
 
 function runSqlDirect(sql) {
   setSqlStatus('Running…');
+  _lastExecutedSql = sql;
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  if (activeTab) activeTab.lastExecutedSql = sql;
+
   apiCall('run_sql', sql)
     .then(function(d) {
       if (d.message && (!d.columns || d.columns.length === 0)) {
@@ -2589,23 +2774,63 @@ function renderResults(columns, firstPageRows, totalCount) {
 }
 
 /* Click a column header to sort via SQL */
+function buildSortedQuery(baseSql, col, dir) {
+  var clean = (baseSql || '').trim().replace(/;\s*$/, '');
+  var escapedCol = col.replace(/"/g, '""');
+
+  var orderLimitMatch = clean.match(/^([\s\S]+?)\s+ORDER\s+BY\s+[\s\S]+?\s+(LIMIT\s+\d+(?:\s+OFFSET\s+\d+)?)$/i);
+  if (orderLimitMatch) {
+    return orderLimitMatch[1] + ' ORDER BY "' + escapedCol + '" ' + dir + ' ' + orderLimitMatch[2];
+  }
+
+  var limitMatch = clean.match(/^([\s\S]+?)\s+(LIMIT\s+\d+(?:\s+OFFSET\s+\d+)?)$/i);
+  if (limitMatch) {
+    return limitMatch[1] + ' ORDER BY "' + escapedCol + '" ' + dir + ' ' + limitMatch[2];
+  }
+
+  var orderOnlyMatch = clean.match(/^([\s\S]+?)\s+ORDER\s+BY\s+[^\(\)]+$/i);
+  if (orderOnlyMatch) {
+    return orderOnlyMatch[1] + ' ORDER BY "' + escapedCol + '" ' + dir;
+  }
+
+  return 'SELECT * FROM (\n  ' + clean + '\n) ORDER BY "' + escapedCol + '" ' + dir;
+}
+
 function toggleColumnSort(col) {
+  var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
+  var ed = document.getElementById('sql-editor');
+  var baseSql = (activeTab && activeTab.lastExecutedSql) || _lastExecutedSql || (ed ? ed.value.trim() : '');
+
+  if (!baseSql && _activeTable) {
+    baseSql = 'SELECT * FROM "' + _activeTable + '" LIMIT 5000';
+  }
+  if (!baseSql) return;
+
+  if (_sortCol === col) {
+    _sortDir = (_sortDir === 'ASC' ? 'DESC' : 'ASC');
+  } else {
+    _sortCol = col;
+    _sortDir = 'ASC';
+  }
+
   var sortColEl = document.getElementById('sort-col');
   var sortDirEl = document.getElementById('sort-dir');
-  if (!sortColEl || !sortDirEl) return;
+  if (sortColEl) sortColEl.value = col;
+  if (sortDirEl) sortDirEl.value = _sortDir;
 
-  if (sortColEl.value === col) {
-    sortDirEl.value = sortDirEl.value === 'ASC' ? 'DESC' : 'ASC';
-  } else {
-    sortColEl.value = col;
-    sortDirEl.value = 'ASC';
-  }
-  
-  _sortCol = col;
-  _sortDir = sortDirEl.value;
+  var sortedSql = buildSortedQuery(baseSql, col, _sortDir);
+  setSqlStatus('Sorting by ' + col + ' ' + _sortDir + '…');
 
-  // Re-run the SQL query to sort properly
-  runFilter();
+  apiCall('run_sql', sortedSql)
+    .then(function(d) {
+      setSqlStatus((d.count || 0).toLocaleString() + ' rows');
+      renderResults(d.columns || [], d.rows || [], d.count || 0);
+      schedulePersistedSessionSave();
+    })
+    .catch(function(e) {
+      toast('Sort error: ' + e.message, 'error');
+      setSqlStatus('⚠ ' + e.message);
+    });
 }
 
 var _rowSearchTerm = '';
@@ -4367,20 +4592,15 @@ function toggleCheckAll(cb) {
 
 function fileListSelect(name) {
   closeModal();
-  _selectedTables = [name];
-  _activeTable = name;
-  // Make sure schema is up to date before switching
+  exitJoinMode();
   if (!_allSchemaData.length) {
     apiCall('get_schema').then(function(schema) {
       _allSchemaData = schema || [];
-      renderSchemaTree(_allSchemaData);
+      syncTableSelection([name], { onTableChange: true });
     });
   } else {
-    renderSchemaTree(_allSchemaData);
+    syncTableSelection([name], { onTableChange: true });
   }
-  var sel = document.getElementById('table-select');
-  if (sel) { sel.value = name; onTableChange(); }
-  updateTableBadge();
 }
 
 function fileListDrop(name) {
@@ -4388,8 +4608,8 @@ function fileListDrop(name) {
   apiCall('drop_table', name)
     .then(function() {
       toast('Table "' + name + '" deleted.');
-      if (_activeTable === name) { _activeTable = ''; }
-      _selectedTables = _selectedTables.filter(function(t) { return t !== name; });
+      var rem = (_selectedTables || []).filter(function(t) { return t !== name; });
+      syncTableSelection(rem, { onTableChange: (rem.length > 0) });
       refreshSchema();
       openFileList(); // Refresh the list
     })
@@ -4403,23 +4623,14 @@ function useSelectedTables() {
   });
   if (!checked.length) { toast('Select at least one table.', 'warn'); return; }
   closeModal();
-  _selectedTables = checked;
 
   if (checked.length === 1) {
-    // Single table — normal mode
-    var sel = document.getElementById('table-select');
-    if (sel) { sel.value = checked[0]; }
-    _activeTable = checked[0];
     exitJoinMode();
-    onTableChange();
+    syncTableSelection(checked, { onTableChange: true });
   } else {
-    // Multi-table — JOIN mode
-    _activeTable = checked[0];
+    syncTableSelection(checked);
     enterJoinMode(checked);
   }
-  updateTableBadge();
-  renderSchemaTree(_allSchemaData);
-  refreshOpenSchemaPanel();
 }
 
 function updateTableBadge() {
@@ -5618,31 +5829,45 @@ function initTabs() {
   updateSplitDropdown();
 }
 
-/* ── AI Chat Assistant (Google Gemini & NVIDIA NIM) ─────────────────── */
+/* ── AI Chat Assistant (OpenRouter, Gemini & NVIDIA NIM) ────────────── */
 var _aiSettings = {
-  provider: 'gemini',
+  provider: 'openrouter',
+  openrouterKey: '',
+  openrouterModel: 'openrouter/free',
   geminiKey: '',
   geminiModel: 'gemini-2.5-flash',
   nvidiaKey: '',
-  nvidiaModel: 'nvidia/nemotron-3-ultra-550b-a55b'
+  nvidiaModel: 'nvidia/nemotron-3-ultra-550b-a55b',
+  fallbackChain: ['openrouter', 'gemini', 'nvidia']
 };
 var _activeTabAiHistory = [];
 var _aiIsSending = false;
 
 function loadAiSettings(s) {
   if (!s) return;
-  if (s.ai_provider)     _aiSettings.provider = s.ai_provider;
-  if (s.ai_gemini_key)   _aiSettings.geminiKey = s.ai_gemini_key;
-  if (s.ai_gemini_model) _aiSettings.geminiModel = s.ai_gemini_model;
-  if (s.ai_nvidia_key)   _aiSettings.nvidiaKey = s.ai_nvidia_key;
-  if (s.ai_nvidia_model) _aiSettings.nvidiaModel = s.ai_nvidia_model;
+  if (s.ai_provider)         _aiSettings.provider = s.ai_provider;
+  if (s.ai_openrouter_key)   _aiSettings.openrouterKey = s.ai_openrouter_key;
+  if (s.ai_openrouter_model) _aiSettings.openrouterModel = s.ai_openrouter_model;
+  if (s.ai_gemini_key)       _aiSettings.geminiKey = s.ai_gemini_key;
+  if (s.ai_gemini_model)     _aiSettings.geminiModel = s.ai_gemini_model;
+  if (s.ai_nvidia_key)       _aiSettings.nvidiaKey = s.ai_nvidia_key;
+  if (s.ai_nvidia_model)     _aiSettings.nvidiaModel = s.ai_nvidia_model;
+  if (s.ai_fallback_chain) {
+    try {
+      var parsed = JSON.parse(s.ai_fallback_chain);
+      if (Array.isArray(parsed) && parsed.length) _aiSettings.fallbackChain = parsed;
+    } catch(e) {}
+  }
   updateAiProviderBadge();
 }
 
 function updateAiProviderBadge() {
   var badge = document.getElementById('ai-provider-badge');
   if (!badge) return;
-  if (_aiSettings.provider === 'nvidia') {
+  if (_aiSettings.provider === 'openrouter') {
+    var shortMod = (_aiSettings.openrouterModel || 'openrouter/free').split('/').pop().replace(':free', '');
+    badge.textContent = 'OpenRouter · ' + shortMod;
+  } else if (_aiSettings.provider === 'nvidia') {
     var shortMod = (_aiSettings.nvidiaModel || 'Nemotron Ultra').split('/').pop();
     if (shortMod.toLowerCase().indexOf('nemotron') !== -1) shortMod = 'Nemotron Ultra 550B';
     badge.textContent = 'NVIDIA · ' + shortMod;
@@ -5785,10 +6010,7 @@ function openAiContextMultiPopover(trigger) {
         } else if (!cb.checked && idx !== -1) {
           currentCtx.splice(idx, 1);
         }
-        if (currentCtx.length === allTables.length) currentCtx = '__ALL__';
-        if (activeTab) activeTab.aiContextTables = currentCtx;
-        renderAiContextMultiSelect();
-        schedulePersistedSessionSave();
+        syncTableSelection(currentCtx);
         populate();
       };
       listEl.appendChild(row);
@@ -5797,19 +6019,15 @@ function openAiContextMultiPopover(trigger) {
 
   header.querySelector('#ai-ctx-all').onclick = function(e) {
     e.preventDefault();
-    currentCtx = '__ALL__';
-    if (activeTab) activeTab.aiContextTables = '__ALL__';
-    renderAiContextMultiSelect();
-    schedulePersistedSessionSave();
+    currentCtx = allTables.slice();
+    syncTableSelection(currentCtx);
     populate();
   };
 
   header.querySelector('#ai-ctx-none').onclick = function(e) {
     e.preventDefault();
     currentCtx = [];
-    if (activeTab) activeTab.aiContextTables = [];
-    renderAiContextMultiSelect();
-    schedulePersistedSessionSave();
+    syncTableSelection([]);
     populate();
   };
 
@@ -6207,13 +6425,28 @@ function sendAiChatMessage() {
   var activeTab = _tabs.find(function(t) { return t.id === _activeTabId; });
   if (!activeTab) return;
 
-  var provider = _aiSettings.provider || 'gemini';
-  var apiKey = provider === 'nvidia' ? _aiSettings.nvidiaKey : _aiSettings.geminiKey;
-  var model = provider === 'nvidia' ? _aiSettings.nvidiaModel : _aiSettings.geminiModel;
+  var provider = _aiSettings.provider || 'openrouter';
+  var apiKey = '';
+  var model = '';
 
-  if (!apiKey) {
+  if (provider === 'openrouter') {
+    apiKey = _aiSettings.openrouterKey;
+    model = _aiSettings.openrouterModel || 'openrouter/free';
+  } else if (provider === 'nvidia') {
+    apiKey = _aiSettings.nvidiaKey;
+    model = _aiSettings.nvidiaModel || 'nvidia/nemotron-3-ultra-550b-a55b';
+  } else {
+    apiKey = _aiSettings.geminiKey;
+    model = _aiSettings.geminiModel || 'gemini-2.5-flash';
+  }
+
+  var hasAnyKey = !!((_aiSettings.openrouterKey && _aiSettings.openrouterKey.trim()) ||
+                     (_aiSettings.geminiKey && _aiSettings.geminiKey.trim()) ||
+                     (_aiSettings.nvidiaKey && _aiSettings.nvidiaKey.trim()));
+
+  if (!hasAnyKey && !apiKey) {
     openAiSettingsModal();
-    toast('Please enter your ' + provider.toUpperCase() + ' API key to use AI Chat.', 'warn');
+    toast('Please configure an API key (OpenRouter, Gemini, or NVIDIA) in AI Settings.', 'warn');
     return;
   }
 
@@ -6245,7 +6478,7 @@ function sendAiChatMessage() {
     return { role: m.role, content: m.content };
   });
 
-  apiCall('send_ai_chat', provider, model, apiKey, JSON.stringify(conversationChain), systemPrompt, true)
+  apiCall('send_ai_chat', provider, model, apiKey, JSON.stringify(conversationChain), systemPrompt, true, _aiSettings.fallbackChain || ['openrouter', 'gemini', 'nvidia'])
     .then(function(res) {
       _aiIsSending = false;
       if (sendBtn) sendBtn.disabled = false;
@@ -6254,6 +6487,10 @@ function sendAiChatMessage() {
 
       var reply = (res && res.text) ? res.text : '';
       if (!reply) throw new Error('Empty response from AI service.');
+
+      if (res && res.fallback_occurred && res.fallback_note) {
+        toast('⚡ ' + res.fallback_note, 'info');
+      }
 
       // 3. Save assistant reply with reasoning and agent_steps
       _activeTabAiHistory.push({
@@ -6304,55 +6541,116 @@ function sendAiChatMessage() {
 
 function openAiSettingsModal() {
   var pSel = document.getElementById('setting-ai-provider');
+  var oKey = document.getElementById('setting-openrouter-key');
+  var oMod = document.getElementById('setting-openrouter-model');
   var gKey = document.getElementById('setting-gemini-key');
   var gMod = document.getElementById('setting-gemini-model');
   var nKey = document.getElementById('setting-nvidia-key');
   var nMod = document.getElementById('setting-nvidia-model');
 
-  if (pSel) pSel.value = _aiSettings.provider || 'gemini';
+  if (pSel) pSel.value = _aiSettings.provider || 'openrouter';
+  if (oKey) oKey.value = _aiSettings.openrouterKey || '';
+  if (oMod) oMod.value = _aiSettings.openrouterModel || 'openrouter/free';
   if (gKey) gKey.value = _aiSettings.geminiKey || '';
   if (gMod) gMod.value = _aiSettings.geminiModel || 'gemini-2.5-flash';
   if (nKey) nKey.value = _aiSettings.nvidiaKey || '';
-  if (nMod) nMod.value = _aiSettings.nvidiaModel || 'meta/llama-3.3-70b-instruct';
+  if (nMod) nMod.value = _aiSettings.nvidiaModel || 'nvidia/nemotron-3-ultra-550b-a55b';
 
-  toggleAiProviderFields(_aiSettings.provider || 'gemini');
+  toggleAiProviderFields(_aiSettings.provider || 'openrouter');
+  renderFallbackPriorityQueue();
   openModal('modal-ai-settings');
 }
 
 function toggleAiProviderFields(provider) {
+  var openrouterBox = document.getElementById('ai-config-openrouter');
   var geminiBox = document.getElementById('ai-config-gemini');
   var nvidiaBox = document.getElementById('ai-config-nvidia');
+  if (openrouterBox) openrouterBox.classList.toggle('hidden', provider !== 'openrouter');
   if (geminiBox) geminiBox.classList.toggle('hidden', provider !== 'gemini');
   if (nvidiaBox) nvidiaBox.classList.toggle('hidden', provider !== 'nvidia');
 }
 
+function renderFallbackPriorityQueue() {
+  var list = document.getElementById('ai-fallback-list');
+  if (!list) return;
+  var chain = _aiSettings.fallbackChain || ['openrouter', 'gemini', 'nvidia'];
+  var labels = {
+    'openrouter': 'OpenRouter (Free Top Models)',
+    'gemini': 'Google Gemini',
+    'nvidia': 'NVIDIA NIM'
+  };
+  var keys = {
+    'openrouter': _aiSettings.openrouterKey,
+    'gemini': _aiSettings.geminiKey,
+    'nvidia': _aiSettings.nvidiaKey
+  };
+
+  list.innerHTML = '';
+  chain.forEach(function(prov, idx) {
+    var hasKey = !!(keys[prov] && keys[prov].trim());
+    var row = document.createElement('div');
+    row.className = 'flex items-center justify-between p-1.5 rounded border border-[var(--border)] bg-[var(--bg-muted)] text-[11px]';
+    row.innerHTML =
+      '<div class="flex items-center gap-2">' +
+        '<span class="font-mono text-[10px] w-4 text-center font-bold text-[var(--accent)]">' + (idx + 1) + '</span>' +
+        '<span class="font-medium text-[var(--text-head)]">' + esc(labels[prov] || prov) + '</span>' +
+        '<span class="text-[9px] px-1.5 py-0.5 rounded font-mono ' + (hasKey ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-500 border border-amber-500/30') + '">' +
+          (hasKey ? 'Key Configured' : 'No Key Set') +
+        '</span>' +
+      '</div>' +
+      '<div class="flex items-center gap-1">' +
+        '<button type="button" class="btn-ghost h-6 px-1.5 text-[10px]" ' + (idx === 0 ? 'disabled style="opacity:0.3"' : 'onclick="moveFallbackPriority(' + idx + ', -1)"') + ' title="Move Up">▲</button>' +
+        '<button type="button" class="btn-ghost h-6 px-1.5 text-[10px]" ' + (idx === chain.length - 1 ? 'disabled style="opacity:0.3"' : 'onclick="moveFallbackPriority(' + idx + ', 1)"') + ' title="Move Down">▼</button>' +
+      '</div>';
+    list.appendChild(row);
+  });
+}
+
+function moveFallbackPriority(index, dir) {
+  var chain = (_aiSettings.fallbackChain || ['openrouter', 'gemini', 'nvidia']).slice();
+  var target = index + dir;
+  if (target < 0 || target >= chain.length) return;
+  var temp = chain[index];
+  chain[index] = chain[target];
+  chain[target] = temp;
+  _aiSettings.fallbackChain = chain;
+  renderFallbackPriorityQueue();
+}
+
 function saveAiSettings() {
   var pSel = document.getElementById('setting-ai-provider');
+  var oKey = document.getElementById('setting-openrouter-key');
+  var oMod = document.getElementById('setting-openrouter-model');
   var gKey = document.getElementById('setting-gemini-key');
   var gMod = document.getElementById('setting-gemini-model');
   var nKey = document.getElementById('setting-nvidia-key');
   var nMod = document.getElementById('setting-nvidia-model');
 
-  var provider = pSel ? pSel.value : 'gemini';
+  var provider = pSel ? pSel.value : 'openrouter';
+  var openrouterKey = oKey ? oKey.value.trim() : '';
+  var openrouterModel = oMod ? oMod.value : 'openrouter/free';
   var geminiKey = gKey ? gKey.value.trim() : '';
   var geminiModel = gMod ? gMod.value : 'gemini-2.5-flash';
   var nvidiaKey = nKey ? nKey.value.trim() : '';
-  var nvidiaModel = nMod ? nMod.value : 'meta/llama-3.3-70b-instruct';
+  var nvidiaModel = nMod ? nMod.value : 'nvidia/nemotron-3-ultra-550b-a55b';
 
-  _aiSettings = {
-    provider: provider,
-    geminiKey: geminiKey,
-    geminiModel: geminiModel,
-    nvidiaKey: nvidiaKey,
-    nvidiaModel: nvidiaModel
-  };
+  _aiSettings.provider = provider;
+  _aiSettings.openrouterKey = openrouterKey;
+  _aiSettings.openrouterModel = openrouterModel;
+  _aiSettings.geminiKey = geminiKey;
+  _aiSettings.geminiModel = geminiModel;
+  _aiSettings.nvidiaKey = nvidiaKey;
+  _aiSettings.nvidiaModel = nvidiaModel;
 
   apiCall('save_settings', {
     ai_provider: provider,
+    ai_openrouter_key: openrouterKey,
+    ai_openrouter_model: openrouterModel,
     ai_gemini_key: geminiKey,
     ai_gemini_model: geminiModel,
     ai_nvidia_key: nvidiaKey,
-    ai_nvidia_model: nvidiaModel
+    ai_nvidia_model: nvidiaModel,
+    ai_fallback_chain: JSON.stringify(_aiSettings.fallbackChain || ['openrouter', 'gemini', 'nvidia'])
   }).then(function() {
     toast('✓ AI Settings saved!');
     closeModal();

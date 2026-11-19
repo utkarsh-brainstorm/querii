@@ -61,6 +61,7 @@ class FilterRow:
     joiner:   str  = "AND"   # how this row connects to the PREVIOUS item in its group
     category: str  = "text"  # text | date | time | number
     table_prefix: str = ""   # for multi-table queries: "tablename."
+    rhs_type: str  = "value" # "value" or "column"
 
 
 @dataclass
@@ -95,7 +96,7 @@ class QuerySpec:
 # Clause builder (single condition)
 # ---------------------------------------------------------------------------
 
-def _build_clause(col: str, cat: str, op: str, val: str, val2: str) -> Tuple[str, str, list]:
+def _build_clause(col: str, cat: str, op: str, val: str, val2: str, rhs_type: str = "value") -> Tuple[str, str, list]:
     """Returns (parameterized_sql, display_sql, params_list)."""
     val  = val.strip()  if val  else ""
     val2 = val2.strip() if val2 else ""
@@ -105,6 +106,39 @@ def _build_clause(col: str, cat: str, op: str, val: str, val2: str) -> Tuple[str
 
     def esc(v: str) -> str:
         return v.replace("'", "''")
+
+    # Column-to-column comparison
+    if rhs_type == "column":
+        if "." in val:
+            t_part, c_part = val.split(".", 1)
+            r_col = f'"{esc(t_part)}"."{esc(c_part)}"'
+        else:
+            r_col = f'"{esc(val)}"'
+
+        op_lower = op.lower()
+        if op_lower in ("equals", "="):
+            expr = f"{col} = {r_col}"
+        elif op_lower in ("not equals", "!=", "<>"):
+            expr = f"{col} != {r_col}"
+        elif op_lower in ("greater than", ">", "after"):
+            expr = f"{col} > {r_col}"
+        elif op_lower in ("less than", "<", "before"):
+            expr = f"{col} < {r_col}"
+        elif op_lower in ("greater or equal", ">=", "on or after"):
+            expr = f"{col} >= {r_col}"
+        elif op_lower in ("less or equal", "<=", "on or before"):
+            expr = f"{col} <= {r_col}"
+        elif op_lower == "contains":
+            expr = f"LOWER({col}) LIKE '%' || LOWER({r_col}) || '%'"
+        elif op_lower == "not contains":
+            expr = f"LOWER({col}) NOT LIKE '%' || LOWER({r_col}) || '%'"
+        elif op_lower == "starts with":
+            expr = f"LOWER({col}) LIKE LOWER({r_col}) || '%'"
+        elif op_lower == "ends with":
+            expr = f"LOWER({col}) LIKE '%' || LOWER({r_col})"
+        else:
+            expr = f"{col} = {r_col}"
+        return expr, expr, []
 
     # Universal ops
     if op == "is empty":
@@ -185,7 +219,7 @@ def _build_item(item: Any, first: bool) -> Tuple[str, str, list]:
     if isinstance(item, FilterRow):
         prefix = "" if first else f"{item.joiner} "
         col = f'"{item.table_prefix}{item.field}"' if item.table_prefix else f'"{item.field}"'
-        p, d, params = _build_clause(col, item.category, item.operator, item.value, item.value2)
+        p, d, params = _build_clause(col, item.category, item.operator, item.value, item.value2, getattr(item, 'rhs_type', 'value'))
         if not p:
             return "", "", []
         return prefix + p, prefix + d, params
@@ -261,7 +295,7 @@ def _build_where(filters: List[FilterRow]) -> Tuple[str, tuple, str]:
 
     for i, f in enumerate(filters):
         col = f'"{f.field}"'
-        clause_p, clause_d, p = _build_clause(col, f.category, f.operator, f.value, f.value2)
+        clause_p, clause_d, p = _build_clause(col, f.category, f.operator, f.value, f.value2, getattr(f, 'rhs_type', 'value'))
         if not clause_p:
             continue
         joiner = filters[i - 1].joiner if i > 0 else "AND"

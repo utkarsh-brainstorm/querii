@@ -64,6 +64,7 @@ def _parse_filter_groups(groups_raw: list) -> List[FilterGroup]:
                     joiner   = item.get("joiner", "AND"),
                     category = item.get("category", "text"),
                     table_prefix = item.get("table_prefix", ""),
+                    rhs_type = item.get("rhs_type", "value"),
                 ))
         if grp.items:
             result.append(grp)
@@ -243,6 +244,97 @@ class Api:
                 cols, rows = db.execute_query(f'SELECT * FROM "{tbl}" LIMIT {limit}')
                 return json.dumps(rows, indent=2, default=str)
 
+            elif tool_name == "db_multi_table_stats":
+                tbls = args.get("tables", [])
+                if isinstance(tbls, str):
+                    tbls = [t.strip() for t in tbls.split(",") if t.strip()]
+                all_schema = db.get_schema()
+                summary = []
+                for s in all_schema:
+                    t = s.get("table", "")
+                    if tbls and t not in tbls:
+                        continue
+                    try:
+                        _, rc = db.execute_query(f'SELECT COUNT(*) as cnt FROM "{t}"')
+                        row_count = rc[0]["cnt"] if rc else 0
+                    except Exception:
+                        row_count = "unknown"
+                    user_cols = [c["name"] for c in s.get("columns", []) if not c.get("name", "").startswith("_")]
+                    summary.append({
+                        "table": t,
+                        "row_count": row_count,
+                        "column_count": len(user_cols),
+                        "columns": user_cols[:12]
+                    })
+                return json.dumps(summary, indent=2, default=str)
+
+            elif tool_name == "db_find_relationships":
+                all_schema = db.get_schema()
+                tables = [s for s in all_schema if s.get("table")]
+                target_table = args.get("table", "").strip()
+                matches = []
+                for i, s1 in enumerate(tables):
+                    t1 = s1["table"]
+                    if target_table and t1 != target_table:
+                        continue
+                    cols1 = {c["name"].lower(): c["name"] for c in s1.get("columns", []) if not c["name"].startswith("_")}
+                    for j, s2 in enumerate(tables):
+                        t2 = s2["table"]
+                        if t1 == t2:
+                            continue
+                        cols2 = {c["name"].lower(): c["name"] for c in s2.get("columns", []) if not c["name"].startswith("_")}
+                        common = set(cols1.keys()).intersection(set(cols2.keys()))
+                        for col_key in common:
+                            matches.append({
+                                "table1": t1,
+                                "column1": cols1[col_key],
+                                "table2": t2,
+                                "column2": cols2[col_key],
+                                "suggested_join": f'"{t1}"."{cols1[col_key]}" = "{t2}"."{cols2[col_key]}"'
+                            })
+                return json.dumps(matches[:25], indent=2, default=str) if matches else "No obvious common join columns detected across tables."
+
+            elif tool_name == "db_column_correlations":
+                tbl = str(args.get("table", "")).strip().replace('"', '""')
+                col1 = str(args.get("col1", "")).strip().replace('"', '""')
+                col2 = str(args.get("col2", "")).strip().replace('"', '""')
+                if not tbl or not col1 or not col2:
+                    return "Error: 'table', 'col1', and 'col2' required."
+                q = f"""
+                SELECT
+                    COUNT(*) as total_rows,
+                    COUNT("{col1}") as col1_non_null,
+                    COUNT("{col2}") as col2_non_null,
+                    COUNT(DISTINCT "{col1}") as col1_distinct,
+                    COUNT(DISTINCT "{col2}") as col2_distinct
+                FROM "{tbl}"
+                """
+                _, base_stats = db.execute_query(q)
+                overlap_q = f"""
+                SELECT "{col1}", "{col2}", COUNT(*) as frequency
+                FROM "{tbl}"
+                WHERE "{col1}" IS NOT NULL AND "{col2}" IS NOT NULL
+                GROUP BY "{col1}", "{col2}"
+                ORDER BY frequency DESC
+                LIMIT 10
+                """
+                _, pair_freq = db.execute_query(overlap_q)
+                res = {
+                    "base_stats": dict(base_stats[0]) if base_stats else {},
+                    "top_pairs": pair_freq
+                }
+                return json.dumps(res, indent=2, default=str)
+
+            elif tool_name == "db_explain_query_plan":
+                sql = str(args.get("sql", "")).strip()
+                if not sql:
+                    return "Error: 'sql' required."
+                upper_sql = sql.upper().strip()
+                if not (upper_sql.startswith("SELECT") or upper_sql.startswith("WITH")):
+                    return "Error: Only SELECT or WITH queries can be explained."
+                cols, rows = db.execute_query(f"EXPLAIN QUERY PLAN {sql}")
+                return json.dumps(rows, indent=2, default=str)
+
             elif tool_name == "db_inspect_column":
                 tbl = str(args.get("table", "")).strip().replace('"', '""')
                 col = str(args.get("column", "")).strip().replace('"', '""')
@@ -303,8 +395,9 @@ class Api:
         messages_json: str,
         system_prompt: str,
         enable_agent: bool = True,
+        fallback_chain: list = None,
     ) -> dict:
-        """Call Google Gemini API or NVIDIA NIM API with conversation history, reasoning, and dynamic read-only agent tools."""
+        """Call OpenRouter, Google Gemini, or NVIDIA NIM with ReAct agent loop and automatic provider fallback priority queue."""
         import urllib.request
         import urllib.error
         import json
@@ -316,15 +409,28 @@ class Api:
             if not isinstance(messages, list):
                 messages = []
 
-            # Fallback to saved API keys if not supplied in call
-            if not api_key:
-                if provider == "gemini":
-                    api_key = db.get_setting("ai_gemini_key", "").strip()
-                elif provider == "nvidia":
-                    api_key = db.get_setting("ai_nvidia_key", "").strip()
+            # Determine candidate provider priority queue
+            saved_chain_raw = db.get_setting("ai_fallback_chain", "")
+            saved_chain = []
+            if saved_chain_raw:
+                try:
+                    saved_chain = json.loads(saved_chain_raw) if saved_chain_raw.startswith("[") else [p.strip() for p in saved_chain_raw.split(",") if p.strip()]
+                except Exception:
+                    saved_chain = []
 
-            if not api_key:
-                return _err(f"No API key configured for {provider.upper()}. Please enter your API key in AI Settings.")
+            # Combine requested chain, saved chain, and active provider
+            candidate_list = []
+            if fallback_chain and isinstance(fallback_chain, list):
+                candidate_list.extend([p.lower() for p in fallback_chain if p])
+            if provider and provider.lower() not in candidate_list:
+                candidate_list.insert(0, provider.lower())
+            for p in saved_chain:
+                p_norm = p.lower()
+                if p_norm not in candidate_list:
+                    candidate_list.append(p_norm)
+            for default_p in ["openrouter", "gemini", "nvidia"]:
+                if default_p not in candidate_list:
+                    candidate_list.append(default_p)
 
             # SSL context for cross-platform network compatibility
             ctx = ssl.create_default_context()
@@ -333,194 +439,287 @@ class Api:
 
             agent_system_addon = (
                 "\n\n--- DYNAMIC INSPECTION TOOLS (AGENTIC CAPABILITY) ---\n"
-                "If the user's question requires deeper schema inspection, checking sample values, column stats, or validating data, you have read-only access to execute inspection actions before giving your final answer.\n"
+                "You are an advanced agentic database intelligence engine. If the user's question requires deeper schema inspection, checking sample values, discovering relationships, column stats, or validating complex queries, you have read-only tools to execute inspection actions before giving your final answer.\n"
                 "To call a tool, respond with:\n"
                 "Thought: <your reasoning for why this inspection is needed>\n"
                 "Action: <tool_name>\n"
                 "Action Input: <json_formatted_arguments>\n\n"
                 "Available tools:\n"
-                "- db_list_tables: List all tables in DB. Input: {}\n"
+                "- db_list_tables: List all user tables in DB. Input: {}\n"
                 "- db_get_schema: Get column info for tables. Input: {\"tables\": [\"tbl1\", ...]}\n"
                 "- db_sample_data: Peek at rows. Input: {\"table\": \"tbl\", \"limit\": 5}\n"
-                "- db_inspect_column: Check nulls, distinct, min/max & top values. Input: {\"table\": \"tbl\", \"column\": \"col\"}\n"
+                "- db_multi_table_stats: Summarize row counts and columns across tables. Input: {\"tables\": [\"tbl1\", ...]}\n"
+                "- db_find_relationships: Detect potential foreign key / JOIN column matches across tables. Input: {\"table\": \"tbl\"}\n"
+                "- db_column_correlations: Check distinct, nulls & pairwise frequency distribution between two columns. Input: {\"table\": \"tbl\", \"col1\": \"colA\", \"col2\": \"colB\"}\n"
+                "- db_inspect_column: Check nulls, distinct, min/max & top values for a single column. Input: {\"table\": \"tbl\", \"column\": \"col\"}\n"
+                "- db_explain_query_plan: Inspect SQLite index usage and scan cost of a query. Input: {\"sql\": \"SELECT ...\"}\n"
                 "- db_readonly_query: Run exploratory SELECT query. Input: {\"sql\": \"SELECT ... LIMIT 20\"}\n\n"
-                "CRITICAL: Do NOT call a tool for straightforward queries where table context is already sufficient. Only use tools when specific stats, distinct values, or missing schema details are necessary. Mutating operations are forbidden in dynamic inspection.\n"
+                "CRITICAL: Do NOT call a tool for straightforward queries where table context is already sufficient. Only use tools when specific stats, distinct values, relationships, or missing schema details are necessary. Mutating operations (INSERT, UPDATE, DELETE, DROP, ALTER) are strictly forbidden in dynamic inspection.\n"
                 "When you have the required information, output your final answer directly following the standard 2-part format (explanation + code block)."
             )
 
             effective_system = system_prompt + (agent_system_addon if enable_agent else "")
-            agent_steps = []
-            max_agent_iterations = 3 if enable_agent else 1
+            max_agent_iterations = 5 if enable_agent else 1
 
-            current_messages = [dict(m) for m in messages]
-            overall_reasoning = ""
+            failover_log = []
 
-            for step_idx in range(max_agent_iterations):
-                if provider == "gemini":
-                    model_name = model or db.get_setting("ai_gemini_model", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            # Try candidate providers in priority sequence
+            for candidate_p in candidate_list:
+                p_key = ""
+                if candidate_p == provider and api_key:
+                    p_key = api_key.strip()
+                elif candidate_p == "openrouter":
+                    p_key = db.get_setting("ai_openrouter_key", "").strip()
+                elif candidate_p == "gemini":
+                    p_key = db.get_setting("ai_gemini_key", "").strip()
+                elif candidate_p == "nvidia":
+                    p_key = db.get_setting("ai_nvidia_key", "").strip()
 
-                    contents = []
-                    for m in current_messages:
-                        role = "user" if m.get("role") == "user" else "model"
-                        contents.append({
-                            "role": role,
-                            "parts": [{"text": str(m.get("content", ""))}]
-                        })
-
-                    req_body = {
-                        "contents": contents,
-                        "systemInstruction": {
-                            "parts": [{"text": effective_system}]
-                        },
-                        "generationConfig": {
-                            "temperature": 0.2,
-                            "maxOutputTokens": 3500
-                        }
-                    }
-
-                    req = urllib.request.Request(
-                        url,
-                        data=json.dumps(req_body).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
-                    )
-
-                    try:
-                        with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
-                            res_json = json.loads(resp.read().decode("utf-8"))
-                            candidates = res_json.get("candidates", [])
-                            if not candidates:
-                                return _err("Gemini returned no candidates.")
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            thought_parts = [p.get("text", "") for p in parts if p.get("thought")]
-                            if thought_parts:
-                                step_thought = "".join(thought_parts).strip()
-                                overall_reasoning = (overall_reasoning + "\n" + step_thought).strip()
-                            raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought"))
-                    except urllib.error.HTTPError as he:
-                        err_body = he.read().decode("utf-8", errors="replace")
-                        try:
-                            err_parsed = json.loads(err_body)
-                            msg = err_parsed.get("error", {}).get("message", err_body)
-                        except Exception:
-                            msg = err_body or str(he)
-                        return _err(f"Gemini API Error ({he.code}): {msg}")
-
-                elif provider == "nvidia":
-                    model_name = model or db.get_setting("ai_nvidia_model", "nvidia/nemotron-3-ultra-550b-a55b").strip() or "nvidia/nemotron-3-ultra-550b-a55b"
-                    url = "https://integrate.api.nvidia.com/v1/chat/completions"
-
-                    api_msgs = [{"role": "system", "content": effective_system}]
-                    for m in current_messages:
-                        api_msgs.append({
-                            "role": m.get("role", "user"),
-                            "content": str(m.get("content", ""))
-                        })
-
-                    req_body = {
-                        "model": model_name,
-                        "messages": api_msgs,
-                        "temperature": 0.2,
-                        "max_tokens": 3500
-                    }
-
-                    if "nemotron" in model_name.lower():
-                        req_body["extra_body"] = {
-                            "chat_template_kwargs": {"enable_thinking": True}
-                        }
-
-                    req = urllib.request.Request(
-                        url,
-                        data=json.dumps(req_body).encode("utf-8"),
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {api_key}"
-                        },
-                        method="POST"
-                    )
-
-                    try:
-                        with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
-                            res_json = json.loads(resp.read().decode("utf-8"))
-                            choices = res_json.get("choices", [])
-                            if not choices:
-                                return _err("NVIDIA API returned no response choices.")
-                            msg_obj = choices[0].get("message", {})
-                            raw_reply = msg_obj.get("content", "") or ""
-                            r_content = msg_obj.get("reasoning_content", "") or ""
-                            if r_content:
-                                overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
-                    except urllib.error.HTTPError as he:
-                        err_body = he.read().decode("utf-8", errors="replace")
-                        try:
-                            err_parsed = json.loads(err_body)
-                            msg = err_parsed.get("error", {}).get("message", err_body)
-                        except Exception:
-                            msg = err_body or str(he)
-                        return _err(f"NVIDIA API Error ({he.code}): {msg}")
-
-                else:
-                    return _err(f"Unsupported AI provider '{provider}'. Must be 'gemini' or 'nvidia'.")
-
-                # Extract <think> if present in raw content
-                if "<think>" in raw_reply and "</think>" in raw_reply:
-                    m_think = re.search(r"<think>([\s\S]*?)</think>", raw_reply)
-                    if m_think:
-                        extracted_think = m_think.group(1).strip()
-                        overall_reasoning = (overall_reasoning + "\n" + extracted_think).strip()
-                        raw_reply = re.sub(r"<think>[\s\S]*?</think>", "", raw_reply).strip()
-
-                # Check if model requested a tool Action
-                action_match = re.search(r"Action:\s*([a-zA-Z0-9_]+)", raw_reply)
-                input_match = re.search(r"Action Input:\s*(\{[\s\S]*?\}|\[[\s\S]*?\]|[^\n]+)", raw_reply)
-                thought_match = re.search(r"Thought:\s*([\s\S]*?)(?=\nAction:|$)", raw_reply)
-
-                if action_match and enable_agent and step_idx < (max_agent_iterations - 1):
-                    tool_act = action_match.group(1).strip()
-                    raw_input_str = input_match.group(1).strip() if input_match else "{}"
-                    thought_text = thought_match.group(1).strip() if thought_match else ""
-
-                    try:
-                        tool_args = json.loads(raw_input_str) if (raw_input_str.startswith("{") or raw_input_str.startswith("[")) else {}
-                    except Exception:
-                        tool_args = {"param": raw_input_str}
-
-                    obs_result = self._execute_readonly_db_tool(tool_act, tool_args)
-                    agent_steps.append({
-                        "thought": thought_text,
-                        "action": tool_act,
-                        "input": tool_args,
-                        "observation": obs_result[:1000] # preview length
-                    })
-
-                    # Feed observation back to model
-                    current_messages.append({"role": "model", "content": raw_reply})
-                    current_messages.append({"role": "user", "content": f"Observation from {tool_act}:\n{obs_result}"})
+                if not p_key:
+                    failover_log.append(f"{candidate_p.upper()}: No API key configured")
                     continue
-                else:
-                    # Final direct answer reached or no action requested
-                    final_text = raw_reply
-                    # Strip any trailing Action/Action Input if model accidentally included it without executing
+
+                p_model = ""
+                if candidate_p == provider and model:
+                    p_model = model.strip()
+                elif candidate_p == "openrouter":
+                    p_model = db.get_setting("ai_openrouter_model", "openrouter/free").strip() or "openrouter/free"
+                elif candidate_p == "gemini":
+                    p_model = db.get_setting("ai_gemini_model", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+                elif candidate_p == "nvidia":
+                    p_model = db.get_setting("ai_nvidia_model", "nvidia/nemotron-3-ultra-550b-a55b").strip() or "nvidia/nemotron-3-ultra-550b-a55b"
+
+                # Run conversation / agent loop with this provider
+                agent_steps = []
+                current_messages = [dict(m) for m in messages]
+                overall_reasoning = ""
+                candidate_success = False
+                last_reply = ""
+
+                try:
+                    for step_idx in range(max_agent_iterations):
+                        raw_reply = ""
+                        step_thought = ""
+
+                        if candidate_p == "openrouter":
+                            url = "https://openrouter.ai/api/v1/chat/completions"
+                            api_msgs = [{"role": "system", "content": effective_system}]
+                            for m in current_messages:
+                                api_msgs.append({
+                                    "role": m.get("role", "user"),
+                                    "content": str(m.get("content", ""))
+                                })
+
+                            req_body = {
+                                "model": p_model,
+                                "messages": api_msgs,
+                                "temperature": 0.2,
+                                "max_tokens": 3500
+                            }
+
+                            req = urllib.request.Request(
+                                url,
+                                data=json.dumps(req_body).encode("utf-8"),
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "Authorization": f"Bearer {p_key}",
+                                    "HTTP-Referer": "https://querii.desktop",
+                                    "X-Title": "Querii Analytics",
+                                },
+                                method="POST"
+                            )
+
+                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                res_json = json.loads(resp.read().decode("utf-8"))
+                                choices = res_json.get("choices", [])
+                                if not choices:
+                                    raise RuntimeError("OpenRouter returned no response choices.")
+                                msg_obj = choices[0].get("message", {})
+                                raw_reply = msg_obj.get("content", "") or ""
+                                r_content = msg_obj.get("reasoning_content", "") or ""
+                                if r_content:
+                                    overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
+
+                        elif candidate_p == "gemini":
+                            url = f"https://generativelanguage.googleapis.com/v1beta/models/{p_model}:generateContent?key={p_key}"
+                            contents = []
+                            for m in current_messages:
+                                role = "user" if m.get("role") == "user" else "model"
+                                contents.append({
+                                    "role": role,
+                                    "parts": [{"text": str(m.get("content", ""))}]
+                                })
+
+                            req_body = {
+                                "contents": contents,
+                                "systemInstruction": {
+                                    "parts": [{"text": effective_system}]
+                                },
+                                "generationConfig": {
+                                    "temperature": 0.2,
+                                    "maxOutputTokens": 3500
+                                }
+                            }
+
+                            req = urllib.request.Request(
+                                url,
+                                data=json.dumps(req_body).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST"
+                            )
+
+                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                res_json = json.loads(resp.read().decode("utf-8"))
+                                candidates = res_json.get("candidates", [])
+                                if not candidates:
+                                    raise RuntimeError("Gemini returned no candidates.")
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                thought_parts = [p.get("text", "") for p in parts if p.get("thought")]
+                                if thought_parts:
+                                    step_thought = "".join(thought_parts).strip()
+                                    overall_reasoning = (overall_reasoning + "\n" + step_thought).strip()
+                                raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+
+                        elif candidate_p == "nvidia":
+                            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+                            api_msgs = [{"role": "system", "content": effective_system}]
+                            for m in current_messages:
+                                api_msgs.append({
+                                    "role": m.get("role", "user"),
+                                    "content": str(m.get("content", ""))
+                                })
+
+                            req_body = {
+                                "model": p_model,
+                                "messages": api_msgs,
+                                "temperature": 0.2,
+                                "max_tokens": 3500
+                            }
+
+                            if "nemotron" in p_model.lower():
+                                req_body["extra_body"] = {
+                                    "chat_template_kwargs": {"enable_thinking": True}
+                                }
+
+                            req = urllib.request.Request(
+                                url,
+                                data=json.dumps(req_body).encode("utf-8"),
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "Authorization": f"Bearer {p_key}"
+                                },
+                                method="POST"
+                            )
+
+                            with urllib.request.urlopen(req, timeout=50, context=ctx) as resp:
+                                res_json = json.loads(resp.read().decode("utf-8"))
+                                choices = res_json.get("choices", [])
+                                if not choices:
+                                    raise RuntimeError("NVIDIA API returned no response choices.")
+                                msg_obj = choices[0].get("message", {})
+                                raw_reply = msg_obj.get("content", "") or ""
+                                r_content = msg_obj.get("reasoning_content", "") or ""
+                                if r_content:
+                                    overall_reasoning = (overall_reasoning + "\n" + r_content).strip()
+
+                        # Extract <think> if present in raw content
+                        if "<think>" in raw_reply and "</think>" in raw_reply:
+                            m_think = re.search(r"<think>([\s\S]*?)</think>", raw_reply)
+                            if m_think:
+                                extracted_think = m_think.group(1).strip()
+                                overall_reasoning = (overall_reasoning + "\n" + extracted_think).strip()
+                                raw_reply = re.sub(r"<think>[\s\S]*?</think>", "", raw_reply).strip()
+
+                        last_reply = raw_reply
+
+                        # Check if model requested a tool Action
+                        action_match = re.search(r"Action:\s*([a-zA-Z0-9_]+)", raw_reply)
+                        input_match = re.search(r"Action Input:\s*(\{[\s\S]*?\}|\[[\s\S]*?\]|[^\n]+)", raw_reply)
+                        thought_match = re.search(r"Thought:\s*([\s\S]*?)(?=\nAction:|$)", raw_reply)
+
+                        if action_match and enable_agent and step_idx < (max_agent_iterations - 1):
+                            tool_act = action_match.group(1).strip()
+                            raw_input_str = input_match.group(1).strip() if input_match else "{}"
+                            thought_text = thought_match.group(1).strip() if thought_match else ""
+
+                            try:
+                                tool_args = json.loads(raw_input_str) if (raw_input_str.startswith("{") or raw_input_str.startswith("[")) else {}
+                            except Exception:
+                                tool_args = {"param": raw_input_str}
+
+                            obs_result = self._execute_readonly_db_tool(tool_act, tool_args)
+                            agent_steps.append({
+                                "thought": thought_text,
+                                "action": tool_act,
+                                "input": tool_args,
+                                "observation": obs_result[:1000]
+                            })
+
+                            # Feed observation back to model
+                            current_messages.append({"role": "model", "content": raw_reply})
+                            current_messages.append({"role": "user", "content": f"Observation from {tool_act}:\n{obs_result}"})
+                            continue
+                        else:
+                            # Final direct answer reached
+                            final_text = raw_reply
+                            if "Final Answer:" in final_text:
+                                final_text = final_text.split("Final Answer:", 1)[1].strip()
+
+                            fallback_occurred = (candidate_p != provider)
+                            fallback_note = ""
+                            if fallback_occurred:
+                                fallback_note = f"Automatic failover: {provider.upper()} failed ({failover_log[-1] if failover_log else 'error'}); successfully served by {candidate_p.upper()} ({p_model})."
+
+                            return _ok({
+                                "text": final_text,
+                                "reasoning": overall_reasoning.strip(),
+                                "agent_steps": agent_steps,
+                                "model": p_model,
+                                "provider": candidate_p,
+                                "fallback_occurred": fallback_occurred,
+                                "fallback_note": fallback_note,
+                                "failover_log": failover_log,
+                            })
+
+                    # If loop finished all iterations
+                    final_text = last_reply
                     if "Final Answer:" in final_text:
                         final_text = final_text.split("Final Answer:", 1)[1].strip()
+
+                    fallback_occurred = (candidate_p != provider)
+                    fallback_note = f"Served by {candidate_p.upper()} ({p_model})"
+                    if fallback_occurred:
+                        fallback_note = f"Automatic failover: {provider.upper()} failed; served by {candidate_p.upper()} ({p_model})."
 
                     return _ok({
                         "text": final_text,
                         "reasoning": overall_reasoning.strip(),
                         "agent_steps": agent_steps,
-                        "model": model_name,
-                        "provider": provider
+                        "model": p_model,
+                        "provider": candidate_p,
+                        "fallback_occurred": fallback_occurred,
+                        "fallback_note": fallback_note,
+                        "failover_log": failover_log,
                     })
 
-            # If loop finished after max iterations, return the last response
-            return _ok({
-                "text": raw_reply,
-                "reasoning": overall_reasoning.strip(),
-                "agent_steps": agent_steps,
-                "model": model_name,
-                "provider": provider
-            })
+                except urllib.error.HTTPError as he:
+                    err_body = he.read().decode("utf-8", errors="replace")
+                    try:
+                        err_parsed = json.loads(err_body)
+                        msg = err_parsed.get("error", {}).get("message", err_body)
+                    except Exception:
+                        msg = err_body or str(he)
+                    failover_log.append(f"{candidate_p.upper()} HTTP {he.code}: {msg[:200]}")
+                    continue
+                except Exception as pe:
+                    failover_log.append(f"{candidate_p.upper()}: {str(pe)[:200]}")
+                    continue
+
+            # If all candidates failed
+            return _err("All AI providers in fallback chain failed.\n" + "\n".join(f"• {item}" for item in failover_log))
+
+        except Exception as e:
+            return _err(str(e))
 
         except Exception as e:
             return _err(str(e))
@@ -537,6 +736,7 @@ class Api:
                 "pdf_custom_css", "pdf_dev_mode",
                 "ai_provider", "ai_gemini_key", "ai_gemini_model",
                 "ai_nvidia_key", "ai_nvidia_model",
+                "ai_openrouter_key", "ai_openrouter_model", "ai_fallback_chain",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
