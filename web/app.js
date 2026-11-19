@@ -2519,7 +2519,7 @@ function runSqlDirect(sql) {
 
         // Detect if CREATE TABLE created a new table
         var createdTableMatch = sql.match(/CREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_]+)["']?/i);
-        var newlyCreatedTable = createdTableMatch ? createdTableMatch[1] : null;
+        var newlyCreatedTable = d.new_table || (createdTableMatch ? createdTableMatch[1] : null);
 
         // Refresh schema without running filter or overwriting SQL editor
         refreshSchema(newlyCreatedTable, { skipFilter: true, preserveEditor: true });
@@ -2527,11 +2527,12 @@ function runSqlDirect(sql) {
         schedulePersistedSessionSave();
         return;
       }
-      setSqlStatus((d.count || 0).toLocaleString() + ' rows');
+      setSqlStatus((d.count || 0).toLocaleString() + ' rows' + (d.affected ? ' (' + d.affected + ' affected)' : ''));
       renderResults(d.columns || [], d.rows || [], d.count || 0);
-      if (d.is_mutation) {
-        refreshSchema(null, { skipFilter: true, preserveEditor: true });
+      if (d.is_mutation || d.new_table) {
+        refreshSchema(d.new_table || null, { skipFilter: true, preserveEditor: true });
       }
+      if (d.message) toast('✓ ' + d.message);
       schedulePersistedSessionSave();
     })
     .catch(function(e) { setSqlStatus('⚠ ' + e.message); toast(e.message, 'error'); });
@@ -5643,17 +5644,18 @@ function runSqlSecondaryDirect(sql) {
         setSqlStatusSecondary(d.message);
         toast('✓ ' + d.message);
         var createdTableMatch = sql.match(/CREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_]+)["']?/i);
-        var newlyCreatedTable = createdTableMatch ? createdTableMatch[1] : null;
+        var newlyCreatedTable = d.new_table || (createdTableMatch ? createdTableMatch[1] : null);
         refreshSchema(newlyCreatedTable, { skipFilter: true, preserveEditor: true });
         renderResultsSecondary([], [], 0);
         schedulePersistedSessionSave();
         return;
       }
-      setSqlStatusSecondary((d.count || 0).toLocaleString() + ' rows');
+      setSqlStatusSecondary((d.count || 0).toLocaleString() + ' rows' + (d.affected ? ' (' + d.affected + ' affected)' : ''));
       renderResultsSecondary(d.columns || [], d.rows || [], d.count || 0);
-      if (d.is_mutation) {
-        refreshSchema(null, { skipFilter: true, preserveEditor: true });
+      if (d.is_mutation || d.new_table) {
+        refreshSchema(d.new_table || null, { skipFilter: true, preserveEditor: true });
       }
+      if (d.message) toast('✓ ' + d.message);
       schedulePersistedSessionSave();
     })
     .catch(function(e) {
@@ -6502,6 +6504,92 @@ function buildAiSystemPrompt(contextChoice) {
   return prompt.join('\n');
 }
 
+window._onAiAgentStepLive = function(step) {
+  if (!step) return;
+  var list = document.getElementById('ai-live-steps-list');
+  var counter = document.getElementById('ai-live-step-counter');
+  var container = document.getElementById('ai-chat-messages');
+
+  if (counter) {
+    if (step.status === 'thinking') {
+      counter.textContent = 'Step ' + (step.step_index || 1) + ': Planning';
+    } else if (step.status === 'executing') {
+      counter.textContent = 'Step ' + (step.step_index || 1) + ': ' + (step.action || 'Executing');
+    } else if (step.status === 'error') {
+      counter.textContent = 'Step ' + (step.step_index || 1) + ': Self-Correcting';
+    } else if (step.status === 'done') {
+      counter.textContent = 'Step ' + (step.step_index || 1) + ': Verified';
+    } else if (step.status === 'completed') {
+      counter.textContent = 'Ready';
+    }
+  }
+
+  if (!list) return;
+
+  var initEl = document.getElementById('live-step-init');
+  if (initEl && step.status !== 'thinking') {
+    initEl.style.opacity = '0.6';
+  }
+
+  var stepKey = 'live-step-' + (step.step_index || 1);
+  var stepCard = document.getElementById(stepKey);
+
+  if (!stepCard) {
+    stepCard = document.createElement('div');
+    stepCard.id = stepKey;
+    stepCard.className = 'ai-live-step-item';
+    list.appendChild(stepCard);
+  }
+
+  if (step.status === 'thinking' && step.thought) {
+    stepCard.className = 'ai-live-step-item ai-live-thinking';
+    stepCard.innerHTML =
+      '<span class="ai-live-step-icon">🧠</span>' +
+      '<span class="ai-live-step-thought">' + esc(step.thought) + '</span>';
+  } else if (step.status === 'executing') {
+    stepCard.className = 'ai-live-step-item ai-live-executing';
+    var argPreview = '';
+    if (step.input) {
+      if (typeof step.input === 'string') argPreview = step.input;
+      else if (step.input.sql) argPreview = step.input.sql.replace(/\s+/g, ' ').trim();
+      else if (step.input.table) argPreview = 'table: ' + step.input.table;
+      else if (step.input.tables) argPreview = 'tables: ' + (Array.isArray(step.input.tables) ? step.input.tables.join(', ') : step.input.tables);
+      else argPreview = JSON.stringify(step.input);
+    }
+    stepCard.innerHTML =
+      '<div class="ai-live-action-top">' +
+        '<span class="ai-live-spinner"></span>' +
+        '<span class="ai-live-action-name">⚡ ' + esc(step.action || 'Action') + '</span>' +
+        (argPreview ? '<span class="ai-live-arg-preview">' + esc(argPreview.slice(0, 90)) + '</span>' : '') +
+      '</div>' +
+      (step.thought ? '<div class="ai-live-sub-thought">' + esc(step.thought) + '</div>' : '');
+  } else if (step.status === 'done') {
+    stepCard.className = 'ai-live-step-item ai-live-done';
+    var obsText = step.observation || 'Action completed successfully.';
+    stepCard.innerHTML =
+      '<div class="ai-live-action-top">' +
+        '<span class="ai-live-icon-ok">✓</span>' +
+        '<span class="ai-live-action-name" style="color:var(--text-head)">⚡ ' + esc(step.action || 'Action') + '</span>' +
+        '<span class="ai-live-badge-ok">Done</span>' +
+      '</div>' +
+      '<div class="ai-live-obs-preview">' + esc(obsText.slice(0, 200)) + '</div>';
+  } else if (step.status === 'error') {
+    stepCard.className = 'ai-live-step-item ai-live-error';
+    var errText = step.observation || 'Inspection or execution error encountered.';
+    stepCard.innerHTML =
+      '<div class="ai-live-action-top">' +
+        '<span class="ai-live-icon-warn">⚠</span>' +
+        '<span class="ai-live-action-name" style="color:var(--danger, #dc2626)">⚡ ' + esc(step.action || 'Action') + '</span>' +
+        '<span class="ai-live-badge-correcting">Self-correcting…</span>' +
+      '</div>' +
+      '<div class="ai-live-obs-preview text-amber-700 dark:text-amber-300">' + esc(errText.slice(0, 220)) + '</div>';
+  }
+
+  if (container) {
+    container.scrollTop = container.scrollHeight;
+  }
+};
+
 function sendAiChatMessage() {
   if (_aiIsSending) return;
   var inp = document.getElementById('ai-chat-input');
@@ -6548,9 +6636,24 @@ function sendAiChatMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   var loadingBubble = document.createElement('div');
-  loadingBubble.className = 'ai-chat-bubble-assistant opacity-70';
+  loadingBubble.className = 'ai-chat-bubble-assistant';
   loadingBubble.id = 'ai-loading-bubble';
-  loadingBubble.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-mono">✨ Thinking & inspecting database…</span>';
+  loadingBubble.innerHTML =
+    '<div class="ai-agent-live-stepper" id="ai-live-stepper">' +
+      '<div class="ai-live-stepper-header">' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+          '<span class="ai-live-pulse-dot"></span>' +
+          '<span class="font-semibold text-[11px]" style="color:var(--text-head)">AI Agent Running</span>' +
+        '</div>' +
+        '<span class="ai-live-step-badge" id="ai-live-step-counter">Initializing…</span>' +
+      '</div>' +
+      '<div class="ai-live-steps-list" id="ai-live-steps-list">' +
+        '<div class="ai-live-step-item ai-live-thinking" id="live-step-init">' +
+          '<span class="ai-live-step-icon">🧠</span>' +
+          '<span class="ai-live-step-thought">Analyzing intent, inspect schema & plan execution…</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
   if (container) {
     container.appendChild(loadingBubble);
     container.scrollTop = container.scrollHeight;

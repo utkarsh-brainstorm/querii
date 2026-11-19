@@ -1466,6 +1466,152 @@ tr.selected-row td { background: var(--accent-bg) !important; }
   border-radius: 4px;
 }
 
+/* ── Real-Time Agentic Stepper Component ─────────────────────── */
+.ai-agent-live-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 240px;
+}
+.ai-live-stepper-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-light, var(--border));
+}
+.ai-live-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+  display: inline-block;
+  animation: ai-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ai-pulse {
+  0% { transform: scale(0.9); opacity: 0.6; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+  100% { transform: scale(0.9); opacity: 0.6; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+.ai-live-step-badge {
+  font-size: 9.5px;
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  padding: 2px 7px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+}
+.ai-live-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-live-step-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 10.5px;
+  line-height: 1.4;
+  transition: all 150ms ease;
+}
+.ai-live-step-item.ai-live-thinking {
+  background: var(--bg-surface);
+  border-left: 3px solid var(--accent);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.ai-live-step-thought {
+  font-style: italic;
+  color: var(--text-mid);
+  font-size: 10.5px;
+}
+.ai-live-sub-thought {
+  font-size: 9.5px;
+  font-style: italic;
+  color: var(--text-dim);
+  margin-top: 3px;
+  padding-left: 20px;
+}
+.ai-live-action-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+}
+.ai-live-action-name {
+  font-weight: 700;
+  color: var(--accent);
+  font-family: monospace;
+  font-size: 10px;
+}
+.ai-live-arg-preview {
+  font-family: monospace;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.ai-live-obs-preview {
+  margin-top: 4px;
+  padding: 3px 6px;
+  font-family: monospace;
+  font-size: 9.5px;
+  background: var(--bg-muted);
+  border-radius: 4px;
+  border: 1px solid var(--border-light, var(--border));
+  max-height: 60px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.ai-live-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  animation: ai-spin 0.7s linear infinite;
+}
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+.ai-live-icon-ok {
+  color: #16a34a;
+  font-weight: 800;
+  font-size: 11px;
+}
+.ai-live-icon-warn {
+  color: #d97706;
+  font-weight: 800;
+  font-size: 11px;
+}
+.ai-live-badge-ok {
+  margin-left: auto;
+  font-size: 9px;
+  color: #15803d;
+  background: #dcfce7;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.ai-live-badge-correcting {
+  margin-left: auto;
+  font-size: 9px;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
 /* ── Mutation Result Card ─────────────────────────────────────── */
 .mutation-result-card {
   padding: 32px 16px;

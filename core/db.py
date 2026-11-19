@@ -376,44 +376,253 @@ def get_table_column_meta(table_name: str) -> List[Dict]:
 
 
 # ---------------------------------------------------------------------------
-# Generic query executor
+# Generic query executor & multi-statement splitter
 # ---------------------------------------------------------------------------
 
-def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict], int]:
+def split_sql_statements(sql: str) -> List[str]:
     """
-    Execute SQL statement.
+    Split SQL script into individual statements.
+    Respects single quotes, double quotes, backticks, line comments (--), and block comments (/* */).
+    """
+    statements = []
+    current = []
+    in_single_quote = False
+    in_double_quote = False
+    in_backtick = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        next_c = sql[i + 1] if i + 1 < n else ''
+
+        if in_line_comment:
+            current.append(c)
+            if c == '\n':
+                in_line_comment = False
+            i += 1
+            continue
+
+        if in_block_comment:
+            current.append(c)
+            if c == '*' and next_c == '/':
+                current.append('/')
+                i += 2
+                in_block_comment = False
+                continue
+            i += 1
+            continue
+
+        if in_single_quote:
+            current.append(c)
+            if c == '\\' and next_c:
+                current.append(next_c)
+                i += 2
+                continue
+            elif c == "'" and next_c == "'":
+                current.append("'")
+                i += 2
+                continue
+            elif c == "'":
+                in_single_quote = False
+            i += 1
+            continue
+
+        if in_double_quote:
+            current.append(c)
+            if c == '\\' and next_c:
+                current.append(next_c)
+                i += 2
+                continue
+            elif c == '"' and next_c == '"':
+                current.append('"')
+                i += 2
+                continue
+            elif c == '"':
+                in_double_quote = False
+            i += 1
+            continue
+
+        if in_backtick:
+            current.append(c)
+            if c == '`':
+                in_backtick = False
+            i += 1
+            continue
+
+        # Check for comments start
+        if c == '-' and next_c == '-':
+            in_line_comment = True
+            current.append('-')
+            current.append('-')
+            i += 2
+            continue
+
+        if c == '/' and next_c == '*':
+            in_block_comment = True
+            current.append('/')
+            current.append('*')
+            i += 2
+            continue
+
+        if c == "'":
+            in_single_quote = True
+            current.append(c)
+            i += 1
+            continue
+
+        if c == '"':
+            in_double_quote = True
+            current.append(c)
+            i += 1
+            continue
+
+        if c == '`':
+            in_backtick = True
+            current.append(c)
+            i += 1
+            continue
+
+        if c == ';':
+            stmt = ''.join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            i += 1
+            continue
+
+        current.append(c)
+        i += 1
+
+    last_stmt = ''.join(current).strip()
+    if last_stmt:
+        statements.append(last_stmt)
+    return statements
+
+
+def execute_query_full(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict], int, Optional[str]]:
+    """
+    Execute SQL statement or multi-statement script.
     Allows all standard SQL: SELECT, WITH, PRAGMA, INSERT, UPDATE, DELETE, ALTER TABLE, CREATE TABLE, DROP TABLE, DROP VIEW, TRUNCATE.
-    Returns (columns, rows, affected_rows).
+    Returns (columns, rows, affected_rows, target_table).
     """
     import re
-    clean = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
-    clean = re.sub(r"--[^\n]*", "", clean).strip()
-    if not clean:
-        return [], [], 0
+
+    stmts = split_sql_statements(sql)
+    if not stmts:
+        return [], [], 0, None
 
     conn = _connect()
     try:
-        cur = conn.execute(sql, params)
-        conn.commit()
-        cols = [d[0] for d in cur.description] if cur.description else []
-        rows = [dict(r) for r in cur.fetchall()] if cur.description else []
-        affected = cur.rowcount
+        cols: List[str] = []
+        rows: List[Dict] = []
+        total_affected = 0
+        target_table: Optional[str] = None
+        created_tables: List[str] = []
+        dropped_tables: List[str] = []
+        inserted_tables: List[str] = []
 
-        # If a table was dropped, clean up import_log
-        drop_match = re.search(r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?[\"']?([a-zA-Z0-9_]+)[\"']?", clean, re.IGNORECASE)
-        if drop_match:
-            dropped_tbl = drop_match.group(1)
-            conn.execute("DELETE FROM import_log WHERE table_name = ?", (dropped_tbl,))
+        def _extract_tbl(pattern: str, text: str) -> Optional[str]:
+            m = re.search(pattern, text, re.IGNORECASE)
+            return m.group(1).strip('"`\'[]') if m else None
+
+        if len(stmts) == 1:
+            clean = re.sub(r"/\*.*?\*/", "", stmts[0], flags=re.DOTALL)
+            clean = re.sub(r"--[^\n]*", "", clean).strip()
+
+            cur = conn.execute(stmts[0], params)
             conn.commit()
 
-        return cols, rows, affected
+            if cur.description:
+                cols = [d[0] for d in cur.description]
+                rows = [dict(r) for r in cur.fetchall()]
+            total_affected = cur.rowcount
+
+            # Table tracking
+            drop_tbl = _extract_tbl(r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-zA-Z0-9_`\"'\[\]]+)", clean)
+            if drop_tbl:
+                conn.execute("DELETE FROM import_log WHERE table_name = ?", (drop_tbl,))
+                conn.commit()
+                target_table = drop_tbl
+
+            create_tbl = _extract_tbl(r"\bCREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_`\"'\[\]]+)", clean)
+            if create_tbl:
+                target_table = create_tbl
+                if not cols:
+                    try:
+                        c_chk = conn.execute(f'SELECT * FROM "{create_tbl}" LIMIT 100')
+                        if c_chk.description:
+                            cols = [d[0] for d in c_chk.description]
+                            rows = [dict(r) for r in c_chk.fetchall()]
+                    except Exception:
+                        pass
+
+            ins_tbl = _extract_tbl(r"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-zA-Z0-9_`\"'\[\]]+)", clean)
+            if ins_tbl and not target_table:
+                target_table = ins_tbl
+
+            return cols, rows, total_affected, target_table
+
+        # Multi-statement transactional execution
+        changes_before = conn.total_changes
+        with conn:
+            for stmt in stmts:
+                clean = re.sub(r"/\*.*?\*/", "", stmt, flags=re.DOTALL)
+                clean = re.sub(r"--[^\n]*", "", clean).strip()
+                if not clean:
+                    continue
+
+                cur = conn.execute(stmt)
+
+                if cur.description:
+                    cols = [d[0] for d in cur.description]
+                    rows = [dict(r) for r in cur.fetchall()]
+
+                c_tbl = _extract_tbl(r"\bCREATE\s+(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_`\"'\[\]]+)", clean)
+                if c_tbl:
+                    created_tables.append(c_tbl)
+                    target_table = c_tbl
+
+                d_tbl = _extract_tbl(r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-zA-Z0-9_`\"'\[\]]+)", clean)
+                if d_tbl:
+                    dropped_tables.append(d_tbl)
+
+                i_tbl = _extract_tbl(r"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-zA-Z0-9_`\"'\[\]]+)", clean)
+                if i_tbl:
+                    inserted_tables.append(i_tbl)
+                    if not target_table:
+                        target_table = i_tbl
+
+        total_affected = conn.total_changes - changes_before
+
+        for d_tbl in dropped_tables:
+            try:
+                conn.execute("DELETE FROM import_log WHERE table_name = ?", (d_tbl,))
+                conn.commit()
+            except Exception:
+                pass
+
+        # If DDL/DML script returned no direct rows, query created or modified table
+        if not cols and (created_tables or inserted_tables):
+            cand_tbl = created_tables[-1] if created_tables else inserted_tables[-1]
+            try:
+                c_load = conn.execute(f'SELECT * FROM "{cand_tbl}" LIMIT 200')
+                if c_load.description:
+                    cols = [d[0] for d in c_load.description]
+                    rows = [dict(r) for r in c_load.fetchall()]
+                    target_table = cand_tbl
+            except Exception:
+                pass
+
+        return cols, rows, total_affected, target_table
     finally:
         conn.close()
 
 
 def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
     """Execute SQL query/mutation and return (columns, rows)."""
-    cols, rows, _ = execute_query_full(sql, params)
+    cols, rows, _, _ = execute_query_full(sql, params)
     return cols, rows
 
 

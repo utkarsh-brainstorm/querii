@@ -382,6 +382,45 @@ class Api:
                     "total_returned": len(rows)
                 }, indent=2, default=str)
 
+            elif tool_name == "db_execute_sql":
+                sql = str(args.get("sql", "")).strip()
+                if not sql:
+                    return json.dumps({"status": "error", "error": "Parameter 'sql' is required."})
+                upper_sql = sql.upper().strip()
+                # Strict software-enforced security sandbox
+                if re.search(r'\bATTACH\s+DATABASE\b', upper_sql) or "LOAD_EXTENSION" in upper_sql:
+                    return json.dumps({"status": "error", "error": "Permission Denied: ATTACH and LOAD_EXTENSION are blocked by sandbox security policy."})
+                if re.search(r'\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?["\']?(import_log|_querii_history)["\']?', upper_sql):
+                    return json.dumps({"status": "error", "error": "Permission Denied: System internal tables cannot be dropped."})
+
+                try:
+                    cols, rows, affected, target_table = db.execute_query_full(sql)
+                    return json.dumps({
+                        "status": "success",
+                        "target_table": target_table,
+                        "affected_rows": affected,
+                        "columns": cols,
+                        "row_count": len(rows),
+                        "rows_sample": rows[:10],
+                        "message": f"Successfully executed. {affected} row(s) affected." if affected > 0 else "Successfully executed."
+                    }, indent=2, default=str)
+                except Exception as ex:
+                    return json.dumps({
+                        "status": "error",
+                        "error": str(ex),
+                        "hint": "Analyze the SQLite error, verify column/table names or syntax, and self-correct your SQL in the next step."
+                    }, indent=2)
+
+            elif tool_name == "db_validate_sql":
+                sql = str(args.get("sql", "")).strip()
+                if not sql:
+                    return json.dumps({"valid": False, "error": "Parameter 'sql' is required."})
+                try:
+                    cols, rows = db.execute_query(f"EXPLAIN QUERY PLAN {sql}")
+                    return json.dumps({"valid": True, "query_plan": rows}, indent=2, default=str)
+                except Exception as ex:
+                    return json.dumps({"valid": False, "error": str(ex)}, indent=2)
+
             elif tool_name == "pdf_read_dev_file":
                 fname = str(args.get("filename", "") or args.get("file", "") or args.get("name", "")).strip()
                 clean_name = os.path.basename(fname)
@@ -408,6 +447,16 @@ class Api:
                 return f"Error: Tool '{tool_name}' is not recognized or not authorized in read-only inspection mode."
         except Exception as e:
             return f"Tool Execution Error: {str(e)}"
+
+    def _notify_frontend_agent_step(self, step_data: dict) -> None:
+        """Push real-time agent execution step update to the frontend UI."""
+        try:
+            if hasattr(self, "_window") and self._window:
+                import json
+                step_json = json.dumps(step_data)
+                self._window.evaluate_js(f"if (typeof window._onAiAgentStepLive === 'function') window._onAiAgentStepLive({step_json});")
+        except Exception:
+            pass
 
     def send_ai_chat(
         self,
@@ -460,10 +509,10 @@ class Api:
             ctx.verify_mode = ssl.CERT_NONE
 
             agent_system_addon = (
-                "\n\n--- DYNAMIC INSPECTION TOOLS (AGENTIC CAPABILITY) ---\n"
-                "You are an advanced agentic database intelligence engine. If the user's question requires deeper schema inspection, checking sample values, discovering relationships, column stats, or validating complex queries, you have read-only tools to execute inspection actions before giving your final answer.\n"
+                "\n\n--- DYNAMIC INSPECTION & EXECUTION TOOLS (AGENTIC CAPABILITY) ---\n"
+                "You are an advanced agentic database intelligence engine. If the user's question requires deeper schema inspection, checking sample values, discovering relationships, column stats, validating queries, or running SQL to build/verify data structures, you have tools to execute actions before giving your final answer.\n"
                 "To call a tool, respond with:\n"
-                "Thought: <your reasoning for why this inspection is needed>\n"
+                "Thought: <your reasoning for why this inspection or execution is needed>\n"
                 "Action: <tool_name>\n"
                 "Action Input: <json_formatted_arguments>\n\n"
                 "Available tools:\n"
@@ -476,15 +525,17 @@ class Api:
                 "- db_inspect_column: Check nulls, distinct, min/max & top values for a single column. Input: {\"table\": \"tbl\", \"column\": \"col\"}\n"
                 "- db_explain_query_plan: Inspect SQLite index usage and scan cost of a query. Input: {\"sql\": \"SELECT ...\"}\n"
                 "- db_readonly_query: Run exploratory SELECT query. Input: {\"sql\": \"SELECT ... LIMIT 20\"}\n"
+                "- db_execute_sql: Execute SQL statements (mutations, DDL, DML, or queries) in SQLite. Returns affected row count, created table, and sample rows. Use this to verify queries work without errors or create sample datasets. Input: {\"sql\": \"...\"}\n"
+                "- db_validate_sql: Validate SQL syntax against SQLite engine. Input: {\"sql\": \"...\"}\n"
                 "- pdf_read_dev_file: Read temporary PDF dev file. Input: {\"filename\": \"style.css\" (or \"data.csv\", \"render.py\")}\n"
                 "- pdf_list_dev_files: List available PDF dev files. Input: {}\n\n"
-                "CRITICAL SECURITY RESTRICTION: You are strictly sandboxed. You have ZERO access to application source code (main.py, api.py, core, web) or system files. Only the 3 whitelisted PDF dev files (style.css, data.csv, render.py) can be read. Any out-of-bounds request is blocked by software runtime security.\n"
-                "CRITICAL: Do NOT call a tool for straightforward queries where table context is already sufficient. Only use tools when specific stats, distinct values, relationships, or missing schema details are necessary. Mutating operations (INSERT, UPDATE, DELETE, DROP, ALTER) are strictly forbidden in dynamic inspection.\n"
-                "When you have the required information, output your final answer directly following the standard 2-part format (explanation + code block)."
+                "CRITICAL SECURITY RESTRICTION: You are strictly sandboxed. You have ZERO access to application source code (main.py, api.py, core, web), system files, or shell commands. Only the user's SQLite database and the 3 whitelisted PDF dev files (style.css, data.csv, render.py) can be accessed. Any out-of-bounds request is blocked by software runtime security.\n"
+                "SELF-CORRECTION WORKFLOW: If db_execute_sql, db_readonly_query, or db_validate_sql returns an error, examine the SQLite error message, inspect the schema or column names, refine your SQL, and re-execute. Ensure your final query is 100% verified and free of syntax errors.\n"
+                "When you have verified the results and have the required information, output your final answer directly following the standard 2-part format (explanation + code block)."
             )
 
             effective_system = system_prompt + (agent_system_addon if enable_agent else "")
-            max_agent_iterations = 5 if enable_agent else 1
+            max_agent_iterations = 8 if enable_agent else 1
 
             failover_log = []
 
@@ -742,6 +793,15 @@ class Api:
                             except Exception:
                                 tool_args = {"param": raw_input_str}
 
+                            # Real-time UI notification: executing action
+                            self._notify_frontend_agent_step({
+                                "step_index": step_idx + 1,
+                                "status": "executing",
+                                "thought": thought_text,
+                                "action": tool_act,
+                                "input": tool_args,
+                            })
+
                             obs_result = self._execute_readonly_db_tool(tool_act, tool_args)
                             agent_steps.append({
                                 "thought": thought_text,
@@ -750,12 +810,29 @@ class Api:
                                 "observation": obs_result[:1000]
                             })
 
+                            # Real-time UI notification: observation result or error
+                            is_err = "error" in str(obs_result).lower() or "exception" in str(obs_result).lower() or "forbidden" in str(obs_result).lower()
+                            self._notify_frontend_agent_step({
+                                "step_index": step_idx + 1,
+                                "status": "error" if is_err else "done",
+                                "thought": thought_text,
+                                "action": tool_act,
+                                "input": tool_args,
+                                "observation": obs_result[:400]
+                            })
+
                             # Feed observation back to model
                             current_messages.append({"role": "model", "content": raw_reply})
                             current_messages.append({"role": "user", "content": f"Observation from {tool_act}:\n{obs_result}"})
                             continue
                         else:
                             # Final direct answer reached
+                            self._notify_frontend_agent_step({
+                                "step_index": step_idx + 1,
+                                "status": "completed",
+                                "thought": "Final response formulated and verified."
+                            })
+
                             final_text = raw_reply
                             if "Final Answer:" in final_text:
                                 final_text = final_text.split("Final Answer:", 1)[1].strip()
@@ -1198,20 +1275,36 @@ class Api:
 
     def run_sql(self, sql: str) -> dict:
         try:
-            cols, data, affected = db.execute_query_full(sql)
+            cols, data, affected, target_table = db.execute_query_full(sql)
             self._last_result_cols = cols
             self._last_result_rows = data
             db.log_query(sql.strip(), len(data) if cols else max(0, affected), source="manual")
+            is_mutation = bool(affected > 0 or target_table)
+            msg = f"Query OK — {affected} row(s) affected." if affected > 0 else "Query executed successfully."
+            if target_table and not cols:
+                msg = f"Table '{target_table}' modified successfully ({max(0, affected)} rows affected)."
+            elif target_table and cols:
+                msg = f"Query OK — Loaded {len(data)} row(s) from '{target_table}'."
+
             if not cols:
-                msg = f"Query OK — {affected} row(s) affected." if affected >= 0 else "Query executed successfully."
                 return _ok({
                     "columns": [],
                     "rows": [],
                     "count": max(0, affected),
                     "message": msg,
                     "is_mutation": True,
+                    "affected": affected,
+                    "new_table": target_table,
                 })
-            return _ok({"columns": cols, "rows": data[:200], "count": len(data)})
+            return _ok({
+                "columns": cols,
+                "rows": data[:200],
+                "count": len(data),
+                "is_mutation": is_mutation,
+                "affected": affected,
+                "new_table": target_table,
+                "message": msg,
+            })
         except ValueError as e:
             return _err(str(e))
         except Exception as e:
