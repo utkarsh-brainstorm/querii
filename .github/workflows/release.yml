@@ -17,7 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+        os: [ubuntu-latest, macos-13, windows-latest]
       fail-fast: false
 
     steps:
@@ -109,6 +109,7 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    if: always() && !cancelled() && contains(needs.build.result, 'success')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -131,7 +132,7 @@ jobs:
           body: |
             ## ⚡ Querii Version 5.0-beta (Official Release)
 
-            **Querii Version 5.0-beta** delivers an architectural evolution with sequential in-editor AI execution, real-time agentic thinking steppers with self-correction, transactional multi-statement SQL script execution, autonomous provider priority queue failover (OpenRouter, Gemini, NVIDIA NIM), bidirectional table selection synchronization, accessible high-contrast theming, and complete 4-platform native compilation (Linux, macOS Apple Silicon ARM64, macOS Intel x86_64, Windows Setup with uninstaller).
+            **Querii Version 5.0-beta** delivers an architectural evolution with sequential in-editor AI execution, real-time agentic thinking steppers with self-correction, transactional multi-statement SQL script execution, autonomous provider priority queue failover (OpenRouter, Gemini, NVIDIA NIM), bidirectional table selection synchronization, accessible high-contrast theming, and multi-platform native compilation (Linux ZipApp, macOS Intel/Apple Silicon via Rosetta 2, Windows Setup with uninstaller).
 
             ---
 
@@ -173,10 +174,9 @@ jobs:
             #### 7. 🎨 Accessible High-Contrast Theme (Zero White-on-Yellow)
             - Meticulously calibrated high-contrast accessible theme eliminating all `#ffffff` on `#facc15` contrast issues across user chat bubbles, active pills, drag dropzones, and button hover states.
 
-            #### 8. 📦 Complete 4-Platform Native Compilations
+            #### 8. 📦 Multi-Platform Native Compilations
             - **Linux (x86_64)**: Lightweight pure-Python ZipApp with zero system GTK conflicts.
-            - **macOS Apple Silicon (arm64)**: Native compilation for Apple Silicon M1, M2, M3, and M4 Macs.
-            - **macOS Intel (x86_64)**: Native compilation for Intel-based Macs.
+            - **macOS (x86_64 / Rosetta 2)**: Native standalone bundle for Intel Macs and Apple Silicon (M1/M2/M3/M4) via macOS Rosetta 2.
             - **Windows (x64)**: Inno Setup executable installer with Start Menu, Desktop shortcuts, and full uninstaller.
 
             ---
@@ -186,8 +186,7 @@ jobs:
             | Platform | Architecture | File | Notes |
             |---|---|---|---|
             | 🐧 Linux (ZipApp) | x86_64 | `querii-Linux.tar.gz` | Lightweight standalone Python ZipApp |
-            | 🍎 macOS | Apple Silicon (M1/M2/M3/M4) | `querii-macOS-arm64.tar.gz` | Extract and run `querii-macOS-arm64` |
-            | 🍎 macOS | Intel (x86_64) | `querii-macOS-x86_64.tar.gz` | Extract and run `querii-macOS-x86_64` |
+            | 🍎 macOS | Intel & Apple Silicon (Rosetta 2) | `querii-macOS-x86_64.tar.gz` | Extract and run `querii-macOS-x86_64` (Universal compatibility) |
             | 🪟 Windows | x64 | `querii-windows-setup.exe` | Windows Installer with Start Menu, Desktop & Uninstall shortcuts |
 
             > **Data Persistence:** Your database and configurations persist safely across versions in:

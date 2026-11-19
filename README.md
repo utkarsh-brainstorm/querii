@@ -1,6 +1,6 @@
 # Querii (v5.0-beta) — Embedded SQL Analytics Workstation & Offline Typesetting Engine
 
-[![Version](https://img.shields.io/badge/version-5.0--beta-blue.svg?style=flat-square)](https://github.com/heisenberg/querii/releases)
+[![Version](https://img.shields.io/badge/version-5.0--beta-blue.svg?style=flat-square)](https://github.com/utkarsh-brainstorm/querii/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20|%20macOS%20|%20Windows-lightgrey.svg?style=flat-square)](#platform-support)
 [![Engine](https://img.shields.io/badge/engine-SQLite%20WAL%20+%20Memory--Mapped%20I/O-orange.svg?style=flat-square)](#1-storage-engine--query-subsystem)
@@ -159,7 +159,7 @@ querii/
 ### 6.2. Linux Setup
 ```bash
 # Clone the repository
-git clone https://github.com/heisenberg/querii.git
+git clone https://github.com/utkarsh-brainstorm/querii.git
 cd querii
 
 # Install system dependencies (Debian/Ubuntu)
