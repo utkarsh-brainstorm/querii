@@ -1309,11 +1309,29 @@ class Api:
         extra_blank_rows: int = 0,
         extra_cols: list = None,
         watermark_enabled: bool = True,
+        custom_csv: str = "",
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
-            cols = list(self._last_result_cols or [])
-            rows = [dict(r) for r in (self._last_result_rows or [])]
+            if custom_csv and custom_csv.strip():
+                import io, csv
+                f = io.StringIO(custom_csv.strip())
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if header:
+                    cols = [str(h).strip() for h in header]
+                    rows = []
+                    for r in reader:
+                        row_dict = {}
+                        for idx, col_name in enumerate(cols):
+                            row_dict[col_name] = r[idx] if idx < len(r) else ""
+                        rows.append(row_dict)
+                else:
+                    cols = list(self._last_result_cols or [])
+                    rows = [dict(r) for r in (self._last_result_rows or [])]
+            else:
+                cols = list(self._last_result_cols or [])
+                rows = [dict(r) for r in (self._last_result_rows or [])]
 
             if extra_cols:
                 for ec in extra_cols:
@@ -1368,11 +1386,29 @@ class Api:
         extra_blank_rows: int = 0,
         extra_cols: list = None,
         watermark_enabled: bool = True,
+        custom_csv: str = "",
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
-            cols = list(self._last_result_cols or [])
-            rows = [dict(r) for r in (self._last_result_rows or [])]
+            if custom_csv and custom_csv.strip():
+                import io, csv
+                f = io.StringIO(custom_csv.strip())
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if header:
+                    cols = [str(h).strip() for h in header]
+                    rows = []
+                    for r in reader:
+                        row_dict = {}
+                        for idx, col_name in enumerate(cols):
+                            row_dict[col_name] = r[idx] if idx < len(r) else ""
+                        rows.append(row_dict)
+                else:
+                    cols = list(self._last_result_cols or [])
+                    rows = [dict(r) for r in (self._last_result_rows or [])]
+            else:
+                cols = list(self._last_result_cols or [])
+                rows = [dict(r) for r in (self._last_result_rows or [])]
 
             if extra_cols:
                 for ec in extra_cols:

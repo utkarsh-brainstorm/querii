@@ -795,7 +795,8 @@ input[type=number]::-webkit-outer-spin-button { appearance: none; }
 .joiner-pill.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-inv, #fff);
+  font-weight: 700;
 }
 .joiner-pill:hover { opacity: .8; }
 
@@ -1058,7 +1059,7 @@ tr.selected-row td { background: var(--accent-bg) !important; }
 }
 #tab-detach-dropzone.drag-hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inv, #fff);
   border-color: var(--accent);
   transform: scale(1.01);
 }
@@ -1104,7 +1105,7 @@ tr.selected-row td { background: var(--accent-bg) !important; }
   margin-left: auto !important;
   margin-right: 0 !important;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inv, #fff);
   padding: 7px 11px;
   border-radius: 14px 14px 2px 14px;
   font-size: 11.5px;
@@ -1207,7 +1208,7 @@ tr.selected-row td { background: var(--accent-bg) !important; }
 }
 .ai-codeblock-copy-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inv, #fff);
   border-color: var(--accent);
 }
 .ai-codeblock-copy-btn.copied {
@@ -1269,7 +1270,7 @@ tr.selected-row td { background: var(--accent-bg) !important; }
 }
 .ai-sql-action-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inv, #fff);
   border-color: var(--accent);
 }
 .ai-suggestion-chip {
@@ -1474,5 +1475,26 @@ tr.selected-row td { background: var(--accent-bg) !important; }
   align-items: center;
   justify-content: center;
 }
+
+/* ── High Contrast Accessible Theme (Zero White-on-Yellow) ───── */
+[data-theme="accessible"] .btn-primary,
+[data-theme="accessible"] .btn-primary:hover,
+[data-theme="accessible"] .ai-chat-bubble-user,
+[data-theme="accessible"] .joiner-pill.active,
+[data-theme="accessible"] #tab-detach-dropzone.drag-hover,
+[data-theme="accessible"] .ai-codeblock-copy-btn:hover,
+[data-theme="accessible"] .ai-sql-action-btn:hover,
+[data-theme="accessible"] .ai-suggestion-chip:hover,
+[data-theme="accessible"] .ai-accordion-summary:hover {
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
+[data-theme="accessible"] .ai-badge-manual {
+  background: #facc15 !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
 
 

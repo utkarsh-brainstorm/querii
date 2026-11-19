@@ -856,13 +856,16 @@ function _devRefreshPreview() {
     }
   } catch (e) {}
 
+  var customCsv = (_dev.fileBuf && _dev.fileBuf['data.csv']) ? _dev.fileBuf['data.csv'] : '';
+
   _dApi('get_pdf_html_preview',
     _dev.title, org, logoData, _dev.css,
     _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
     _dev.boldData, _dev.showGridLines,
     _dev.extraBlankRows || 0, _dev.extraCols || [],
-    _dev.inclWatermark !== false
+    _dev.inclWatermark !== false,
+    customCsv
   ).then(function(r) {
     if (!r) return;
     iframe.srcdoc = r;
@@ -977,6 +980,7 @@ window._devExportPdf = function() {
     if (!r) return;
     var filepath = r;
     _dToast('⚡ Generating PDF…', 'info');
+    var customCsv = (_dev.fileBuf && _dev.fileBuf['data.csv']) ? _dev.fileBuf['data.csv'] : '';
     return _dApi('export_pdf_html',
       filepath, _dev.title, org, logoData,
       _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
@@ -984,7 +988,8 @@ window._devExportPdf = function() {
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
       _dev.boldData, _dev.showGridLines,
       _dev.extraBlankRows || 0, _dev.extraCols || [],
-      _dev.inclWatermark !== false
+      _dev.inclWatermark !== false,
+      customCsv
     );
   }).then(function(r) {
     if (r) _dToast('✓ PDF exported!');
@@ -1325,11 +1330,14 @@ window._devUndoAiChange = function() {
     _dToast('No previous design state to revert to.', 'warn');
     return;
   }
+  _dev.title = _devPreviousAiState.title || _dev.title;
+  _dev.orgName = (_devPreviousAiState.orgName !== undefined) ? _devPreviousAiState.orgName : _dev.orgName;
   _dev.css = _devPreviousAiState.css || '';
   _dev.orient = _devPreviousAiState.orient || _dev.orient;
   _dev.pageSize = _devPreviousAiState.pageSize || _dev.pageSize;
   _dev.inclWatermark = (_devPreviousAiState.inclWatermark !== undefined) ? _devPreviousAiState.inclWatermark : _dev.inclWatermark;
   _dev.inclLogo = (_devPreviousAiState.inclLogo !== undefined) ? _devPreviousAiState.inclLogo : _dev.inclLogo;
+  _dev.colVisible = _devPreviousAiState.colVisible ? new Set(_devPreviousAiState.colVisible) : null;
   if (_devPreviousAiState.colWidths) {
     _dev.colWidths = JSON.parse(JSON.stringify(_devPreviousAiState.colWidths));
   }
@@ -1350,6 +1358,19 @@ window._devUndoAiChange = function() {
   var undoBtn = document.getElementById('dev-ai-undo-btn');
   if (undoBtn) undoBtn.classList.add('hidden');
 
+  // Sync to all document title and organisation inputs
+  var devTitle = document.getElementById('dev-title');
+  if (devTitle) devTitle.value = _dev.title;
+  var pdfTitle = document.getElementById('pdf-title');
+  if (pdfTitle) pdfTitle.value = _dev.title;
+
+  var devOrg = document.getElementById('dev-orgname');
+  if (devOrg) devOrg.value = _dev.orgName;
+  var pdfOrg = document.getElementById('pdf-org-name');
+  if (pdfOrg) pdfOrg.value = _dev.orgName;
+  var sPdfOrg = document.getElementById('s-org-name');
+  if (sPdfOrg) sPdfOrg.value = _dev.orgName;
+
   // Sync to all custom CSS boxes and file editor
   var devCss = document.getElementById('dev-css-editor');
   if (devCss) devCss.value = _dev.css;
@@ -1361,6 +1382,8 @@ window._devUndoAiChange = function() {
   if (fileEd && _dev.fileTab) fileEd.value = _dev.fileBuf[_dev.fileTab] || '';
   if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = _dev.css;
 
+  _devRenderDocControls();
+  _devRenderColControls();
   _devRenderAll();
   _devUpdatePaperBadge();
   _devRefreshPreviewDebounced(50);
@@ -1390,11 +1413,14 @@ window._devSendAiMessage = function() {
   msgs.scrollTop = msgs.scrollHeight;
 
   _devPreviousAiState = {
+    title: _dev.title,
+    orgName: _dev.orgName,
     css: _dev.css,
     orient: _dev.orient,
     pageSize: _dev.pageSize,
     inclWatermark: _dev.inclWatermark,
     inclLogo: _dev.inclLogo,
+    colVisible: _dev.colVisible ? new Set(_dev.colVisible) : null,
     colWidths: JSON.parse(JSON.stringify(_dev.colWidths || {})),
     colHeaders: JSON.parse(JSON.stringify(_dev.colHeaders || {})),
     shortenHeaders: _dev.shortenHeaders,
@@ -1405,53 +1431,93 @@ window._devSendAiMessage = function() {
   _devAiHistory.push({ role: 'user', content: text });
 
   var currentCss = (_dev.fileBuf && _dev.fileBuf['style.css']) || _dev.css || '/* default custom CSS */';
-  var currentScript = (_dev.fileBuf && _dev.fileBuf['render.py']) || '# render.py standalone script';
+  var currentScript = (_dev.fileBuf && _dev.fileBuf['render.py']) || '# render.py standalone runner script';
   var currentData = (_dev.fileBuf && _dev.fileBuf['data.csv']) || '';
-  var dataPreview = currentData;
-  if (dataPreview.length > 2500) {
-    var dLines = dataPreview.split('\n');
-    dataPreview = dLines.slice(0, 30).join('\n') + '\n... [' + (dLines.length - 30) + ' more rows in data.csv]';
+
+  // Ensure CSV data is never empty so AI can inspect tokens and row contents
+  if (!currentData) {
+    var rRows = _devGetResultRows();
+    if (_dev.cols && _dev.cols.length && rRows && rRows.length) {
+      var headerRow = _dev.cols.map(function(c){ return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+      var dataLines = rRows.slice(0, 100).map(function(row) {
+        return _dev.cols.map(function(c) {
+          var val = row[c] != null ? String(row[c]) : '';
+          return '"' + val.replace(/"/g, '""') + '"';
+        }).join(',');
+      });
+      currentData = [headerRow].concat(dataLines).join('\n');
+      if (!_dev.fileBuf) _dev.fileBuf = {};
+      _dev.fileBuf['data.csv'] = currentData;
+    }
   }
 
-  var systemPrompt = "You are the Querii PDF Design Specialist & Report Layout Intelligence Agent.\n" +
-    "You have full temporary in-memory access to customize the PDF layout, typography, column widths, header labels, table rules, and all 3 dev workspace files (style.css, render.py, and data.csv).\n" +
-    "IMPORTANT: All your changes are applied dynamically in-memory to the live preview and buffers; the original disk files are never overwritten unless the user explicitly saves.\n\n" +
+  var dataPreview = currentData;
+  if (dataPreview.length > 5000) {
+    var dLines = dataPreview.split('\n');
+    dataPreview = dLines.slice(0, 60).join('\n') + '\n... [' + (dLines.length - 60) + ' more rows in data.csv]';
+  }
+
+  var visColsArr = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); });
+
+  var systemPrompt = "You are the Querii PDF Design Specialist & Report Control Agent.\n" +
+    "You have full temporary in-memory access to modify the report's document title, organisation name, page settings, columns, column headers, column widths, table styles, and all 3 dev workspace files (style.css, render.py, data.csv).\n" +
+    "IMPORTANT: All changes are applied dynamically in-memory to the live preview and UI input fields; original disk files remain untouched unless the user explicitly saves.\n\n" +
     "=== 3 DEV WORKSPACE FILES (IN-MEMORY ACCESS) ===\n" +
     "1. `style.css` (active CSS rules applied to live preview):\n```css\n" + currentCss + "\n```\n\n" +
     "2. `render.py` (standalone Python export script using core.exporter):\n```python\n" + currentScript + "\n```\n\n" +
-    "3. `data.csv` (active exported preview dataset):\n```csv\n" + (dataPreview || "(empty)") + "\n```\n\n" +
-    "=== CURRENT PDF LAYOUT STATE ===\n" +
+    "3. `data.csv` (active exported dataset):\n```csv\n" + (dataPreview || "(empty)") + "\n```\n\n" +
+    "=== CURRENT PDF REPORT STATE ===\n" +
+    "- Document Title: \"" + (_dev.title || 'Query Results') + "\"\n" +
+    "- Organisation Name: \"" + (_dev.orgName || '') + "\"\n" +
     "- Orientation: " + _dev.orient + "\n" +
     "- Page Size: " + _dev.pageSize + "\n" +
     "- Watermark: " + (_dev.inclWatermark !== false ? "Enabled" : "Disabled") + "\n" +
     "- Logo: " + (_dev.inclLogo !== false ? "Enabled" : "Disabled") + "\n" +
     "- Auto-shorten Headers: " + (_dev.shortenHeaders !== false ? "true" : "false") + "\n" +
-    "- Columns: " + JSON.stringify(_dev.cols) + "\n" +
+    "- All Available Columns: " + JSON.stringify(_dev.cols) + "\n" +
+    "- Currently Visible Columns (" + visColsArr.length + "): " + JSON.stringify(visColsArr) + "\n" +
     "- Column Widths (%): " + JSON.stringify(_dev.colWidths) + "\n" +
     "- Column Header Overrides: " + JSON.stringify(_dev.colHeaders || {}) + "\n\n" +
-    "=== HOW QUERII HANDLES LARGE COLUMN NAMES & TABLE LAYOUT (ENGINE RULES) ===\n" +
+    "=== HOW QUERII HANDLES LARGE COLUMN NAMES, SIZING & ROWS (ENGINE RULES) ===\n" +
     "1. TOKEN-AWARE COLUMN SIZING HEURISTIC:\n" +
     "   - Column base widths are computed using the longest continuous non-whitespace token across row data values (maxTokenLen), NOT just the header length: `effectiveWidth = max(maxTokenLen, 4)`.\n" +
     "   - Underscores in column names are automatically converted to spaces.\n" +
+    "   - You MUST read the values in `data.csv` to choose appropriate column widths that fit the actual cell data!\n" +
     "2. AUTO-SHORTEN HEADER HEURISTIC (`shortenHeaders`):\n" +
     "   - When `shortenHeaders: true` (default), if a column header's character length exceeds its data's effective width, the engine truncates the header text and appends '..' (e.g. `transaction_id` with short values 1..10 will truncate to 'tr..' or 'trans..').\n" +
-    "   - To disable this truncation and show full headers, set `\"shortenHeaders\": false` in your JSON config block!\n" +
-    "3. COLUMN WIDTHS & HEADERS OVERRIDES:\n" +
-    "   - You can explicitly assign percentage widths using `\"colWidths\": {\"col_name\": 30, ...}` (must sum to ~100%).\n" +
-    "   - You can provide cleaner, friendly column titles using `\"colHeaders\": {\"raw_col_name\": \"Clean Title\"}`.\n" +
-    "4. ADVANCED CSS STYLING:\n" +
-    "   - Table cells: `table.data-table th, table.data-table td { font-size: 8.5px; padding: 4px 6px; word-break: break-word; overflow-wrap: break-word; }`\n" +
-    "   - Target column: `th.col-<col_name>, td.col-<col_name> { text-align: right; width: 25%; }`\n" +
-    "   - Typography, colors, alternating rows: `tbody tr:nth-child(even) { background-color: #f8fafc; }`\n" +
-    "   - Page rules: `@page { size: A4 portrait; margin: 12mm 10mm; }`\n" +
-    "   - Watermarks: `.watermark { opacity: 0.08; font-size: 48px; color: #64748b; }`\n\n" +
-    "=== OUTPUT FORMAT INSTRUCTIONS ===\n" +
-    "1. Explain what styling or layout changes you made clearly and concisely in markdown.\n" +
-    "2. If you modify or propose new CSS, provide the complete or updated CSS in a ```css ... ``` block. The editor will automatically paste this into the Custom CSS box and live-reload the preview.\n" +
-    "3. If you modify page settings (orientation, watermark, logo, column widths, column headers, shortenHeaders), output a JSON block ```json ... ``` with only the changed fields, for example:\n" +
-    "```json\n{\n  \"orient\": \"landscape\",\n  \"shortenHeaders\": false,\n  \"colHeaders\": {\"my_col\": \"Clean Name\"},\n  \"colWidths\": {\"my_col\": 35},\n  \"inclWatermark\": false\n}\n```\n" +
-    "4. If you modify the python runner or csv data, output ```python ... ``` or ```csv ... ``` blocks.\n" +
-    "SECURITY CONSTRAINT: You only have access to the temporary dev files (style.css, render.py, data.csv). You have zero access to the underlying application source code.";
+    "   - To disable truncation and keep full column titles, set `\"shortenHeaders\": false` in your JSON config block!\n" +
+    "3. COLUMN REMOVAL & FILTERING:\n" +
+    "   - If the user asks to REMOVE or HIDE columns (or keep only certain columns), provide the updated array of visible columns in `\"cols\": [...]` or `\"removeCols\": [...]` in your JSON block. The editor will automatically uncheck removed columns and rebalance remaining widths to 100%.\n" +
+    "4. COLUMN RENAMING & SIZING:\n" +
+    "   - To rename columns, provide `\"colHeaders\": {\"col_name\": \"New Clean Title\"}` in your JSON block.\n" +
+    "   - To resize columns, provide `\"colWidths\": {\"col_name\": percentage}` in your JSON block (must sum to ~100%).\n" +
+    "5. ROW REMOVAL & DATA FILTERING:\n" +
+    "   - If the user asks to remove, filter, or modify rows in the table, provide the complete updated CSV in a ```csv ... ``` codeblock! The live preview and exported report will immediately reflect the modified dataset.\n" +
+    "6. DOCUMENT TITLE & ORGANISATION:\n" +
+    "   - If the user asks to change document title or company/organisation name, set `\"title\": \"...\"` and `\"orgName\": \"...\"` in your JSON block.\n\n" +
+    "=== DETERMINISTIC OUTPUT FORMAT RULES ===\n" +
+    "1. Always output a ```json ... ``` codeblock when modifying any document setting, title, orgName, columns, widths, or headers:\n" +
+    "```json\n" +
+    "{\n" +
+    "  \"title\": \"My Custom Title\",\n" +
+    "  \"orgName\": \"Company Name\",\n" +
+    "  \"orient\": \"portrait\" or \"landscape\",\n" +
+    "  \"pageSize\": \"A4\" or \"A3\" or \"Letter\",\n" +
+    "  \"cols\": [\"col1\", \"col2\"],          // Visible columns (omitted columns are removed/hidden)\n" +
+    "  \"removeCols\": [\"col_to_remove\"],    // Optional explicit list of columns to remove\n" +
+    "  \"colHeaders\": {\"col1\": \"New Title\"}, // Renamed column headers\n" +
+    "  \"colWidths\": {\"col1\": 40, \"col2\": 60}, // Width % summing to 100%\n" +
+    "  \"shortenHeaders\": false,\n" +
+    "  \"inclWatermark\": false,\n" +
+    "  \"inclLogo\": true,\n" +
+    "  \"extraBlankRows\": 0\n" +
+    "}\n" +
+    "```\n" +
+    "2. If proposing styling changes (colors, borders, zebra striping, typography, padding), output a complete or updated CSS in a ```css ... ``` codeblock.\n" +
+    "3. If updating rows or data, output a ```csv ... ``` codeblock.\n" +
+    "4. If updating the Python export script, output a ```python ... ``` codeblock.\n" +
+    "5. Provide a clear, concise markdown note explaining all the adjustments you made.\n" +
+    "SECURITY CONSTRAINT: You only have access to the temporary dev workspace files. Application source code is strictly sandboxed.";
 
   var provider = (typeof _aiSettings !== 'undefined' && _aiSettings.provider) ? _aiSettings.provider : 'gemini';
   var model = provider === 'nvidia' ? ((typeof _aiSettings !== 'undefined' && _aiSettings.nvidiaModel) ? _aiSettings.nvidiaModel : 'nvidia/nemotron-3-ultra-550b-a55b') : ((typeof _aiSettings !== 'undefined' && _aiSettings.geminiModel) ? _aiSettings.geminiModel : 'gemini-2.5-flash');
@@ -1462,6 +1528,120 @@ window._devSendAiMessage = function() {
       var reply = (res && res.text) || 'Done!';
       _devAiHistory.push({ role: 'model', content: reply });
 
+      var changesSummary = [];
+
+      // ── 1. Deterministic JSON Config Processing ──
+      var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*```/i);
+      if (jsonMatch) {
+        try {
+          var cfg = JSON.parse(jsonMatch[1]);
+
+          // Document Title
+          if (cfg.title !== undefined && typeof cfg.title === 'string' && cfg.title.trim()) {
+            _dev.title = cfg.title.trim();
+            var devTitleInp = document.getElementById('dev-title');
+            if (devTitleInp) devTitleInp.value = _dev.title;
+            var pdfTitleInp = document.getElementById('pdf-title');
+            if (pdfTitleInp) pdfTitleInp.value = _dev.title;
+            changesSummary.push('Title updated to "' + _dev.title + '"');
+          }
+
+          // Organisation Name
+          if (cfg.orgName !== undefined && typeof cfg.orgName === 'string') {
+            _dev.orgName = cfg.orgName.trim();
+            var devOrgInp = document.getElementById('dev-orgname');
+            if (devOrgInp) devOrgInp.value = _dev.orgName;
+            var pdfOrgInp = document.getElementById('pdf-org-name');
+            if (pdfOrgInp) pdfOrgInp.value = _dev.orgName;
+            var sOrgInp = document.getElementById('s-org-name');
+            if (sOrgInp) sOrgInp.value = _dev.orgName;
+            changesSummary.push('Org Name updated');
+          }
+
+          // Orientation & Page Size
+          if (cfg.orient && (cfg.orient === 'portrait' || cfg.orient === 'landscape')) {
+            _dev.orient = cfg.orient;
+            changesSummary.push(cfg.orient + ' mode');
+          }
+          if (cfg.pageSize && ['A4', 'A3', 'Letter'].indexOf(cfg.pageSize) !== -1) {
+            _dev.pageSize = cfg.pageSize;
+            changesSummary.push('Paper ' + cfg.pageSize);
+          }
+
+          // Watermark & Logo
+          if (cfg.inclWatermark !== undefined) _dev.inclWatermark = !!cfg.inclWatermark;
+          if (cfg.inclLogo !== undefined) _dev.inclLogo = !!cfg.inclLogo;
+
+          // Shorten Headers heuristic
+          if (cfg.shortenHeaders !== undefined) {
+            _dev.shortenHeaders = !!cfg.shortenHeaders;
+            var shCb = document.getElementById('dev-shorten-headers');
+            if (shCb) shCb.checked = _dev.shortenHeaders;
+          }
+
+          // Column Visibility & Removal
+          var colChanged = false;
+          if (cfg.cols && Array.isArray(cfg.cols) && cfg.cols.length > 0) {
+            _dev.colVisible = new Set(cfg.cols);
+            colChanged = true;
+          } else if (cfg.visibleCols && Array.isArray(cfg.visibleCols)) {
+            _dev.colVisible = new Set(cfg.visibleCols);
+            colChanged = true;
+          }
+          if (cfg.removeCols && Array.isArray(cfg.removeCols) && cfg.removeCols.length > 0) {
+            if (!_dev.colVisible) _dev.colVisible = new Set(_dev.cols);
+            cfg.removeCols.forEach(function(rc) { _dev.colVisible.delete(rc); });
+            colChanged = true;
+          }
+          if (colChanged) {
+            var hiddenCount = _dev.cols.filter(function(c) { return _dev.colVisible && !_dev.colVisible.has(c); }).length;
+            changesSummary.push(hiddenCount > 0 ? (hiddenCount + ' column' + (hiddenCount > 1 ? 's' : '') + ' hidden') : 'Columns visible');
+          }
+
+          // Column Headers (Renaming)
+          if (cfg.colHeaders && typeof cfg.colHeaders === 'object') {
+            _dev.colHeaders = _dev.colHeaders || {};
+            var renameCount = 0;
+            for (var ch in cfg.colHeaders) {
+              _dev.colHeaders[ch] = String(cfg.colHeaders[ch]);
+              renameCount++;
+            }
+            if (renameCount > 0) changesSummary.push(renameCount + ' header' + (renameCount > 1 ? 's' : '') + ' renamed');
+          }
+
+          // Column Widths (Sizing)
+          if (cfg.colWidths && typeof cfg.colWidths === 'object') {
+            _dev.colWidths = _dev.colWidths || {};
+            for (var cw in cfg.colWidths) {
+              _dev.colWidths[cw] = Math.max(1, parseInt(cfg.colWidths[cw], 10) || 1);
+            }
+            changesSummary.push('Column widths resized');
+          }
+
+          // Auto-normalize visible column widths if columns were removed without explicit colWidths
+          var curVisCols = _dev.cols.filter(function(c) { return _dev.colVisible === null || _dev.colVisible.has(c); });
+          if (curVisCols.length > 0) {
+            var curSum = 0;
+            curVisCols.forEach(function(c) { curSum += (_dev.colWidths[c] || 0); });
+            if (curSum <= 0 || (!cfg.colWidths && colChanged)) {
+              var eq = Math.floor(100 / curVisCols.length);
+              var rem = 100 - (eq * curVisCols.length);
+              curVisCols.forEach(function(c, i) {
+                _dev.colWidths[c] = eq + (i === curVisCols.length - 1 ? rem : 0);
+              });
+            }
+          }
+
+          // Extra Blank Rows
+          if (cfg.extraBlankRows !== undefined) {
+            _dev.extraBlankRows = Math.max(0, parseInt(cfg.extraBlankRows, 10) || 0);
+          }
+        } catch(e) {
+          console.warn('[PDF Dev AI] JSON parse error:', e);
+        }
+      }
+
+      // ── 2. Deterministic CSS Processing ──
       var cssMatch = reply.match(/```(?:css|style)\s*([\s\S]*?)```/i);
       if (!cssMatch) {
         var anyCodeMatch = reply.match(/```(?:[a-z0-9_-]*\s*)?([\s\S]*?)```/i);
@@ -1487,8 +1667,10 @@ window._devSendAiMessage = function() {
         var fileEd = document.getElementById('dev-file-editor');
         if (fileEd && _dev.fileTab === 'style.css') fileEd.value = newCss;
         if (typeof _pdfCustomCss !== 'undefined') _pdfCustomCss = newCss;
+        changesSummary.push('Custom CSS applied');
       }
 
+      // ── 3. Deterministic Python runner script processing ──
       var pyMatch = reply.match(/```(?:python|py)\s*([\s\S]*?)```/i);
       if (pyMatch && pyMatch[1].trim()) {
         var newPy = pyMatch[1].trim();
@@ -1496,8 +1678,10 @@ window._devSendAiMessage = function() {
         _dev.fileBuf['render.py'] = newPy;
         var fileEd = document.getElementById('dev-file-editor');
         if (fileEd && _dev.fileTab === 'render.py') fileEd.value = newPy;
+        changesSummary.push('render.py updated in-memory');
       }
 
+      // ── 4. Deterministic CSV dataset processing (row removals/filtering) ──
       var csvMatch = reply.match(/```csv\s*([\s\S]*?)```/i);
       if (csvMatch && csvMatch[1].trim()) {
         var newCsv = csvMatch[1].trim();
@@ -1505,32 +1689,12 @@ window._devSendAiMessage = function() {
         _dev.fileBuf['data.csv'] = newCsv;
         var fileEd = document.getElementById('dev-file-editor');
         if (fileEd && _dev.fileTab === 'data.csv') fileEd.value = newCsv;
+        changesSummary.push('data.csv rows updated');
       }
 
-      var jsonMatch = reply.match(/```json\s*(\{[\s\S]*?\})\s*```/i);
-      if (jsonMatch) {
-        try {
-          var cfg = JSON.parse(jsonMatch[1]);
-          if (cfg.orient) _dev.orient = cfg.orient;
-          if (cfg.pageSize) _dev.pageSize = cfg.pageSize;
-          if (cfg.inclWatermark !== undefined) _dev.inclWatermark = !!cfg.inclWatermark;
-          if (cfg.inclLogo !== undefined) _dev.inclLogo = !!cfg.inclLogo;
-          if (cfg.shortenHeaders !== undefined) _dev.shortenHeaders = !!cfg.shortenHeaders;
-          if (cfg.colHeaders && typeof cfg.colHeaders === 'object') {
-            _dev.colHeaders = _dev.colHeaders || {};
-            for (var ch in cfg.colHeaders) {
-              _dev.colHeaders[ch] = String(cfg.colHeaders[ch]);
-            }
-          }
-          if (cfg.colWidths && typeof cfg.colWidths === 'object') {
-            for (var k in cfg.colWidths) {
-              _dev.colWidths[k] = parseInt(cfg.colWidths[k], 10) || 0;
-            }
-          }
-          if (cfg.extraBlankRows !== undefined) _dev.extraBlankRows = parseInt(cfg.extraBlankRows, 10) || 0;
-        } catch(e) {}
-      }
-
+      // ── 5. Re-render UI inputs & Live Preview ──
+      _devRenderDocControls();
+      _devRenderColControls();
       _devRenderAll();
       _devUpdatePaperBadge();
       _devRefreshPreviewDebounced(50);
@@ -1542,11 +1706,6 @@ window._devSendAiMessage = function() {
       botEl.className = 'ai-chat-bubble-assistant';
       botEl.style.cssText = 'align-self:flex-start;max-width:96%;background:#f8fafc;color:#1e293b;padding:10px 12px;border-radius:10px 10px 10px 2px;border:1px solid #e2e8f0;font-size:11px;line-height:1.45;user-select:text;-webkit-user-select:text';
 
-      var changesSummary = [];
-      if (cssMatch) changesSummary.push('Custom CSS pasted & applied');
-      if (jsonMatch) changesSummary.push('Layout & headers adjusted');
-      if (pyMatch) changesSummary.push('render.py updated in-memory');
-      if (csvMatch) changesSummary.push('data.csv updated in-memory');
       var badgeText = changesSummary.length ? ('✨ Live Preview Updated (' + changesSummary.join(' · ') + ')') : '✨ Applied to Live Preview (In-Memory)';
 
       var mdRenderer = (typeof renderMarkdown === 'function') ? renderMarkdown : (window.renderMarkdown || function(s){ return String(s).replace(/\n/g, '<br>'); });
